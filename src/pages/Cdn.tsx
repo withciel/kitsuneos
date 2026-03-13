@@ -1,3 +1,5 @@
+import { Script } from 'vite-ssr-components/hono';
+
 interface CdnMediaItem {
   id: string;
   sourceUrl: string;
@@ -45,14 +47,14 @@ export default function Cdn({
               <button
                 type="button"
                 data-copy-url={item.routeUrl}
-                class="group relative mb-4 block w-full break-inside-avoid overflow-hidden border border-stone-800 bg-stone-900 text-left outline-none transition-colors hover:border-stone-600 focus-visible:border-stone-500"
+                class="group relative mb-4 block w-full break-inside-avoid cursor-pointer overflow-hidden border border-stone-800 bg-stone-900 text-left outline-none transition-colors hover:border-stone-600 focus-visible:border-stone-500"
               >
                 {item.kind === 'image' ? (
                   <img
                     src={item.sourceUrl}
                     alt={item.id}
                     loading="lazy"
-                    class="h-auto w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+                    class="h-auto w-full cursor-pointer object-cover transition-transform duration-200 group-hover:scale-[1.01]"
                   />
                 ) : (
                   <video
@@ -60,11 +62,11 @@ export default function Cdn({
                     preload="metadata"
                     muted
                     playsInline
-                    class="h-auto w-full object-cover transition-transform duration-200 group-hover:scale-[1.01]"
+                    class="h-auto w-full cursor-pointer object-cover transition-transform duration-200 group-hover:scale-[1.01]"
                   />
                 )}
-                <div class="pointer-events-none absolute inset-0 grid place-items-center bg-stone-950/65 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                  <span class="font-mono text-sm text-stone-100">
+                <div class="pointer-events-none absolute inset-0 grid place-items-center bg-stone-950/85 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <span class="inline-flex rounded-full border border-stone-700 bg-stone-950/95 px-3 py-1 font-mono text-sm text-stone-100">
                     {item.id}
                   </span>
                 </div>
@@ -108,39 +110,7 @@ export default function Cdn({
       >
         URL copied to clipboard
       </div>
-
-      <script>{`
-        (() => {
-          const copyTargets = document.querySelectorAll('[data-copy-url]');
-          const toast = document.getElementById('copy-toast');
-          let toastTimer;
-
-          const showToast = () => {
-            if (!toast) return;
-            toast.classList.add('opacity-100');
-            toast.classList.remove('opacity-0');
-            window.clearTimeout(toastTimer);
-            toastTimer = window.setTimeout(() => {
-              toast.classList.remove('opacity-100');
-              toast.classList.add('opacity-0');
-            }, 1400);
-          };
-
-          copyTargets.forEach((node) => {
-            node.addEventListener('click', async () => {
-              const url = node.getAttribute('data-copy-url');
-              if (!url) return;
-
-              try {
-                await navigator.clipboard.writeText(url);
-                showToast();
-              } catch {
-                // no-op
-              }
-            });
-          });
-        })();
-      `}</script>
+      <Script src="/src/client/cdn.ts" />
     </main>
   );
 }

@@ -1,3 +1,5 @@
+import { Script } from 'vite-ssr-components/hono';
+
 export default function Dashboard({
   props: { storageUsed, storageUsedBytes, storageLimitBytes, error, idValue },
 }: {
@@ -150,51 +152,7 @@ export default function Dashboard({
         </a>
       </div>
 
-      <script>{`
-        (() => {
-          const input = document.getElementById('file');
-          const details = document.getElementById('selected-file-details');
-          const name = document.getElementById('selected-file-name');
-          const size = document.getElementById('selected-file-size');
-          const left = document.getElementById('storage-left-after-upload');
-
-          if (!input || !details || !name || !size || !left) {
-            return;
-          }
-
-          const usedBytes = Number(details.getAttribute('data-storage-used-bytes') ?? '0');
-          const limitBytes = Number(details.getAttribute('data-storage-limit-bytes') ?? '1');
-
-          const formatBytes = (bytes) => {
-            if (!Number.isFinite(bytes) || bytes < 0) return '0 B';
-            if (bytes < 1024) return bytes + ' B';
-            const units = ['KB', 'MB', 'GB', 'TB'];
-            let value = bytes / 1024;
-            let unitIndex = 0;
-            while (value >= 1024 && unitIndex < units.length - 1) {
-              value /= 1024;
-              unitIndex += 1;
-            }
-            return value.toFixed(2) + ' ' + units[unitIndex];
-          };
-
-          input.addEventListener('change', () => {
-            const file = input.files && input.files[0];
-            if (!file) {
-              details.classList.add('hidden');
-              return;
-            }
-
-            const projectedLeft = Math.max(limitBytes - (usedBytes + file.size), 0);
-            const leftPercent = (projectedLeft / limitBytes) * 100;
-
-            name.textContent = file.name;
-            size.textContent = formatBytes(file.size);
-            left.textContent = formatBytes(projectedLeft) + ' (' + leftPercent.toFixed(2) + '%)';
-            details.classList.remove('hidden');
-          });
-        })();
-      `}</script>
+      <Script src="/src/client/dashboard.ts" />
     </main>
   );
 }
