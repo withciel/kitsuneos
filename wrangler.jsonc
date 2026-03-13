@@ -8,5 +8,12 @@
       "binding": "db",
       "id": "kitsune_db",
     }
+  ],
+  "routes": [
+    {
+      "pattern": "krish.pics",
+      "zone_name": "krish.pics",
+      "custom_domain": true
+    }
   ]
 }
