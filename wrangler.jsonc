@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kitsune",
+  "compatibility_date": "2025-08-03",
+  "main": "./src/index.tsx",
+  "vars": {
+    "ADMIN_USERNAME": "admin",
+    "ADMIN_PASSWORD": "password",
+    "AUTH_SECRET": "i_love_you_so_by_the_walters"
+  }
+}
