@@ -47,7 +47,7 @@ export default function Cdn({
               <button
                 type="button"
                 data-copy-url={item.routeUrl}
-                class="group relative mb-4 block w-full break-inside-avoid cursor-pointer overflow-hidden border border-stone-800 bg-stone-900 text-left outline-none transition-colors hover:border-stone-600 focus-visible:border-stone-500"
+                class="group relative mb-4 block w-full break-inside-avoid cursor-pointer overflow-hidden border border-stone-800 bg-stone-900 text-left outline-none transition-colors hover:border-stone-900 focus-visible:border-stone-900"
               >
                 {item.kind === 'image' ? (
                   <img
@@ -65,8 +65,8 @@ export default function Cdn({
                     class="h-auto w-full cursor-pointer object-cover transition-transform duration-200 group-hover:scale-[1.01]"
                   />
                 )}
-                <div class="pointer-events-none absolute inset-0 grid place-items-center bg-stone-950/85 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                  <span class="inline-flex rounded-full border border-stone-700 bg-stone-950/95 px-3 py-1 font-mono text-sm text-stone-100">
+                <div class="pointer-events-none absolute inset-0 grid place-items-center bg-stone-950/95 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                  <span class="inline-flex border border-stone-950 bg-stone-950 px-3 py-1 text-sm text-stone-100">
                     {item.id}
                   </span>
                 </div>
