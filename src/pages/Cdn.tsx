@@ -102,6 +102,45 @@ export default function Cdn({
             <p class="mt-3 text-sm text-stone-500">No non-media files.</p>
           )}
         </section>
+        <section class="mt-8">
+          <h2 class="text-lg font-semibold text-stone-100">
+            List of all files
+          </h2>
+          <p class="mt-2 text-sm text-stone-400">
+            This is a simple list of all files in the CDN, including both media
+            and non-media files. Click any URL to copy it to your clipboard.
+          </p>
+          <ul class="mt-3 space-y-2">
+            {mediaItems.map((item) => (
+              <li class="flex items-center justify-between gap-3 border border-stone-800 bg-stone-900/80 px-3 py-2">
+                <span class="font-mono text-sm text-stone-100">
+                  {item.id} (media)
+                </span>
+                <button
+                  type="button"
+                  data-copy-url={item.routeUrl}
+                  class="text-sm text-stone-300 underline-offset-4 transition-colors hover:text-stone-100 hover:underline"
+                >
+                  Copy URL
+                </button>
+              </li>
+            ))}
+            {fileItems.map((item) => (
+              <li class="flex items-center justify-between gap-3 border border-stone-800 bg-stone-900/80 px-3 py-2">
+                <span class="font-mono text-sm text-stone-100">
+                  {item.id} (file)
+                </span>
+                <button
+                  type="button"
+                  data-copy-url={item.routeUrl}
+                  class="text-sm text-stone-300 underline-offset-4 transition-colors hover:text-stone-100 hover:underline"
+                >
+                  Copy URL
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       </div>
 
       <div
