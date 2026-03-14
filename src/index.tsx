@@ -135,7 +135,7 @@ async function renderLogin(
   const loggedIn = await isLoggedIn(c);
 
   if (loggedIn) {
-    return c.redirect('/dashboard');
+    return c.redirect('/cdn/dashboard');
   }
 
   return c.render(<Login />);
@@ -162,7 +162,7 @@ async function handleLogin(
         maxAge: 60 * 60 * 24 * 7,
       });
 
-      return c.redirect('/dashboard');
+      return c.redirect('/cdn/dashboard');
     }
   }
 
@@ -212,22 +212,16 @@ app.use('/dashboard', (c, next) => authMiddleware(c)(c, next));
  */
 
 app.post('/cdn/login', handleLogin);
-app.post('/login', handleLogin);
 
 app.get('/cdn/login', renderLogin);
-app.get('/login', renderLogin);
 
 app.get('/cdn/dashboard', async (c) => {
-  return c.redirect('/dashboard');
-});
-
-app.get('/dashboard', async (c) => {
   return renderDashboard(c);
 });
 
-app.get('/logout', (c) => {
+app.get('/cdn/logout', (c) => {
   deleteCookie(c, 'kitsune_auth_token', { path: '/' });
-  return c.redirect('/login');
+  return c.redirect('/cdn/login');
 });
 
 app.get('/cdn', async (c) => {
