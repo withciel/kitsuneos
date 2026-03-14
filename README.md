@@ -2,7 +2,7 @@
 
 Replace your ugly CDN urls with something nice and custom. Built with Hono and Cloudflare.
 
-https://github.com/kkrishguptaa/kitsune/raw/HEAD/.github/kitsune.mov
+![Kitsune Demo Gif](https://github.com/kkrishguptaa/kitsune/raw/HEAD/.github/kitsune.gif)
 
 ## Technologies Used
 
@@ -68,6 +68,12 @@ https://github.com/kkrishguptaa/kitsune/raw/HEAD/.github/kitsune.mov
    ```bash
    pnpx wrangler deploy
    ```
+
+## Suggestions for Users
+
+I have a sister project named [imajesus](https://github.com/kkrishguptaa/imajesus).
+
+It is a CLI tool that will make your images like 90% smaller using `webp` format. You can use it to compress your images before uploading them to Kitsune to save bandwidth and make them load faster.
 
 ## Future Improvements
 
