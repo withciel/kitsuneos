@@ -46,3 +46,43 @@ if (input && details && fileName && size && left) {
     details.classList.remove('hidden');
   });
 }
+
+const form = document.getElementById('upload-form') as HTMLFormElement | null;
+const button = document.getElementById('upload-button') as HTMLButtonElement | null;
+const errorDiv = document.getElementById('error-message') as HTMLDivElement | null;
+const script = document.currentScript as HTMLScriptElement | null;
+const basePath = script?.getAttribute('data-base-path') ?? '';
+
+if (form && button && errorDiv) {
+  button.addEventListener('click', async (e) => {
+    e.preventDefault();
+
+    button.disabled = true;
+    button.textContent = 'Uploading...';
+    errorDiv.classList.add('hidden');
+
+    try {
+      const formData = new FormData(form);
+      const response = await fetch(`${basePath}/api/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json() as { success: boolean; error?: string; data?: { url: string } };
+
+      if (data.success) {
+        window.location.href = `${basePath}/cdn`;
+      } else {
+        errorDiv.textContent = data.error ?? 'An error occurred during upload.';
+        errorDiv.classList.remove('hidden');
+        button.disabled = false;
+        button.textContent = 'Upload';
+      }
+    } catch (err) {
+      errorDiv.textContent = 'Network error. Please try again.';
+      errorDiv.classList.remove('hidden');
+      button.disabled = false;
+      button.textContent = 'Upload';
+    }
+  });
+}

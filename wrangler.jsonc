@@ -11,9 +11,9 @@
   ],
   "routes": [
     {
-      "pattern": "krish.pics",
+      "pattern": "cdn.krish.pics",
       "zone_name": "krish.pics",
       "custom_domain": true
     }
-  ]
+  ],
 }

@@ -60,13 +60,13 @@ Replace your ugly CDN urls with something nice and custom. Built with Hono and C
 7. Run the development server:
 
    ```bash
-   pnpx wrangler dev # this is important, otherwise the cloudflare KV binding won't work
+   pnpm run dev # this is important, otherwise the cloudflare KV binding won't work
    ```
 
 8. To deploy, remember to put the .dev.vars values in the Cloudflare dashboard as environment variables, and then run:
 
    ```bash
-   pnpx wrangler deploy
+   pnpm run deploy
    ```
 
 ## Suggestions for Users
