@@ -34,7 +34,7 @@ export default function Cdn({
             </p>
           </div>
           <a
-            href="/cdn/login"
+            href={`${basePath}/login`}
             class="text-sm text-stone-300 underline-offset-4 transition-colors hover:text-stone-100 hover:underline"
           >
             Admin login

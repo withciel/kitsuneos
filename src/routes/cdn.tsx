@@ -89,7 +89,7 @@ cdn.get('/', async (c) => {
       return {
         ...file,
         kind,
-        routeUrl: `${origin}/cdn/${encodeURIComponent(file.id)}`,
+        routeUrl: `${origin}${basePath ?? ''}/${encodeURIComponent(file.id)}`,
       };
     }),
   );

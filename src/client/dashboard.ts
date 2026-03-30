@@ -71,7 +71,7 @@ if (form && button && errorDiv) {
       const data = await response.json() as { success: boolean; error?: string; data?: { url: string } };
 
       if (data.success) {
-        window.location.href = `${basePath}/cdn`;
+        window.location.href = basePath ?? '/';
       } else {
         errorDiv.textContent = data.error ?? 'An error occurred during upload.';
         errorDiv.classList.remove('hidden');

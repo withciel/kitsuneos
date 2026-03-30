@@ -30,7 +30,7 @@ export default function Login({
         <form
           class="mt-6 space-y-5"
           method="post"
-          action="/cdn/login"
+          action={`${basePath}/login`}
           autocomplete="on"
         >
           <div class="space-y-2">
