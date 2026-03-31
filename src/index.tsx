@@ -27,8 +27,8 @@ app.use(renderer);
 //   }),
 // );
 
-app.route('/', cdn);
 app.route('/', auth);
 app.route('/', dashboard);
+app.route('/', cdn);
 
 export default app;
