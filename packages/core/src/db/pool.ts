@@ -1,0 +1,87 @@
+import pg from 'pg';
+import type { Pool, PoolClient, QueryResultRow } from 'pg';
+import type { DbConfig } from '../types.js';
+
+export function createPools(config: DbConfig): {
+  ownerPool: Pool;
+  appPool: Pool;
+} {
+  return {
+    ownerPool: new pg.Pool({ connectionString: config.ownerUrl, max: 10 }),
+    appPool: new pg.Pool({ connectionString: config.appUrl, max: 20 }),
+  };
+}
+
+export async function withOwner<T>(
+  pool: Pool,
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    return await fn(client);
+  } finally {
+    client.release();
+  }
+}
+
+export async function withAppTransaction<T>(
+  pool: Pool,
+  context: {
+    schemaName: string;
+    principalId: string;
+    includeDeleted?: boolean;
+  },
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await setSessionContext(client, context);
+    const result = await fn(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function setSessionContext(
+  client: PoolClient,
+  context: {
+    schemaName: string;
+    principalId: string;
+    includeDeleted?: boolean;
+  },
+): Promise<void> {
+  await client.query(
+    `SET LOCAL search_path TO ${context.schemaName}, kitsune, public`,
+  );
+  await client.query(`SET LOCAL kitsune.schema_name = '${context.schemaName}'`);
+  await client.query(
+    `SET LOCAL kitsune.principal_id = '${context.principalId}'`,
+  );
+  await client.query(
+    `SET LOCAL kitsune.include_deleted = '${context.includeDeleted ? 'true' : 'false'}'`,
+  );
+}
+
+export async function queryRows<T extends QueryResultRow>(
+  client: PoolClient,
+  sql: string,
+  params: unknown[] = [],
+): Promise<T[]> {
+  const result = await client.query<T>(sql, params);
+  return result.rows;
+}
+
+export async function queryOne<T extends QueryResultRow>(
+  client: PoolClient,
+  sql: string,
+  params: unknown[] = [],
+): Promise<T | null> {
+  const rows = await queryRows<T>(client, sql, params);
+  return rows[0] ?? null;
+}

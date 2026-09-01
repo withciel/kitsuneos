@@ -1,0 +1,22 @@
+{
+  "name": "@kitsuneos/acceptance",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@kitsuneos/core": "workspace:*",
+    "@kitsuneos/mcp": "workspace:*",
+    "pg": "^8.16.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.2",
+    "typescript": "5.9.2",
+    "vitest": "^3.2.4"
+  }
+}
