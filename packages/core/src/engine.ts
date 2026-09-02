@@ -5,6 +5,7 @@ import {
   compileQuery,
   compileReadRecord,
   getCollectionMeta,
+  type CollectionMeta,
 } from './compiler/query.js';
 import { compilePredicate } from './compiler/predicate-sql.js';
 import {
@@ -67,6 +68,9 @@ const DEFAULT_CONFIG: DbConfig = {
     process.env.KITSUNE_APP_URL ??
     'postgresql://kitsune_app:kitsune_app@localhost:5432/kitsune',
 };
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class KitsuneEngine {
   readonly ownerPool: Pool;
@@ -447,6 +451,56 @@ export class KitsuneEngine {
     }
   }
 
+  /**
+   * A relation value points at a row the author may not be allowed to see. Left to the
+   * foreign key, the deferred constraint answers "does this row exist?" at COMMIT, which
+   * distinguishes a hidden record from an absent one. Resolving the target through the
+   * author's own grant collapses both cases to the same not-found error.
+   */
+  private async assertRelationTargetAccessible(
+    client: PoolClient,
+    workspaceId: string,
+    authorId: string,
+    schemaName: string,
+    meta: CollectionMeta,
+    op: NormalizedOp,
+    pendingRecordIds: Set<string>,
+  ): Promise<void> {
+    if (op.op === 'delete' || !op.fieldName) {
+      return;
+    }
+    const field = meta.fieldMeta.find((f) => f.name === op.fieldName);
+    if (!field || field.type !== 'relation' || !field.relationTarget) {
+      return;
+    }
+    if (op.newValue === null || op.newValue === undefined) {
+      return;
+    }
+
+    const targetId = String(op.newValue);
+    if (pendingRecordIds.has(`${field.relationTarget}:${targetId}`)) {
+      return;
+    }
+    if (!UUID_PATTERN.test(targetId)) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+
+    const targetMeta = await getCollectionMeta(client, workspaceId, field.relationTarget);
+    const targetGrant = await loadResolvedGrant(client, authorId, targetMeta.id);
+    if (!targetGrant) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    await assertRowAccessible(
+      client,
+      workspaceId,
+      authorId,
+      schemaName,
+      targetMeta,
+      targetGrant,
+      targetId,
+    );
+  }
+
   async proposeChangeSet(
     workspaceId: string,
     authorId: string,
@@ -462,6 +516,14 @@ export class KitsuneEngine {
       await setSessionContext(client, { schemaName, principalId: authorId, includeDeleted: true });
 
       const normalizedOps = normalizeOperations(input.operations);
+
+      // Records created by this same change set are legitimate relation targets even
+      // though they do not exist yet, so collect them before validating relations.
+      const pendingRecordIds = new Set(
+        normalizedOps
+          .filter((op) => op.op === 'insert' && op.recordId)
+          .map((op) => `${op.collection}:${op.recordId}`),
+      );
 
       for (const op of normalizedOps) {
         const meta = await getCollectionMeta(client, workspaceId, op.collection);
@@ -493,6 +555,16 @@ export class KitsuneEngine {
             { includeDeleted: true },
           );
         }
+
+        await this.assertRelationTargetAccessible(
+          client,
+          workspaceId,
+          authorId,
+          schemaName,
+          meta,
+          op,
+          pendingRecordIds,
+        );
       }
 
       await client.query(

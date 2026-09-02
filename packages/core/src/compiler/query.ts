@@ -8,11 +8,18 @@ import {
 } from '../grants/resolve.js';
 import { compileFilter, compilePredicate } from './predicate-sql.js';
 
+export interface CollectionFieldMeta {
+  name: string;
+  type: string;
+  relationTarget: string | null;
+}
+
 export interface CollectionMeta {
   id: string;
   name: string;
   tableName: string;
   fields: string[];
+  fieldMeta: CollectionFieldMeta[];
 }
 
 export interface CompiledQuery {
@@ -39,8 +46,16 @@ export async function getCollectionMeta(
   if (!row) {
     throw new KitsuneError('Not found', 'not_found');
   }
-  const fields = await client.query<{ name: string }>(
-    `SELECT name FROM kitsune.fields WHERE collection_id = $1 ORDER BY name`,
+  const fields = await client.query<{
+    name: string;
+    type: string;
+    relation_target: string | null;
+  }>(
+    `SELECT f.name, f.type, target.name AS relation_target
+       FROM kitsune.fields f
+       LEFT JOIN kitsune.collections target ON target.id = f.relation_target
+      WHERE f.collection_id = $1
+      ORDER BY f.name`,
     [row.id],
   );
   return {
@@ -48,6 +63,11 @@ export async function getCollectionMeta(
     name: row.name,
     tableName: row.table_name,
     fields: fields.rows.map((f) => f.name),
+    fieldMeta: fields.rows.map((f) => ({
+      name: f.name,
+      type: f.type,
+      relationTarget: f.relation_target,
+    })),
   };
 }
 

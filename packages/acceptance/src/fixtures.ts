@@ -21,6 +21,7 @@ export interface Fixture {
   reviewerId: string;
   limitedAgentId: string;
   predicateAgentId: string;
+  relationAgentId: string;
   serviceId: string;
   collections: {
     accounts: string;
@@ -37,6 +38,7 @@ export async function createStandardFixture(engine: KitsuneEngine): Promise<Fixt
   const reviewerId = await engine.createPrincipal(workspaceId, 'human', 'Reviewer');
   const limitedAgentId = await engine.createPrincipal(workspaceId, 'agent', 'Limited Agent');
   const predicateAgentId = await engine.createPrincipal(workspaceId, 'agent', 'Predicate Agent');
+  const relationAgentId = await engine.createPrincipal(workspaceId, 'agent', 'Relation Agent');
   const serviceId = await engine.createPrincipal(workspaceId, 'service', 'Service');
 
   const accounts = await engine.defineCollection(workspaceId, {
@@ -119,6 +121,26 @@ export async function createStandardFixture(engine: KitsuneEngine): Promise<Fixt
     { actorId: adminId },
   );
 
+  // Can propose opportunities, but only sees accounts outside the 'secret' industry.
+  await engine.createGrant(
+    workspaceId,
+    relationAgentId,
+    opportunities,
+    'propose',
+    ['name', 'stage', 'account_id'],
+    null,
+    { actorId: adminId },
+  );
+  await engine.createGrant(
+    workspaceId,
+    relationAgentId,
+    accounts,
+    'read',
+    ['name', 'industry'],
+    { field: 'industry', op: 'neq', value: 'secret' },
+    { actorId: adminId },
+  );
+
   return {
     workspaceId,
     schemaName,
@@ -128,6 +150,7 @@ export async function createStandardFixture(engine: KitsuneEngine): Promise<Fixt
     reviewerId,
     limitedAgentId,
     predicateAgentId,
+    relationAgentId,
     serviceId,
     collections: { accounts, contacts, opportunities },
   };

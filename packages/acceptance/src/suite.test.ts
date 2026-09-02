@@ -825,6 +825,53 @@ describe('KitsuneOS Acceptance Suite', () => {
     expect(after.rows.some((r) => r.outcome === 'denied')).toBe(true);
   });
 
+  it('23. A relation target the author cannot see is indistinguishable from one that does not exist', async () => {
+    const visibleAccount = await seedAccount(engine, fixture, {
+      name: 'VisibleCo',
+      industry: 'public',
+    });
+    const hiddenAccount = await seedAccount(engine, fixture, {
+      name: 'SecretCo',
+      industry: 'secret',
+    });
+    const nonexistentAccount = uuidv4();
+
+    const propose = (accountId: string) =>
+      engine.proposeChangeSet(fixture.workspaceId, fixture.relationAgentId, {
+        operations: [
+          {
+            collection: 'opportunities',
+            recordId: uuidv4(),
+            op: 'insert',
+            fieldName: 'account_id',
+            newValue: accountId,
+          },
+        ],
+      });
+
+    const captureError = async (accountId: string) => {
+      try {
+        await propose(accountId);
+        return null;
+      } catch (error) {
+        const err = error as KitsuneError;
+        return { code: err.code, message: err.message, details: err.details };
+      }
+    };
+
+    const hidden = await captureError(hiddenAccount);
+    const nonexistent = await captureError(nonexistentAccount);
+
+    expect(hidden).not.toBeNull();
+    expect(hidden).toEqual({ code: 'not_found', message: 'Not found', details: undefined });
+    expect(hidden).toEqual(nonexistent);
+
+    // A target the author can actually see is still accepted.
+    await expect(propose(visibleAccount)).resolves.toMatchObject({
+      changeSetId: expect.any(String),
+    });
+  });
+
   it('RLS supplementary evidence: mismatched workspace GUC returns zero rows', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'RLS' });
     const client = await engine.appPool.connect();
