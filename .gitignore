@@ -1,6 +1,8 @@
 # prod
 dist/
 dist-server/
+.next/
+out/
 
 # dev
 .yarn/

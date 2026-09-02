@@ -1,0 +1,102 @@
+:root {
+  --k-surface: #2e2b26;
+  --k-ink: #f4f0e8;
+  --k-ink-body: #e4ded2;
+  --k-ink-muted: #b8b0a4;
+  --k-border: #4a4540;
+  --k-pending: #c9a227;
+  --k-applied: #5a9a6e;
+  --k-attention: #b88a4a;
+  --k-blocked: #9a5a5a;
+  --k-stale: #7a7a8a;
+  --k-radius-sm: 4px;
+  --k-radius-md: 8px;
+  --k-radius-lg: 12px;
+  --k-radius-xl: 16px;
+}
+
+.k-action-consent {
+  background: var(--k-surface);
+  color: var(--k-ink-body);
+  border: 1px solid var(--k-border);
+  border-radius: var(--k-radius-lg);
+  padding: 1.5rem;
+  font-family: system-ui, sans-serif;
+}
+
+.k-action-consent:focus-visible {
+  outline: 2px solid var(--k-attention);
+  outline-offset: 2px;
+}
+
+.k-action-consent__intent {
+  color: var(--k-ink);
+  margin-bottom: 1rem;
+}
+
+.k-action-consent__systems {
+  color: var(--k-ink-muted);
+  font-size: 0.875rem;
+  margin-bottom: 0.75rem;
+}
+
+.k-action-consent__operations {
+  list-style: decimal;
+  padding-left: 1.25rem;
+  margin: 0 0 1rem;
+}
+
+.k-action-consent__operation {
+  margin-bottom: 0.5rem;
+}
+
+.k-action-consent__irreversible {
+  color: var(--k-attention);
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+}
+
+.k-action-consent__actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.k-action-consent__approve,
+.k-action-consent__decline {
+  border-radius: var(--k-radius-md);
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--k-border);
+  cursor: pointer;
+  font: inherit;
+}
+
+.k-action-consent__approve {
+  background: var(--k-applied);
+  color: var(--k-ink);
+}
+
+.k-action-consent__decline {
+  background: transparent;
+  color: var(--k-ink-body);
+}
+
+.k-action-consent__approve:focus-visible,
+.k-action-consent__decline:focus-visible {
+  outline: 2px solid var(--k-attention);
+  outline-offset: 2px;
+}
+
+.k-status-badge {
+  display: inline-block;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--k-radius-sm);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.k-status-badge--open { background: var(--k-pending); color: var(--k-surface); }
+.k-status-badge--applied { background: var(--k-applied); color: var(--k-surface); }
+.k-status-badge--blocked { background: var(--k-blocked); color: var(--k-ink); }
+.k-status-badge--stale { background: var(--k-stale); color: var(--k-ink); }
+.k-status-badge--rejected { background: var(--k-blocked); color: var(--k-ink); }
+.k-status-badge--expired { background: var(--k-stale); color: var(--k-ink); }

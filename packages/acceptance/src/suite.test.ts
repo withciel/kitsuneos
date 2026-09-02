@@ -1182,6 +1182,67 @@ describe('KitsuneOS Acceptance Suite', () => {
     expect(rows[0]).not.toHaveProperty('amount');
   });
 
+  it('Leak defense 4: the application role cannot execute DDL', async () => {
+    const client = await engine.appPool.connect();
+    const denied = async (sql: string) => {
+      await expect(client.query(sql)).rejects.toMatchObject({ code: '42501' });
+    };
+    try {
+      await denied('CREATE TABLE kitsune.evil (id uuid)');
+      await denied('ALTER TABLE kitsune.workspaces ADD COLUMN evil text');
+      await denied('DROP TABLE kitsune.workspaces');
+      await denied('CREATE SCHEMA evil');
+      await denied('CREATE EXTENSION IF NOT EXISTS pgcrypto');
+    } finally {
+      client.release();
+    }
+  });
+
+  it('Leak defense 3: session GUCs do not survive connection release', async () => {
+    const client1 = await engine.appPool.connect();
+    try {
+      await client1.query('BEGIN');
+      await client1.query(`SELECT set_config('kitsune.schema_name', $1, true)`, [
+        fixture.schemaName,
+      ]);
+      await client1.query(`SELECT set_config('kitsune.principal_id', $1, true)`, [
+        fixture.adminId,
+      ]);
+      await client1.query(`SELECT set_config('kitsune.include_deleted', $1, true)`, ['true']);
+      const during = await client1.query<{
+        schema_name: string | null;
+        principal_id: string | null;
+        include_deleted: string | null;
+      }>(
+        `SELECT current_setting('kitsune.schema_name', true) AS schema_name,
+                current_setting('kitsune.principal_id', true) AS principal_id,
+                current_setting('kitsune.include_deleted', true) AS include_deleted`,
+      );
+      expect(during.rows[0]!.schema_name).toBe(fixture.schemaName);
+      await client1.query('COMMIT');
+    } finally {
+      client1.release();
+    }
+
+    const client2 = await engine.appPool.connect();
+    try {
+      const after = await client2.query<{
+        schema_name: string | null;
+        principal_id: string | null;
+        include_deleted: string | null;
+      }>(
+        `SELECT current_setting('kitsune.schema_name', true) AS schema_name,
+                current_setting('kitsune.principal_id', true) AS principal_id,
+                current_setting('kitsune.include_deleted', true) AS include_deleted`,
+      );
+      expect(after.rows[0]!.schema_name ?? '').toBe('');
+      expect(after.rows[0]!.principal_id ?? '').toBe('');
+      expect(after.rows[0]!.include_deleted ?? '').toBe('');
+    } finally {
+      client2.release();
+    }
+  });
+
   it('RLS supplementary evidence: mismatched workspace GUC returns zero rows', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'RLS' });
     const client = await engine.appPool.connect();
@@ -1203,6 +1264,18 @@ describe('KitsuneOS Acceptance Suite', () => {
     } finally {
       client.release();
     }
+  });
+
+  it('Workspace-from-client lint supplementary evidence', async () => {
+    const { execSync } = await import('node:child_process');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+    const output = execSync('node scripts/lint-no-workspace-from-client.mjs', {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    expect(output).toMatch(/Workspace-from-client lint passed \(\d+ files\)/);
   });
 
   it('No SELECT * guard in core source', async () => {

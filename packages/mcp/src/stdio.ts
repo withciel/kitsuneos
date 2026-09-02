@@ -1,13 +1,14 @@
 #!/usr/bin/env node
+import { DEFAULT_CONFIG, KitsuneEngine } from '@kitsuneos/core';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { DEFAULT_CONFIG, KitsuneEngine, KitsuneError } from '@kitsuneos/core';
-import { createMcpHandlers, parseJsonArgs, type McpContext } from './handlers.js';
 import { TOOL_DEFINITIONS } from './schemas.js';
+import { invokeMcpTool, isKitsuneError } from './invoke.js';
+import { parseJsonArgs } from './handlers.js';
 
 const workspaceId = process.env.KITSUNE_WORKSPACE_ID ?? '';
 const principalId = process.env.KITSUNE_PRINCIPAL_ID ?? '';
@@ -19,13 +20,8 @@ if (!workspaceId || !principalId) {
   process.exit(1);
 }
 
-function isKitsuneError(error: unknown): error is KitsuneError {
-  return error instanceof KitsuneError;
-}
-
 const engine = new KitsuneEngine({ config: DEFAULT_CONFIG });
-const getContext = (): McpContext => ({ workspaceId, principalId });
-const handlers = createMcpHandlers(engine, getContext);
+const context = { workspaceId, principalId };
 
 const server = new Server(
   { name: 'kitsuneos', version: '0.1.0-preview' },
@@ -39,32 +35,16 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const args = parseJsonArgs(request.params.arguments);
   try {
-    let result: unknown;
-    switch (request.params.name) {
-      case 'describe_schema':
-        result = await handlers.describe_schema();
-        break;
-      case 'query':
-        result = await handlers.query(args as never);
-        break;
-      case 'read_record':
-        result = await handlers.read_record(args as never);
-        break;
-      case 'propose_change_set':
-        result = await handlers.propose_change_set(args as never);
-        break;
-      case 'read_change_set_feedback':
-        result = await handlers.read_change_set_feedback(args as never);
-        break;
-      default:
-        throw new Error(`Unknown tool: ${request.params.name}`);
-    }
+    const result = await invokeMcpTool(
+      engine,
+      context,
+      request.params.name,
+      args as Record<string, unknown>,
+    );
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };
   } catch (error) {
-    // A denial is a normal answer, not a transport failure. Hand the agent the
-    // reason so it can correct itself instead of retrying blindly.
     return {
       isError: true,
       content: [

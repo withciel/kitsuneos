@@ -1,4 +1,4 @@
-import { migrate, DEFAULT_CONFIG, KitsuneEngine } from '@kitsuneos/core';
+import { migrate, DEFAULT_CONFIG, KitsuneEngine, createApiKey as coreCreateApiKey } from '@kitsuneos/core';
 import type { KitsuneEngine as EngineType } from '@kitsuneos/core';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -202,4 +202,11 @@ export async function getRecordRevision(
     [recordId],
   );
   return Number(result.rows[0]._revision);
+}
+
+export async function issueApiKey(
+  engine: KitsuneEngine,
+  principalId: string,
+): Promise<{ keyId: string; plaintext: string; prefix: string }> {
+  return coreCreateApiKey(engine.ownerPool, principalId);
 }

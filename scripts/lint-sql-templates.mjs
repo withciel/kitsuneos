@@ -54,7 +54,13 @@ function looksLikeSql(templateText) {
   );
 }
 
-const ROOTS = ['packages/core/src', 'packages/cli/src', 'packages/mcp/src'];
+const ROOTS = [
+  'packages/core/src',
+  'packages/cli/src',
+  'packages/mcp/src',
+  'packages/server/src',
+  'packages/provisioning/src',
+];
 
 function walk(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

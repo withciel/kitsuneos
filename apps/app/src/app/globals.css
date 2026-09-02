@@ -1,0 +1,11 @@
+.page {
+  min-height: 100vh;
+  background: var(--k-surface);
+  color: var(--k-ink-body);
+  padding: 2rem;
+  font-family: system-ui, sans-serif;
+}
+
+.page a {
+  color: var(--k-attention);
+}

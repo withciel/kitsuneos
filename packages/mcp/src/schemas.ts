@@ -111,6 +111,60 @@ const readChangeSetFeedbackSchema = {
   },
 } as const;
 
+const reviewChangeSetSchema = {
+  type: 'object',
+  required: ['changeSetId', 'decisions'],
+  properties: {
+    changeSetId: { type: 'string' },
+    decisions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['opId', 'status'],
+        properties: {
+          opId: { type: 'string' },
+          status: { type: 'string', enum: ['approved', 'rejected'] },
+          comment: { type: 'string' },
+        },
+      },
+    },
+  },
+} as const;
+
+const applyChangeSetSchema = {
+  type: 'object',
+  required: ['changeSetId'],
+  properties: {
+    changeSetId: { type: 'string' },
+  },
+} as const;
+
+const defineCollectionSchema = {
+  type: 'object',
+  required: ['name', 'fields'],
+  properties: {
+    name: { type: 'string' },
+    fields: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['name', 'type'],
+        properties: {
+          name: { type: 'string' },
+          type: {
+            type: 'string',
+            enum: ['text', 'number', 'boolean', 'timestamp', 'enum', 'relation', 'prose'],
+          },
+          nullable: { type: 'boolean' },
+          relationTarget: { type: 'string' },
+          enumValues: { type: 'array', items: { type: 'string' } },
+          indexed: { type: 'boolean' },
+        },
+      },
+    },
+  },
+} as const;
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'describe_schema',
@@ -141,5 +195,21 @@ export const TOOL_DEFINITIONS = [
     description:
       'Check the status of a change set you authored, including per-operation approvals, rejections and reviewer comments.',
     inputSchema: readChangeSetFeedbackSchema,
+  },
+  {
+    name: 'review_change_set',
+    description: 'Approve or reject individual operations in a change set awaiting review.',
+    inputSchema: reviewChangeSetSchema,
+  },
+  {
+    name: 'apply_change_set',
+    description: 'Apply a fully reviewed change set to the database.',
+    inputSchema: applyChangeSetSchema,
+  },
+  {
+    name: 'define_collection',
+    description:
+      'Define a new collection in your workspace. Requires admin capability. Identifiers must match ^[a-z_][a-z0-9_]*$.',
+    inputSchema: defineCollectionSchema,
   },
 ] as const;

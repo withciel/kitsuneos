@@ -1,5 +1,5 @@
 {
-  "name": "@kitsuneos/mcp",
+  "name": "@kitsuneos/server",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -8,24 +8,15 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./schemas": {
-      "types": "./dist/schemas.d.ts",
-      "import": "./dist/schemas.js"
-    },
-    "./invoke": {
-      "types": "./dist/invoke.d.ts",
-      "import": "./dist/invoke.js"
     }
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit",
-    "start": "node dist/stdio.js"
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@kitsuneos/core": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.17.0"
+    "@kitsuneos/mcp": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

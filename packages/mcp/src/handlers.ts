@@ -4,6 +4,7 @@ import type {
   ProposeChangeSetInput,
   QueryRequest,
   ReviewDecision,
+  CollectionDefinition,
 } from '@kitsuneos/core';
 
 export interface McpContext {
@@ -73,6 +74,12 @@ export function createMcpHandlers(engine: KitsuneEngine, getContext: () => McpCo
         ctx.principalId,
         args.changeSetId,
       );
+    },
+
+    async define_collection(args: CollectionDefinition) {
+      const ctx = getContext();
+      const collectionId = await engine.defineCollection(ctx.workspaceId, args);
+      return { collectionId };
     },
   };
 }

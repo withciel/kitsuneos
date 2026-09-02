@@ -12,6 +12,7 @@ import {
   generateCollectionDdl,
   generateWorkspaceSchemaDdl,
 } from './ddl/generator.js';
+import { validateCollectionDefinition } from './schema/validate-definition.js';
 import {
   assertFieldAllowed,
   loadResolvedGrant,
@@ -147,6 +148,7 @@ export class KitsuneEngine {
     workspaceId: string,
     definition: CollectionDefinition,
   ): Promise<string> {
+    validateCollectionDefinition(definition);
     const schemaName = schemaNameForWorkspace(workspaceId);
     const collectionId = uuidv4();
     const tableName = definition.name;

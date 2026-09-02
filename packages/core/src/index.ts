@@ -7,3 +7,17 @@ export { compilePredicate } from './compiler/predicate-sql.js';
 export { resolveGrantRows, loadResolvedGrant, assertFieldAllowed, projectFields } from './grants/resolve.js';
 export { generateCollectionDdl, generateWorkspaceSchemaDdl } from './ddl/generator.js';
 export { createPools, setSessionContext } from './db/pool.js';
+export {
+  createApiKey,
+  revokeApiKey,
+  resolveApiKey,
+  generateApiKeyPlaintext,
+  apiKeyDisplayPrefix,
+  hashApiKeyForAudit,
+} from './auth/api-keys.js';
+export type { ResolvedApiKey } from './auth/api-keys.js';
+export {
+  assertIdentifier,
+  validateCollectionDefinition,
+  validateFieldDefinition,
+} from './schema/validate-definition.js';

@@ -121,4 +121,44 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA kitsune GRANT SELECT, INSERT, UPDATE ON TABLE
 -- Must come after the blanket grant above, which would otherwise hand UPDATE
 -- straight back and leave the audit log rewritable by the application role.
 REVOKE UPDATE, DELETE ON kitsune.audit_log FROM kitsune_app;
+
+CREATE TABLE IF NOT EXISTS kitsune.api_keys (
+  id            uuid PRIMARY KEY,
+  principal_id  uuid NOT NULL REFERENCES kitsune.principals(id),
+  prefix        text NOT NULL,
+  key_hash      text NOT NULL,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  last_used_at  timestamptz,
+  revoked_at    timestamptz
+);
+CREATE INDEX IF NOT EXISTS api_keys_prefix_idx
+  ON kitsune.api_keys (prefix)
+  WHERE revoked_at IS NULL;
+
+INSERT INTO kitsune.workspaces (id, slug, schema_name)
+SELECT '00000000-0000-0000-0000-000000000001', '_system', 'ws_00000000000000000000000000000001'
+WHERE NOT EXISTS (
+  SELECT 1 FROM kitsune.workspaces WHERE id = '00000000-0000-0000-0000-000000000001'
+);
+
+INSERT INTO kitsune.principals (id, workspace_id, kind, display_name)
+SELECT '00000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000001', 'service', 'system'
+WHERE NOT EXISTS (
+  SELECT 1 FROM kitsune.principals WHERE id = '00000000-0000-0000-0000-000000000002'
+);
+
+CREATE TABLE IF NOT EXISTS kitsune.users (
+  id            uuid PRIMARY KEY,
+  workos_id     text UNIQUE NOT NULL,
+  email         text NOT NULL,
+  workspace_id  uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  principal_id  uuid NOT NULL REFERENCES kitsune.principals(id),
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS kitsune.provisioning_steps (
+  workos_id     text PRIMARY KEY,
+  step          text NOT NULL,
+  completed_at  timestamptz NOT NULL DEFAULT now()
+);
 `;

@@ -1,0 +1,55 @@
+@import '../../../../design/kitsuneos-tokens-dark.css';
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--k-surface);
+  color: var(--k-ink-body);
+  font-family: system-ui, sans-serif;
+  line-height: 1.6;
+}
+
+a {
+  color: var(--k-attention);
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--k-attention);
+  outline-offset: 2px;
+}
+
+.hero,
+section {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.hero h1 {
+  color: var(--k-ink);
+  font-size: 2.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.cta {
+  display: inline-block;
+  margin-top: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--k-radius-md);
+  background: var(--k-attention);
+  color: var(--k-surface);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.proof-placeholder {
+  border: 1px dashed var(--k-border);
+  border-radius: var(--k-radius-lg);
+  padding: 3rem 1rem;
+  text-align: center;
+  color: var(--k-ink-muted);
+}
