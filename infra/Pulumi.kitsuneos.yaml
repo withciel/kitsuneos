@@ -1,0 +1,2 @@
+config:
+  kitsuneos:deploySiteCdn: "false"

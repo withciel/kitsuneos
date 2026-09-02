@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc",
     "preview": "pulumi preview",
-    "up": "pulumi up"
+    "up": "pulumi up",
+    "install:deps": "npm install"
   },
   "dependencies": {
     "@pulumi/aws": "^6.83.0",

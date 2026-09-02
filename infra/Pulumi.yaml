@@ -8,3 +8,5 @@ config:
   aws:region: us-east-1
   kitsuneos:domain: kitsuneos.com
   kitsuneos:appDomain: app.kitsuneos.com
+  kitsuneos:deployApp: false
+  kitsuneos:deploySiteCdn: false
