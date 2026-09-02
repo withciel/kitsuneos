@@ -162,7 +162,29 @@ export function isNotFoundError(error: unknown): boolean {
   return error instanceof KitsuneError && error.code === 'not_found';
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const SCHEMA_NAME_RE = /^ws_[0-9a-f]{32}$/;
+
+export function assertUuid(value: string, label: string): void {
+  if (!UUID_RE.test(value)) {
+    throw new KitsuneError(`Invalid ${label}`, 'validation');
+  }
+}
+
+export function assertSchemaName(schemaName: string): void {
+  if (!SCHEMA_NAME_RE.test(schemaName)) {
+    throw new KitsuneError(`Invalid schema name: ${schemaName}`, 'validation');
+  }
+}
+
+export function escapeSqlStringLiteral(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
 export function schemaNameForWorkspace(workspaceId: string): string {
+  assertUuid(workspaceId, 'workspaceId');
   return `ws_${workspaceId.replace(/-/g, '')}`;
 }
 

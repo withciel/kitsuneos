@@ -9,7 +9,7 @@
     "history": "pnpm --filter @kitsuneos/cli run history",
     "acceptance": "pnpm --filter @kitsuneos/acceptance test",
     "acceptance:loop": "node scripts/acceptance-loop.mjs",
-    "lint": "biome check .",
+    "lint": "biome check . && node scripts/lint-sql-templates.mjs",
     "typecheck": "pnpm -r run typecheck"
   },
   "devDependencies": {

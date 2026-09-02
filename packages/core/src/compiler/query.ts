@@ -71,6 +71,44 @@ export async function getCollectionMeta(
   };
 }
 
+const AGG_FN_SQL = {
+  count: 'COUNT',
+  sum: 'SUM',
+  avg: 'AVG',
+  min: 'MIN',
+  max: 'MAX',
+} as const;
+
+type AllowedAggFn = keyof typeof AGG_FN_SQL;
+
+function assertAggregateFn(fn: string): AllowedAggFn {
+  if (!(fn in AGG_FN_SQL)) {
+    throw new KitsuneError(`Invalid aggregate function: ${fn}`, 'validation');
+  }
+  return fn as AllowedAggFn;
+}
+
+function aggFnSql(fn: string): string {
+  return AGG_FN_SQL[assertAggregateFn(fn)];
+}
+
+function assertSortDirection(direction: string): 'ASC' | 'DESC' {
+  if (direction === 'asc') {
+    return 'ASC';
+  }
+  if (direction === 'desc') {
+    return 'DESC';
+  }
+  throw new KitsuneError(`Invalid sort direction: ${direction}`, 'validation');
+}
+
+function coerceNonNegativeInteger(value: unknown, label: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new KitsuneError(`Invalid ${label}`, 'validation');
+  }
+  return value;
+}
+
 function validateAggregates(
   grant: ResolvedGrant | null,
   aggregates: QueryAggregate[] | undefined,
@@ -79,10 +117,8 @@ function validateAggregates(
     return;
   }
   for (const agg of aggregates) {
-    if (agg.fn !== 'count' && agg.field) {
-      assertFieldAllowed(grant, agg.field, 'read');
-    }
-    if (agg.fn === 'count' && agg.field) {
+    assertAggregateFn(agg.fn);
+    if (agg.field) {
       assertFieldAllowed(grant, agg.field, 'read');
     }
   }
@@ -108,6 +144,7 @@ export async function compileQuery(
   }
   for (const sort of request.sort ?? []) {
     assertFieldAllowed(grant, sort.field, 'read');
+    assertSortDirection(sort.direction);
   }
   for (const group of request.groupBy ?? []) {
     assertFieldAllowed(grant, group, 'read');
@@ -142,11 +179,12 @@ export async function compileQuery(
       selectParts.push(`${alias}.${quoteIdent(group)} AS ${quoteIdent(group)}`);
     }
     for (const agg of request.aggregates) {
-      const fn = agg.fn.toUpperCase();
       if (agg.field) {
-        selectParts.push(`${fn}(${alias}.${quoteIdent(agg.field)}) AS ${quoteIdent(agg.alias)}`);
+        selectParts.push(
+          `${aggFnSql(agg.fn)}(${alias}.${quoteIdent(agg.field)}) AS ${quoteIdent(agg.alias)}`,
+        );
       } else {
-        selectParts.push(`${fn}(*) AS ${quoteIdent(agg.alias)}`);
+        selectParts.push(`${aggFnSql(agg.fn)}(*) AS ${quoteIdent(agg.alias)}`);
       }
     }
     const groupClause =
@@ -164,10 +202,21 @@ export async function compileQuery(
   const selectCols = projectedWithId.map((f) => `${alias}.${quoteIdent(f)}`);
   const orderClause =
     request.sort && request.sort.length
-      ? `ORDER BY ${request.sort.map((s) => `${alias}.${quoteIdent(s.field)} ${s.direction.toUpperCase()}`).join(', ')}`
+      ? `ORDER BY ${request.sort
+          .map(
+            (s) =>
+              `${alias}.${quoteIdent(s.field)} ${assertSortDirection(s.direction)}`,
+          )
+          .join(', ')}`
       : '';
-  const limitClause = request.limit !== undefined ? `LIMIT ${request.limit}` : '';
-  const offsetClause = request.offset !== undefined ? `OFFSET ${request.offset}` : '';
+  const limitClause =
+    request.limit !== undefined
+      ? `LIMIT ${coerceNonNegativeInteger(request.limit, 'limit')}`
+      : '';
+  const offsetClause =
+    request.offset !== undefined
+      ? `OFFSET ${coerceNonNegativeInteger(request.offset, 'offset')}`
+      : '';
   const sql = `SELECT ${selectCols.join(', ')} FROM ${table} ${alias} ${whereClause} ${orderClause} ${limitClause} ${offsetClause}`.trim();
 
   return { sql, params, projectedFields: projectedWithId };

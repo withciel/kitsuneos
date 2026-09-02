@@ -520,6 +520,19 @@ describe('KitsuneOS Acceptance Suite', () => {
       }),
     ).rejects.toMatchObject({ code: 'forbidden' });
 
+    await expect(
+      engine.query(fixture.workspaceId, fixture.readerId, {
+        collection: 'opportunities',
+        aggregates: [
+          {
+            fn: 'max(amount) AS leaked, count' as 'max',
+            field: 'stage',
+            alias: 'a',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+
     const direct = await engine.readRecord(
       fixture.workspaceId,
       fixture.readerId,
@@ -907,6 +920,225 @@ describe('KitsuneOS Acceptance Suite', () => {
     ]);
   });
 
+  it('Compiler security: aggregate fn, sort direction, limit, and offset reject injection', async () => {
+    const accountId = await seedAccount(engine, fixture, { name: 'CompilerSec' });
+    await seedOpportunity(engine, fixture, {
+      account_id: accountId,
+      name: 'Sec Opp',
+      amount: 9000,
+      stage: 'prospecting',
+    });
+
+    await expect(
+      engine.query(fixture.workspaceId, fixture.adminId, {
+        collection: 'opportunities',
+        aggregates: [
+          {
+            fn: 'count(*), (SELECT count(*) FROM kitsune.grants) AS g, count' as 'count',
+            alias: 'x',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+
+    await expect(
+      engine.query(fixture.workspaceId, fixture.adminId, {
+        collection: 'opportunities',
+        fields: ['name'],
+        sort: [{ field: 'name', direction: 'asc, (SELECT 1)' as 'asc' }],
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+
+    await expect(
+      engine.query(fixture.workspaceId, fixture.adminId, {
+        collection: 'opportunities',
+        fields: ['name'],
+        limit: 1.5,
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+
+    await expect(
+      engine.query(fixture.workspaceId, fixture.adminId, {
+        collection: 'opportunities',
+        fields: ['name'],
+        offset: -1,
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+  });
+
+  it('Gate 0b: cross-tenant isolation returns not-found, never data and never distinguishable forbidden', async () => {
+    const fixtureA = fixture;
+    const fixtureB = await createStandardFixture(engine);
+
+    const accountB = await seedAccount(engine, fixtureB, { name: 'Tenant B' });
+    const oppB = await seedOpportunity(engine, fixtureB, {
+      account_id: accountB,
+      name: 'B Secret',
+      amount: 99999,
+      stage: 'prospecting',
+    });
+
+    const forgedWorkspaceId = uuidv4();
+
+    await expect(
+      engine.query(forgedWorkspaceId, fixtureA.adminId, {
+        collection: 'opportunities',
+        fields: ['name'],
+      }),
+    ).rejects.toMatchObject({ code: 'not_found' });
+
+    await expect(
+      engine.readRecord(
+        fixtureA.workspaceId,
+        fixtureA.adminId,
+        'opportunities',
+        oppB,
+        ['name'],
+      ),
+    ).resolves.toBeNull();
+
+    await expect(
+      engine.proposeChangeSet(fixtureA.workspaceId, fixtureA.agentId, {
+        title: 'cross tenant',
+        operations: [
+          {
+            collection: 'opportunities',
+            recordId: oppB,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'stolen',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'not_found' });
+
+    await expect(
+      engine.proposeChangeSet(fixtureA.workspaceId, fixtureA.agentId, {
+        operations: [
+          {
+            collection: 'opportunities',
+            op: 'insert',
+            fieldName: 'account_id',
+            newValue: accountB,
+          },
+          {
+            collection: 'opportunities',
+            op: 'insert',
+            fieldName: 'name',
+            newValue: 'cross relation',
+          },
+          {
+            collection: 'opportunities',
+            op: 'insert',
+            fieldName: 'stage',
+            newValue: 'prospecting',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'not_found' });
+
+    await expect(
+      engine.query(fixtureA.workspaceId, fixtureA.adminId, {
+        collection: 'opportunities',
+        aggregates: [
+          {
+            fn: 'max(amount) from opportunities t, (select 1) x' as 'max',
+            field: 'stage',
+            alias: 'leak',
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+
+    const rowsAfterInjection = await engine.query(fixtureA.workspaceId, fixtureA.adminId, {
+      collection: 'opportunities',
+      filters: [{ field: 'name', op: 'eq', value: 'B Secret' }],
+    });
+    expect(rowsAfterInjection).toEqual([]);
+
+    const isolatedEngine = new KitsuneEngine({
+      config: DEFAULT_CONFIG,
+      appPoolMax: 1,
+    });
+    try {
+      const fromA = await isolatedEngine.query(fixtureA.workspaceId, fixtureA.adminId, {
+        collection: 'opportunities',
+        fields: ['name'],
+      });
+      expect(fromA.some((row) => row.name === 'B Secret')).toBe(false);
+
+      const fromB = await isolatedEngine.query(fixtureB.workspaceId, fixtureB.adminId, {
+        collection: 'opportunities',
+        filters: [{ field: 'name', op: 'eq', value: 'B Secret' }],
+      });
+      expect(fromB.length).toBe(1);
+      expect(fromB[0]!.id).toBe(oppB);
+    } finally {
+      await isolatedEngine.close();
+    }
+  });
+
+  it('search_path removal: queries resolve with a deliberately wrong search_path', async () => {
+    const accountId = await seedAccount(engine, fixture, { name: 'SearchPath' });
+    const oppId = await seedOpportunity(engine, fixture, {
+      account_id: accountId,
+      name: 'Path Opp',
+      amount: 100,
+      stage: 'prospecting',
+    });
+
+    const client = await engine.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`SET LOCAL search_path TO public`);
+      await client.query(`SELECT set_config('kitsune.schema_name', $1, true)`, [
+        fixture.schemaName,
+      ]);
+      await client.query(`SELECT set_config('kitsune.principal_id', $1, true)`, [
+        fixture.adminId,
+      ]);
+      await client.query(`SELECT set_config('kitsune.include_deleted', $1, true)`, ['false']);
+
+      const compiled = await import('@kitsuneos/core').then((m) =>
+        m.compileQuery(client, fixture.workspaceId, fixture.adminId, fixture.schemaName, {
+          collection: 'opportunities',
+          fields: ['name', 'stage'],
+          filters: [{ field: 'id', op: 'eq', value: oppId }],
+        }),
+      );
+      const rows = await client.query(compiled.sql, compiled.params);
+      expect(rows.rows.length).toBe(1);
+      expect(rows.rows[0]!.name).toBe('Path Opp');
+
+      const aggCompiled = await import('@kitsuneos/core').then((m) =>
+        m.compileQuery(client, fixture.workspaceId, fixture.adminId, fixture.schemaName, {
+          collection: 'opportunities',
+          aggregates: [{ fn: 'count', alias: 'n' }],
+        }),
+      );
+      const aggRows = await client.query(aggCompiled.sql, aggCompiled.params);
+      expect(Number(aggRows.rows[0]!.n)).toBeGreaterThan(0);
+
+      await client.query('COMMIT');
+    } finally {
+      client.release();
+    }
+  });
+
+  it('SQL template lint supplementary evidence: core sources pass the injection guard', async () => {
+    const { execSync } = await import('node:child_process');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+    const output = execSync('node scripts/lint-sql-templates.mjs', {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    expect(output).toMatch(/SQL template lint passed \(\d+ files\)/);
+    const match = output.match(/passed \((\d+) files\)/);
+    expect(Number(match?.[1])).toBeGreaterThan(5);
+  });
+
   it('Audit supplementary evidence: the application role cannot update or delete audit rows', async () => {
     const client = await engine.appPool.connect();
     try {
@@ -955,11 +1187,17 @@ describe('KitsuneOS Acceptance Suite', () => {
     const client = await engine.appPool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`SET LOCAL search_path TO ${fixture.schemaName}, kitsune, public`);
-      await client.query(`SET LOCAL kitsune.schema_name = 'ws_wrongschema00000000000000000000'`);
-      await client.query(`SET LOCAL kitsune.principal_id = '${fixture.adminId}'`);
-      await client.query(`SET LOCAL kitsune.include_deleted = 'false'`);
-      const result = await client.query(`SELECT id FROM accounts WHERE id = $1`, [accountId]);
+      await client.query(`SELECT set_config('kitsune.schema_name', $1, true)`, [
+        'ws_wrongschema00000000000000000000',
+      ]);
+      await client.query(`SELECT set_config('kitsune.principal_id', $1, true)`, [
+        fixture.adminId,
+      ]);
+      await client.query(`SELECT set_config('kitsune.include_deleted', $1, true)`, ['false']);
+      const result = await client.query(
+        `SELECT id FROM ${fixture.schemaName}.accounts WHERE id = $1`,
+        [accountId],
+      );
       expect(result.rows.length).toBe(0);
       await client.query('COMMIT');
     } finally {

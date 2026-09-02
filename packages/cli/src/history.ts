@@ -1,4 +1,4 @@
-import { KitsuneEngine } from '@kitsuneos/core';
+import { KitsuneEngine, quoteIdent } from '@kitsuneos/core';
 import { DEMO, DEMO_SCHEMA_NAME } from './demo.js';
 import { APP_URL, OWNER_URL } from './postgres.js';
 
@@ -35,7 +35,7 @@ export async function history(args: string[]): Promise<void> {
     const revisions = await engine.ownerPool.query<RevisionRow>(
       `SELECT r.revision, r.changed_fields, r.snapshot, r.valid_from, r.change_set_id,
               p.display_name AS author, p.kind AS author_kind
-         FROM ${DEMO_SCHEMA_NAME}.${collection}__rev r
+         FROM ${quoteIdent(DEMO_SCHEMA_NAME)}.${quoteIdent(`${collection}__rev`)} r
          LEFT JOIN kitsune.principals p ON p.id = r.principal_id
         WHERE r.record_id = $1
         ORDER BY r.revision`,

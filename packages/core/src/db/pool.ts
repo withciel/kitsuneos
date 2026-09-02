@@ -1,14 +1,24 @@
 import pg from 'pg';
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
 import type { DbConfig } from '../types.js';
+import { assertSchemaName, assertUuid } from '../types.js';
 
-export function createPools(config: DbConfig): {
+export function createPools(
+  config: DbConfig,
+  options?: { ownerMax?: number; appMax?: number },
+): {
   ownerPool: Pool;
   appPool: Pool;
 } {
   return {
-    ownerPool: new pg.Pool({ connectionString: config.ownerUrl, max: 10 }),
-    appPool: new pg.Pool({ connectionString: config.appUrl, max: 20 }),
+    ownerPool: new pg.Pool({
+      connectionString: config.ownerUrl,
+      max: options?.ownerMax ?? 10,
+    }),
+    appPool: new pg.Pool({
+      connectionString: config.appUrl,
+      max: options?.appMax ?? 20,
+    }),
   };
 }
 
@@ -56,16 +66,18 @@ export async function setSessionContext(
     includeDeleted?: boolean;
   },
 ): Promise<void> {
-  await client.query(
-    `SET LOCAL search_path TO ${context.schemaName}, kitsune, public`,
-  );
-  await client.query(`SET LOCAL kitsune.schema_name = '${context.schemaName}'`);
-  await client.query(
-    `SET LOCAL kitsune.principal_id = '${context.principalId}'`,
-  );
-  await client.query(
-    `SET LOCAL kitsune.include_deleted = '${context.includeDeleted ? 'true' : 'false'}'`,
-  );
+  assertSchemaName(context.schemaName);
+  assertUuid(context.principalId, 'principalId');
+
+  await client.query(`SELECT set_config('kitsune.schema_name', $1, true)`, [
+    context.schemaName,
+  ]);
+  await client.query(`SELECT set_config('kitsune.principal_id', $1, true)`, [
+    context.principalId,
+  ]);
+  await client.query(`SELECT set_config('kitsune.include_deleted', $1, true)`, [
+    context.includeDeleted ? 'true' : 'false',
+  ]);
 }
 
 export async function queryRows<T extends QueryResultRow>(

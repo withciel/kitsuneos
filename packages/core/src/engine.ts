@@ -44,6 +44,8 @@ export interface ApplyFaultInjection {
 export interface EngineOptions {
   config?: DbConfig;
   applyFaultInjection?: ApplyFaultInjection | null;
+  appPoolMax?: number;
+  ownerPoolMax?: number;
 }
 
 interface ApplyOp {
@@ -77,6 +79,14 @@ const APPLY_LOCK_RETRIES = 1;
 /** Postgres raises this when lock_timeout expires. */
 const LOCK_NOT_AVAILABLE = '55P03';
 
+function applyLockTimeoutLiteral(): string {
+  const ms = Number(APPLY_LOCK_TIMEOUT_MS);
+  if (!Number.isFinite(ms) || ms < 0) {
+    return '5000ms';
+  }
+  return `${Math.floor(ms)}ms`;
+}
+
 export class KitsuneEngine {
   readonly ownerPool: Pool;
   readonly appPool: Pool;
@@ -84,7 +94,10 @@ export class KitsuneEngine {
 
   constructor(options: EngineOptions = {}) {
     const config = options.config ?? DEFAULT_CONFIG;
-    const pools = createPools(config);
+    const pools = createPools(config, {
+      appMax: options.appPoolMax,
+      ownerMax: options.ownerPoolMax,
+    });
     this.ownerPool = pools.ownerPool;
     this.appPool = pools.appPool;
     this.applyFaultInjection = options.applyFaultInjection ?? null;
@@ -766,7 +779,8 @@ export class KitsuneEngine {
       // each other. They can still queue behind an unrelated long transaction, and
       // without a timeout that wait is unbounded. Bound it, and retry the batch once
       // in case the blocker was transient.
-      await client.query(`SET LOCAL lock_timeout = '${APPLY_LOCK_TIMEOUT_MS}ms'`);
+      // sql-safe: applyLockTimeoutLiteral returns a coerced non-negative integer
+      await client.query(`SET LOCAL lock_timeout = '${applyLockTimeoutLiteral()}'`);
       await this.acquireApplyLocks(client, schemaName, reviewerId, lockTargets);
 
       for (const op of approvedOps) {
@@ -1139,7 +1153,8 @@ export class KitsuneEngine {
           principalId,
           includeDeleted: true,
         });
-        await client.query(`SET LOCAL lock_timeout = '${APPLY_LOCK_TIMEOUT_MS}ms'`);
+        // sql-safe: applyLockTimeoutLiteral returns a coerced non-negative integer
+      await client.query(`SET LOCAL lock_timeout = '${applyLockTimeoutLiteral()}'`);
       }
     }
   }

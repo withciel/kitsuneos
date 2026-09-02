@@ -1,5 +1,15 @@
 import type { FieldDefinition, FieldType } from '../types.js';
-import { quoteIdent, revTableName } from '../types.js';
+import {
+  assertSchemaName,
+  escapeSqlStringLiteral,
+  quoteIdent,
+  revTableName,
+} from '../types.js';
+
+function policySchemaLiteral(schemaName: string): string {
+  assertSchemaName(schemaName);
+  return `'${escapeSqlStringLiteral(schemaName)}'`;
+}
 
 function pgType(field: FieldDefinition): string {
   switch (field.type as FieldType) {
@@ -43,7 +53,9 @@ export function generateCollectionDdl(
       def += ' NOT NULL';
     }
     if (field.type === 'enum' && field.enumValues?.length) {
-      const values = field.enumValues.map((v) => `'${v.replace(/'/g, "''")}'`).join(', ');
+      const values = field.enumValues
+        .map((v) => `'${escapeSqlStringLiteral(v)}'`)
+        .join(', ');
       def += ` CHECK (${col} IN (${values}))`;
     }
     if (field.type === 'relation') {
@@ -96,7 +108,7 @@ export function generateCollectionDdl(
   stmts.push(`CREATE POLICY kitsune_app_access ON ${qSchema}.${qTable}
   TO kitsune_app
   USING (
-    current_setting('kitsune.schema_name', true) = '${schemaName}'
+    current_setting('kitsune.schema_name', true) = ${policySchemaLiteral(schemaName)}
     AND (_deleted_at IS NULL OR current_setting('kitsune.include_deleted', true) = 'true')
   );`);
   stmts.push(`DROP POLICY IF EXISTS kitsune_owner_bypass ON ${qSchema}.${qTable};`);
@@ -110,7 +122,7 @@ export function generateCollectionDdl(
   stmts.push(`DROP POLICY IF EXISTS kitsune_app_access ON ${qSchema}.${qRev};`);
   stmts.push(`CREATE POLICY kitsune_app_access ON ${qSchema}.${qRev}
   TO kitsune_app
-  USING (current_setting('kitsune.schema_name', true) = '${schemaName}');`);
+  USING (current_setting('kitsune.schema_name', true) = ${policySchemaLiteral(schemaName)});`);
   stmts.push(`DROP POLICY IF EXISTS kitsune_owner_bypass ON ${qSchema}.${qRev};`);
   stmts.push(`CREATE POLICY kitsune_owner_bypass ON ${qSchema}.${qRev}
   TO kitsune_owner
