@@ -29,6 +29,44 @@ describe('KitsuneOS Acceptance Suite', () => {
     fixture = await createStandardFixture(engine);
   });
 
+  it('0. The runtime connects as a non-superuser without BYPASSRLS and every generated table forces RLS', async () => {
+    const client = await engine.appPool.connect();
+    try {
+      const role = await client.query<{
+        current_user: string;
+        rolsuper: boolean;
+        rolbypassrls: boolean;
+      }>(
+        `SELECT current_user, rolsuper, rolbypassrls
+           FROM pg_roles WHERE rolname = current_user`,
+      );
+      expect(role.rows.length).toBe(1);
+      expect(role.rows[0]!.current_user).toBe('kitsune_app');
+      expect(role.rows[0]!.rolsuper).toBe(false);
+      expect(role.rows[0]!.rolbypassrls).toBe(false);
+
+      const tables = await client.query<{
+        relname: string;
+        relrowsecurity: boolean;
+        relforcerowsecurity: boolean;
+      }>(
+        `SELECT relname, relrowsecurity, relforcerowsecurity
+           FROM pg_class
+          WHERE relnamespace = $1::regnamespace AND relkind = 'r'
+          ORDER BY relname`,
+        [fixture.schemaName],
+      );
+      expect(tables.rows.length).toBeGreaterThan(0);
+      for (const table of tables.rows) {
+        expect(
+          { table: table.relname, enabled: table.relrowsecurity, forced: table.relforcerowsecurity },
+        ).toEqual({ table: table.relname, enabled: true, forced: true });
+      }
+    } finally {
+      client.release();
+    }
+  });
+
   it('1. Creating a collection generates real DDL with real indexes and a real foreign key', async () => {
     const tables = await engine['ownerPool'].query(
       `SELECT tablename FROM pg_tables WHERE schemaname = $1 AND tablename IN ('accounts','opportunities','opportunities__rev')`,
