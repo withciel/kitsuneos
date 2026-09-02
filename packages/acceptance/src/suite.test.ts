@@ -1120,14 +1120,29 @@ describe('KitsuneOS Acceptance Suite', () => {
 
     const records: OracleRecord[] = [
       {
+        id: accountId,
+        collection: 'accounts',
+        fields: { name: 'MatrixCo' },
+      },
+      {
         id: oppA,
         collection: 'opportunities',
-        fields: { name: 'Opp A', stage: 'prospecting', amount: 100 },
+        fields: {
+          name: 'Opp A',
+          stage: 'prospecting',
+          amount: 100,
+          account_id: accountId,
+        },
       },
       {
         id: 'excluded',
         collection: 'opportunities',
-        fields: { name: 'Opp B', stage: 'closed_won', amount: 200 },
+        fields: {
+          name: 'Opp B',
+          stage: 'closed_won',
+          amount: 200,
+          account_id: accountId,
+        },
       },
     ];
 
@@ -1136,6 +1151,11 @@ describe('KitsuneOS Acceptance Suite', () => {
         id: matrixFixture.adminId,
         grants: {
           opportunities: {
+            capability: 'admin',
+            fieldMask: null,
+            rowPredicate: null,
+          },
+          accounts: {
             capability: 'admin',
             fieldMask: null,
             rowPredicate: null,
@@ -1158,6 +1178,11 @@ describe('KitsuneOS Acceptance Suite', () => {
           opportunities: {
             capability: 'propose',
             fieldMask: ['stage', 'next_step', 'name', 'account_id'],
+            rowPredicate: null,
+          },
+          accounts: {
+            capability: 'propose',
+            fieldMask: ['name', 'industry'],
             rowPredicate: null,
           },
         },
@@ -1228,6 +1253,15 @@ describe('KitsuneOS Acceptance Suite', () => {
             handlers.query(matrixQuery(shape)),
           ).rejects.toMatchObject({
             code: 'not_found',
+          });
+          continue;
+        }
+
+        if (expected === 'validation') {
+          await expect(
+            handlers.query(matrixQuery(shape)),
+          ).rejects.toMatchObject({
+            code: 'validation',
           });
           continue;
         }
@@ -1805,5 +1839,197 @@ describe('KitsuneOS Acceptance Suite', () => {
       /select\s+\*/i.test(readFileSync(file, 'utf8')),
     );
     expect(offenders).toEqual([]);
+  });
+
+  it('25. Grouped aggregate across a many-to-one join', async () => {
+    const accountId = await seedAccount(engine, fixture, { name: 'JoinCo' });
+    await seedOpportunity(engine, fixture, {
+      account_id: accountId,
+      name: 'Join Opp',
+      stage: 'prospecting',
+      amount: 50,
+    });
+    const rows = await engine.query(fixture.workspaceId, fixture.adminId, {
+      collection: 'opportunities',
+      join: { field: 'account_id', as: 'account' },
+      filters: [{ field: 'account.name', op: 'eq', value: 'JoinCo' }],
+      aggregates: [{ fn: 'sum', field: 'amount', alias: 'total' }],
+      groupBy: ['account.name'],
+    });
+    const match = rows.find((r) => r.account_name === 'JoinCo');
+    expect(match).toBeTruthy();
+    expect(Number(match?.total)).toBeGreaterThanOrEqual(50);
+  });
+
+  it('26. Join without a grant on the parent collection is not-found', async () => {
+    await expect(
+      engine.query(fixture.workspaceId, fixture.readerId, {
+        collection: 'opportunities',
+        join: { field: 'account_id', as: 'account' },
+        aggregates: [{ fn: 'count', alias: 'cnt' }],
+      }),
+    ).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('27. A masked field on the joined collection cannot be aggregated', async () => {
+    await expect(
+      engine.query(fixture.workspaceId, fixture.agentId, {
+        collection: 'opportunities',
+        join: { field: 'account_id', as: 'account' },
+        aggregates: [{ fn: 'sum', field: 'account.amount', alias: 'total' }],
+      }),
+    ).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  it('28. Parent row predicate drops children rather than leaking existence', async () => {
+    const visible = await seedAccount(engine, fixture, {
+      name: 'PublicJoin',
+      industry: 'public',
+    });
+    const hidden = await seedAccount(engine, fixture, {
+      name: 'SecretJoin',
+      industry: 'secret',
+    });
+    await seedOpportunity(engine, fixture, {
+      account_id: visible,
+      name: 'Visible join opp',
+      stage: 'prospecting',
+      amount: 1,
+    });
+    await seedOpportunity(engine, fixture, {
+      account_id: hidden,
+      name: 'Hidden join opp',
+      stage: 'prospecting',
+      amount: 1,
+    });
+    const rows = await engine.query(
+      fixture.workspaceId,
+      fixture.relationAgentId,
+      {
+        collection: 'opportunities',
+        join: { field: 'account_id', as: 'account' },
+        fields: ['name', 'account.name'],
+      },
+    );
+    const names = rows.map((r) => r.name);
+    expect(names).toContain('Visible join opp');
+    expect(names).not.toContain('Hidden join opp');
+  });
+
+  it('29. Joining a non-relation field is rejected', async () => {
+    await expect(
+      engine.query(fixture.workspaceId, fixture.adminId, {
+        collection: 'opportunities',
+        join: { field: 'name', as: 'account' },
+        fields: ['name'],
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+  });
+
+  it('30. History reconstructs a prior revision and respects field masks', async () => {
+    const accountId = await seedAccount(engine, fixture, { name: 'HistCo' });
+    const recordId = await seedOpportunity(engine, fixture, {
+      account_id: accountId,
+      name: 'History Opp',
+      stage: 'prospecting',
+      amount: 10,
+      next_step: 'first',
+    });
+    const proposed = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'opportunities',
+            recordId,
+            op: 'update',
+            fieldName: 'next_step',
+            newValue: 'second',
+          },
+        ],
+      },
+    );
+    await engine.reviewChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      proposed.changeSetId,
+      proposed.operationIds.map((opId) => ({ opId, status: 'approved' })),
+    );
+    await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      proposed.changeSetId,
+    );
+
+    const rev1 = await engine.readRecordAt(
+      fixture.workspaceId,
+      fixture.adminId,
+      'opportunities',
+      recordId,
+      { revision: 1 },
+    );
+    expect(rev1?.next_step).toBe('first');
+    const rev2 = await engine.readRecordAt(
+      fixture.workspaceId,
+      fixture.adminId,
+      'opportunities',
+      recordId,
+      { revision: 2 },
+    );
+    expect(rev2?.next_step).toBe('second');
+
+    const masked = await engine.readRecordAt(
+      fixture.workspaceId,
+      fixture.readerId,
+      'opportunities',
+      recordId,
+      { revision: 2 },
+    );
+    expect(masked).not.toBeNull();
+    expect(masked).not.toHaveProperty('amount');
+    expect(masked?.name).toBe('History Opp');
+
+    const listed = await engine.listRecordRevisions(
+      fixture.workspaceId,
+      fixture.adminId,
+      'opportunities',
+      recordId,
+      { limit: 10 },
+    );
+    expect(listed.revisions.length).toBeGreaterThanOrEqual(2);
+
+    const byAuthor = await engine.listRevisionsByPrincipal(
+      fixture.workspaceId,
+      fixture.adminId,
+      { authorId: fixture.agentId, limit: 20 },
+    );
+    expect(byAuthor.some((r) => r.recordId === recordId)).toBe(true);
+
+    await expect(
+      engine.listRevisionsByPrincipal(fixture.workspaceId, fixture.readerId, {
+        authorId: fixture.agentId,
+        limit: 20,
+      }),
+    ).rejects.toMatchObject({ code: 'not_found' });
+  });
+
+  it('31. Audit query is admin-only and includes denials', async () => {
+    try {
+      await engine.query(fixture.workspaceId, fixture.readerId, {
+        collection: 'opportunities',
+        fields: ['amount'],
+      });
+    } catch {
+      /* denial */
+    }
+    const rows = await engine.queryAudit(fixture.workspaceId, fixture.adminId, {
+      actorId: fixture.readerId,
+      limit: 50,
+    });
+    expect(rows.some((r) => r.outcome === 'denied')).toBe(true);
+    await expect(
+      engine.queryAudit(fixture.workspaceId, fixture.readerId, { limit: 10 }),
+    ).rejects.toMatchObject({ code: 'not_found' });
   });
 });

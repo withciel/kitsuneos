@@ -44,6 +44,34 @@ export async function getRevisionSnapshot(
   return result.rows[0]?.snapshot ?? null;
 }
 
+export async function getRevisionAtTime(
+  client: PoolClient,
+  schemaName: string,
+  tableName: string,
+  recordId: string,
+  at: string,
+): Promise<{
+  snapshot: Record<string, unknown>;
+  revision: number;
+} | null> {
+  const revTable = `${quoteIdent(schemaName)}.${quoteIdent(revTableName(tableName))}`;
+  const result = await client.query<{
+    snapshot: Record<string, unknown>;
+    revision: string;
+  }>(
+    `SELECT snapshot, revision FROM ${revTable}
+     WHERE record_id = $1 AND valid_from <= $2::timestamptz
+     ORDER BY revision DESC
+     LIMIT 1`,
+    [recordId, at],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    return null;
+  }
+  return { snapshot: row.snapshot, revision: Number(row.revision) };
+}
+
 export async function getChangedFieldsSince(
   client: PoolClient,
   schemaName: string,

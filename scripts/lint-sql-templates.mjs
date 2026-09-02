@@ -21,6 +21,10 @@ const SAFE_IDENTIFIERS = new Set([
   'limitClause',
   'offsetClause',
   'whereParts',
+  'where',
+  'principalFilter',
+  'params',
+  'params.length',
   'selectParts',
   'selectCols',
   'columnDefs',
@@ -36,6 +40,10 @@ const SAFE_IDENTIFIERS = new Set([
   'idx',
   'paramIdx',
   'alias',
+  'fromClause',
+  'joinClause',
+  'joinTable',
+  'qJoin',
   'col',
   'def',
   'values',
@@ -165,6 +173,14 @@ function isAllowedExpression(node, sourceFile) {
   }
 
   if (ts.isPropertyAccessExpression(node) && node.name.text === 'sql') {
+    return true;
+  }
+
+  if (
+    ts.isPropertyAccessExpression(node) &&
+    ts.isIdentifier(node.expression) &&
+    SAFE_IDENTIFIERS.has(`${node.expression.text}.${node.name.text}`)
+  ) {
     return true;
   }
 

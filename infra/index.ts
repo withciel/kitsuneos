@@ -250,9 +250,9 @@ new aws.acm.CertificateValidation('app-cert-validated', {
 // --- Site: optional S3 + CloudFront + OAC (default off; Cloudflare Pages hosts the site) ---
 const siteBucket = deploySiteCdn
   ? new aws.s3.BucketV2('site-bucket', {
-    bucket: `${stack}-kitsuneos-site`,
-    tags,
-  })
+      bucket: `${stack}-kitsuneos-site`,
+      tags,
+    })
   : undefined;
 
 if (siteBucket) {
@@ -267,52 +267,52 @@ if (siteBucket) {
 
 const siteOac = deploySiteCdn
   ? new aws.cloudfront.OriginAccessControl('site-oac', {
-    name: `kitsune-site-oac-${stack}`,
-    originAccessControlOriginType: 's3',
-    signingBehavior: 'always',
-    signingProtocol: 'sigv4',
-  })
+      name: `kitsune-site-oac-${stack}`,
+      originAccessControlOriginType: 's3',
+      signingBehavior: 'always',
+      signingProtocol: 'sigv4',
+    })
   : undefined;
 
 const siteDistribution =
   deploySiteCdn && siteBucket && siteOac
     ? new aws.cloudfront.Distribution('site-cdn', {
-      enabled: true,
-      defaultRootObject: 'index.html',
-      aliases: [domain, `www.${domain}`],
-      origins: [
-        {
-          originId: 'siteS3',
-          domainName: siteBucket.bucketRegionalDomainName,
-          originAccessControlId: siteOac.id,
+        enabled: true,
+        defaultRootObject: 'index.html',
+        aliases: [domain, `www.${domain}`],
+        origins: [
+          {
+            originId: 'siteS3',
+            domainName: siteBucket.bucketRegionalDomainName,
+            originAccessControlId: siteOac.id,
+          },
+        ],
+        defaultCacheBehavior: {
+          targetOriginId: 'siteS3',
+          viewerProtocolPolicy: 'redirect-to-https',
+          allowedMethods: ['GET', 'HEAD', 'OPTIONS'],
+          cachedMethods: ['GET', 'HEAD'],
+          forwardedValues: {
+            queryString: false,
+            cookies: { forward: 'none' },
+          },
+          compress: true,
         },
-      ],
-      defaultCacheBehavior: {
-        targetOriginId: 'siteS3',
-        viewerProtocolPolicy: 'redirect-to-https',
-        allowedMethods: ['GET', 'HEAD', 'OPTIONS'],
-        cachedMethods: ['GET', 'HEAD'],
-        forwardedValues: {
-          queryString: false,
-          cookies: { forward: 'none' },
+        customErrorResponses: [
+          {
+            errorCode: 404,
+            responseCode: 404,
+            responsePagePath: '/404.html',
+          },
+        ],
+        restrictions: { geoRestriction: { restrictionType: 'none' } },
+        viewerCertificate: {
+          acmCertificateArn: siteCertValidated.certificateArn,
+          sslSupportMethod: 'sni-only',
+          minimumProtocolVersion: 'TLSv1.2_2021',
         },
-        compress: true,
-      },
-      customErrorResponses: [
-        {
-          errorCode: 404,
-          responseCode: 404,
-          responsePagePath: '/404.html',
-        },
-      ],
-      restrictions: { geoRestriction: { restrictionType: 'none' } },
-      viewerCertificate: {
-        acmCertificateArn: siteCertValidated.certificateArn,
-        sslSupportMethod: 'sni-only',
-        minimumProtocolVersion: 'TLSv1.2_2021',
-      },
-      tags,
-    })
+        tags,
+      })
     : undefined;
 
 if (siteBucket && siteDistribution) {
@@ -424,67 +424,67 @@ new aws.iam.RolePolicyAttachment('apprunner-access-ecr', {
 
 const appRunnerService = deployApp
   ? new aws.apprunner.Service('app-service', {
-    serviceName: `kitsuneos-app-${stack}`,
-    sourceConfiguration: {
-      authenticationConfiguration: {
-        accessRoleArn: appRunnerAccessRole.arn,
-      },
-      imageRepository: {
-        imageIdentifier: pulumi.interpolate`${appRepo.repositoryUrl}:latest`,
-        imageRepositoryType: 'ECR',
-        imageConfiguration: {
-          port: '8080',
-          runtimeEnvironmentSecrets: {
-            KITSUNE_OWNER_URL: ownerSecret.arn,
-            KITSUNE_APP_URL: appSecret.arn,
-            WORKOS_API_KEY: pulumi.interpolate`${workosSecret.arn}:WORKOS_API_KEY::`,
-            WORKOS_CLIENT_ID: pulumi.interpolate`${workosSecret.arn}:WORKOS_CLIENT_ID::`,
-            WORKOS_COOKIE_PASSWORD: pulumi.interpolate`${workosSecret.arn}:WORKOS_COOKIE_PASSWORD::`,
-            DODO_PAYMENTS_API_KEY: pulumi.interpolate`${dodoSecret.arn}:DODO_PAYMENTS_API_KEY::`,
-            DODO_PAYMENTS_ENVIRONMENT: pulumi.interpolate`${dodoSecret.arn}:DODO_PAYMENTS_ENVIRONMENT::`,
-            DODO_PRODUCT_ID: pulumi.interpolate`${dodoSecret.arn}:DODO_PRODUCT_ID::`,
-            BILLING_RECONCILE_SECRET: pulumi.interpolate`${dodoSecret.arn}:BILLING_RECONCILE_SECRET::`,
-            DODO_PAYMENTS_WEBHOOK_KEY: dodoWebhookSecret.arn,
-          },
-          runtimeEnvironmentVariables: {
-            NODE_ENV: 'production',
-            APP_BASE_URL: `https://${appDomain}`,
-            WORKOS_REDIRECT_URI: `https://${appDomain}/callback`,
+      serviceName: `kitsuneos-app-${stack}`,
+      sourceConfiguration: {
+        authenticationConfiguration: {
+          accessRoleArn: appRunnerAccessRole.arn,
+        },
+        imageRepository: {
+          imageIdentifier: pulumi.interpolate`${appRepo.repositoryUrl}:latest`,
+          imageRepositoryType: 'ECR',
+          imageConfiguration: {
+            port: '8080',
+            runtimeEnvironmentSecrets: {
+              KITSUNE_OWNER_URL: ownerSecret.arn,
+              KITSUNE_APP_URL: appSecret.arn,
+              WORKOS_API_KEY: pulumi.interpolate`${workosSecret.arn}:WORKOS_API_KEY::`,
+              WORKOS_CLIENT_ID: pulumi.interpolate`${workosSecret.arn}:WORKOS_CLIENT_ID::`,
+              WORKOS_COOKIE_PASSWORD: pulumi.interpolate`${workosSecret.arn}:WORKOS_COOKIE_PASSWORD::`,
+              DODO_PAYMENTS_API_KEY: pulumi.interpolate`${dodoSecret.arn}:DODO_PAYMENTS_API_KEY::`,
+              DODO_PAYMENTS_ENVIRONMENT: pulumi.interpolate`${dodoSecret.arn}:DODO_PAYMENTS_ENVIRONMENT::`,
+              DODO_PRODUCT_ID: pulumi.interpolate`${dodoSecret.arn}:DODO_PRODUCT_ID::`,
+              BILLING_RECONCILE_SECRET: pulumi.interpolate`${dodoSecret.arn}:BILLING_RECONCILE_SECRET::`,
+              DODO_PAYMENTS_WEBHOOK_KEY: dodoWebhookSecret.arn,
+            },
+            runtimeEnvironmentVariables: {
+              NODE_ENV: 'production',
+              APP_BASE_URL: `https://${appDomain}`,
+              WORKOS_REDIRECT_URI: `https://${appDomain}/callback`,
+            },
           },
         },
+        autoDeploymentsEnabled: false,
       },
-      autoDeploymentsEnabled: false,
-    },
-    instanceConfiguration: {
-      cpu: '1024',
-      memory: '2048',
-      instanceRoleArn: appRunnerRole.arn,
-    },
-    networkConfiguration: {
-      egressConfiguration: {
-        egressType: 'VPC',
-        vpcConnectorArn: vpcConnector.arn,
+      instanceConfiguration: {
+        cpu: '1024',
+        memory: '2048',
+        instanceRoleArn: appRunnerRole.arn,
       },
-    },
-    healthCheckConfiguration: {
-      protocol: 'HTTP',
-      path: '/health',
-      healthyThreshold: 1,
-      unhealthyThreshold: 5,
-      interval: 10,
-      timeout: 5,
-    },
-    tags,
-  })
+      networkConfiguration: {
+        egressConfiguration: {
+          egressType: 'VPC',
+          vpcConnectorArn: vpcConnector.arn,
+        },
+      },
+      healthCheckConfiguration: {
+        protocol: 'HTTP',
+        path: '/health',
+        healthyThreshold: 1,
+        unhealthyThreshold: 5,
+        interval: 10,
+        timeout: 5,
+      },
+      tags,
+    })
   : undefined;
 
 const appRunnerCustomDomain =
   deployApp && appRunnerService
     ? new aws.apprunner.CustomDomainAssociation('app-domain', {
-      domainName: appDomain,
-      serviceArn: appRunnerService.arn,
-      enableWwwSubdomain: false,
-    })
+        domainName: appDomain,
+        serviceArn: appRunnerService.arn,
+        enableWwwSubdomain: false,
+      })
     : undefined;
 
 if (appRunnerCustomDomain) {

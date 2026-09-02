@@ -98,6 +98,11 @@ export interface QueryAggregate {
   alias: string;
 }
 
+export interface QueryJoin {
+  field: string;
+  as: string;
+}
+
 export interface QueryRequest {
   collection: string;
   fields?: string[];
@@ -105,8 +110,52 @@ export interface QueryRequest {
   sort?: QuerySort[];
   aggregates?: QueryAggregate[];
   groupBy?: string[];
+  join?: QueryJoin;
   limit?: number;
   offset?: number;
+}
+
+export type SchemaChangeOp = 'addField' | 'dropField' | 'setIndexed';
+
+export interface SchemaChangeInput {
+  collection: string;
+  op: SchemaChangeOp;
+  field?: FieldDefinition;
+  fieldName?: string;
+  indexed?: boolean;
+  defaultValue?: JsonValue;
+}
+
+export interface RevisionSummary {
+  collection: string;
+  recordId: string;
+  revision: number;
+  changedFields: string[];
+  principalId: string;
+  changeSetId: string | null;
+  validFrom: string;
+}
+
+export interface AuditQuery {
+  actorId?: string;
+  collectionId?: string;
+  from?: string;
+  to?: string;
+  action?: string;
+  outcome?: 'allowed' | 'denied';
+  limit?: number;
+}
+
+export interface AuditRow {
+  id: string;
+  principalId: string;
+  action: string;
+  collectionId: string | null;
+  recordIds: string[] | null;
+  fieldNames: string[] | null;
+  outcome: 'allowed' | 'denied';
+  reason: string | null;
+  at: string;
 }
 
 export interface ChangeOpInput {

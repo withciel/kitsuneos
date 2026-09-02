@@ -23,8 +23,12 @@ CREATE TABLE IF NOT EXISTS kitsune.collections (
   name          text NOT NULL,
   table_name    text NOT NULL,
   schema_version int NOT NULL DEFAULT 1,
+  revision_retention_days int,
   UNIQUE (workspace_id, name)
 );
+
+ALTER TABLE kitsune.collections
+  ADD COLUMN IF NOT EXISTS revision_retention_days int;
 
 CREATE TABLE IF NOT EXISTS kitsune.fields (
   id              uuid PRIMARY KEY,
@@ -194,4 +198,24 @@ CREATE TABLE IF NOT EXISTS kitsune.usage_events (
 );
 CREATE INDEX IF NOT EXISTS usage_events_workspace_at_idx
   ON kitsune.usage_events (workspace_id, at DESC);
+
+CREATE TABLE IF NOT EXISTS kitsune.schema_revisions (
+  id             uuid PRIMARY KEY,
+  collection_id  uuid NOT NULL REFERENCES kitsune.collections(id),
+  version        int NOT NULL,
+  op             text NOT NULL CHECK (op IN ('addField','dropField','setIndexed')),
+  payload        jsonb NOT NULL,
+  ddl_up         text NOT NULL,
+  ddl_down       text NOT NULL,
+  applied_at     timestamptz NOT NULL DEFAULT now(),
+  reverted_at    timestamptz,
+  UNIQUE (collection_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS audit_log_workspace_at_idx
+  ON kitsune.audit_log (workspace_id, at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_workspace_principal_at_idx
+  ON kitsune.audit_log (workspace_id, principal_id, at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_workspace_collection_at_idx
+  ON kitsune.audit_log (workspace_id, collection_id, at DESC);
 `;

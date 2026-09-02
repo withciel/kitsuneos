@@ -86,4 +86,100 @@ describe('Schema definition API validation', () => {
     });
     expect(id).toBeTruthy();
   });
+
+  it('adds a nullable field, bumps schema_version, and records a revision', async () => {
+    const result = await engine.applySchemaChange(
+      fixture.workspaceId,
+      fixture.adminId,
+      {
+        collection: 'accounts',
+        op: 'addField',
+        field: { name: 'region', type: 'text' },
+        confirmStaleIds: [],
+      },
+    );
+    expect(result.schemaVersion).toBeGreaterThanOrEqual(2);
+    const col = await engine.ownerPool.query<{ schema_version: number }>(
+      `SELECT schema_version FROM kitsune.collections WHERE id = $1`,
+      [fixture.collections.accounts],
+    );
+    expect(col.rows[0]?.schema_version).toBe(result.schemaVersion);
+    const rev = await engine.ownerPool.query(
+      `SELECT op FROM kitsune.schema_revisions WHERE collection_id = $1 AND version = $2`,
+      [fixture.collections.accounts, result.schemaVersion],
+    );
+    expect(rev.rows[0]?.op).toBe('addField');
+  });
+
+  it('refuses dropField when an open change set references the field unless confirmed', async () => {
+    const accountId = await engine.directWrite(
+      fixture.workspaceId,
+      fixture.adminId,
+      'accounts',
+      { name: 'DropCo' },
+    );
+    const proposed = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.adminId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'industry',
+            newValue: 'widgets',
+          },
+        ],
+      },
+    );
+    const preview = await engine.previewSchemaChange(
+      fixture.workspaceId,
+      fixture.adminId,
+      { collection: 'accounts', op: 'dropField', fieldName: 'industry' },
+    );
+    expect(preview.incompatibleChangeSetIds).toContain(proposed.changeSetId);
+    await expect(
+      engine.applySchemaChange(fixture.workspaceId, fixture.adminId, {
+        collection: 'accounts',
+        op: 'dropField',
+        fieldName: 'industry',
+        confirmStaleIds: [],
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+
+    const applied = await engine.applySchemaChange(
+      fixture.workspaceId,
+      fixture.adminId,
+      {
+        collection: 'accounts',
+        op: 'dropField',
+        fieldName: 'industry',
+        confirmStaleIds: preview.incompatibleChangeSetIds,
+      },
+    );
+    const stale = await engine.ownerPool.query<{ status: string }>(
+      `SELECT status FROM kitsune.change_sets WHERE id = $1`,
+      [proposed.changeSetId],
+    );
+    expect(stale.rows[0]?.status).toBe('stale');
+    expect(applied.staleChangeSetIds).toContain(proposed.changeSetId);
+
+    await engine.revertSchemaChange(
+      fixture.workspaceId,
+      fixture.adminId,
+      'accounts',
+      applied.schemaVersion - 1,
+    );
+  });
+
+  it('rejects unknown schema operations such as retype', async () => {
+    await expect(
+      engine.applySchemaChange(fixture.workspaceId, fixture.adminId, {
+        collection: 'accounts',
+        op: 'retype' as 'addField',
+        confirmStaleIds: [],
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+  });
 });

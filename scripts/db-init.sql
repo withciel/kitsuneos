@@ -1,4 +1,7 @@
--- Initialize KitsuneOS database roles and database
+-- Initialize KitsuneOS database roles and database.
+-- Safe to run against either the `postgres` maintenance DB or an existing
+-- `kitsune` DB (GitHub Actions creates the latter via POSTGRES_DB).
+
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'kitsune_owner') THEN
@@ -12,3 +15,8 @@ $$;
 
 SELECT 'CREATE DATABASE kitsune OWNER kitsune_owner'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'kitsune')\gexec
+
+-- CI services may create `kitsune` as the postgres roleuser first. Transfer
+-- ownership so migrations connecting as kitsune_owner can create schemas.
+ALTER DATABASE kitsune OWNER TO kitsune_owner;
+GRANT CONNECT ON DATABASE kitsune TO kitsune_app;

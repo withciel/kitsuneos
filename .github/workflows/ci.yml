@@ -37,16 +37,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Initialize database
-        run: psql postgresql://postgres:postgres@localhost:5432/kitsune -f scripts/db-init.sql
+        run: psql postgresql://postgres:postgres@localhost:5432/postgres -f scripts/db-init.sql
 
       - name: Lint
         run: pnpm lint
 
-      - name: Typecheck
-        run: pnpm typecheck
-
       - name: Build
         run: pnpm build
+
+      - name: Typecheck
+        run: pnpm typecheck
 
       - name: Acceptance tests
         env:

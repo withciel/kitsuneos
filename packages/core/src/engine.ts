@@ -17,13 +17,26 @@ import {
   withOwner,
 } from './db/pool.js';
 import {
+  generateAddFieldDdl,
   generateCollectionDdl,
+  generateDropFieldDdl,
+  generateSetIndexedDdl,
   generateWorkspaceSchemaDdl,
 } from './ddl/generator.js';
 import { assertFieldAllowed, loadResolvedGrant } from './grants/resolve.js';
-import { getChangedFieldsSince, writeRevision } from './revisions/write.js';
-import { validateCollectionDefinition } from './schema/validate-definition.js';
+import {
+  getChangedFieldsSince,
+  getRevisionAtTime,
+  getRevisionSnapshot,
+  writeRevision,
+} from './revisions/write.js';
+import {
+  validateCollectionDefinition,
+  validateFieldDefinition,
+} from './schema/validate-definition.js';
 import type {
+  AuditQuery,
+  AuditRow,
   Capability,
   ChangeOpInput,
   CollectionDefinition,
@@ -34,6 +47,8 @@ import type {
   QueryRequest,
   ResolvedGrant,
   ReviewDecision,
+  RevisionSummary,
+  SchemaChangeInput,
 } from './types.js';
 import {
   CAPABILITY_ORDER,
@@ -1245,6 +1260,866 @@ export class KitsuneEngine {
       `UPDATE kitsune.change_sets SET status = 'expired', expires_at = now() - interval '1 day' WHERE id = $1`,
       [changeSetId],
     );
+  }
+
+  async previewSchemaChange(
+    workspaceId: string,
+    actorId: string,
+    input: SchemaChangeInput,
+  ): Promise<{
+    incompatibleChangeSetIds: string[];
+    reasons: Record<string, string>;
+  }> {
+    await this.requireCollectionAdmin(workspaceId, actorId, input.collection);
+    return this.findIncompatibleChangeSets(workspaceId, input);
+  }
+
+  async applySchemaChange(
+    workspaceId: string,
+    actorId: string,
+    input: SchemaChangeInput & { confirmStaleIds: string[] },
+  ): Promise<{ schemaVersion: number; staleChangeSetIds: string[] }> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
+    await this.requireCollectionAdmin(workspaceId, actorId, input.collection);
+    const preview = await this.findIncompatibleChangeSets(workspaceId, input);
+    const expected = [...preview.incompatibleChangeSetIds].sort();
+    const confirmed = [...input.confirmStaleIds].sort();
+    if (expected.join(',') !== confirmed.join(',')) {
+      throw new KitsuneError(
+        'confirmStaleIds does not match incompatible change sets',
+        'validation',
+        { incompatibleChangeSetIds: preview.incompatibleChangeSetIds },
+      );
+    }
+
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const { ddlUp, ddlDown, payload, fieldRow } =
+      await this.buildSchemaChangeDdl(workspaceId, schemaName, input);
+
+    const schemaVersion = await withOwner(this.ownerPool, async (client) => {
+      await client.query('BEGIN');
+      try {
+        await client.query(`SET LOCAL lock_timeout = '5000ms'`);
+        const meta = await getCollectionMeta(
+          client,
+          workspaceId,
+          input.collection,
+        );
+        await client.query(
+          `LOCK TABLE ${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)} IN ACCESS EXCLUSIVE MODE`,
+        );
+
+        for (const id of expected) {
+          await client.query(
+            `UPDATE kitsune.change_sets
+                SET status = 'stale'
+              WHERE id = $1 AND workspace_id = $2`,
+            [id, workspaceId],
+          );
+        }
+
+        for (const stmt of ddlUp) {
+          await client.query(stmt);
+        }
+
+        if (input.op === 'addField' && input.field) {
+          await client.query(
+            `INSERT INTO kitsune.fields
+              (id, collection_id, name, type, nullable, relation_target, relation_kind, enum_values, indexed)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              uuidv4(),
+              meta.id,
+              input.field.name,
+              input.field.type,
+              input.field.nullable ?? true,
+              fieldRow?.relationTargetId ?? null,
+              input.field.type === 'relation' ? 'many_to_one' : null,
+              input.field.enumValues ?? null,
+              input.field.indexed ?? false,
+            ],
+          );
+        } else if (input.op === 'dropField' && input.fieldName) {
+          await client.query(
+            `DELETE FROM kitsune.fields WHERE collection_id = $1 AND name = $2`,
+            [meta.id, input.fieldName],
+          );
+        } else if (input.op === 'setIndexed' && input.fieldName) {
+          await client.query(
+            `UPDATE kitsune.fields SET indexed = $1 WHERE collection_id = $2 AND name = $3`,
+            [input.indexed === true, meta.id, input.fieldName],
+          );
+        }
+
+        const versioned = await queryOne<{ schema_version: number }>(
+          client,
+          `UPDATE kitsune.collections
+              SET schema_version = schema_version + 1
+            WHERE id = $1
+            RETURNING schema_version`,
+          [meta.id],
+        );
+        const nextVersion = versioned?.schema_version ?? 1;
+        await client.query(
+          `INSERT INTO kitsune.schema_revisions
+            (id, collection_id, version, op, payload, ddl_up, ddl_down)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            uuidv4(),
+            meta.id,
+            nextVersion,
+            input.op,
+            JSON.stringify(payload),
+            ddlUp.join('\n'),
+            ddlDown.join('\n'),
+          ],
+        );
+        await client.query('COMMIT');
+        return nextVersion;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+    });
+
+    await writeAudit(this.appPool, {
+      workspaceId,
+      principalId: actorId,
+      action: 'schema.change',
+      outcome: 'allowed',
+      detail: {
+        collection: input.collection,
+        op: input.op,
+        schemaVersion,
+      },
+    });
+
+    return {
+      schemaVersion,
+      staleChangeSetIds: expected,
+    };
+  }
+
+  async revertSchemaChange(
+    workspaceId: string,
+    actorId: string,
+    collection: string,
+    toVersion: number,
+  ): Promise<{ schemaVersion: number }> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
+    await this.requireCollectionAdmin(workspaceId, actorId, collection);
+    if (!Number.isSafeInteger(toVersion) || toVersion < 1) {
+      throw new KitsuneError('Invalid target schema version', 'validation');
+    }
+
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const schemaVersion = await withOwner(this.ownerPool, async (client) => {
+      await client.query('BEGIN');
+      try {
+        const meta = await getCollectionMeta(client, workspaceId, collection);
+        const current = await queryOne<{ schema_version: number }>(
+          client,
+          `SELECT schema_version FROM kitsune.collections WHERE id = $1`,
+          [meta.id],
+        );
+        const currentVersion = current?.schema_version ?? 1;
+        if (toVersion >= currentVersion) {
+          throw new KitsuneError(
+            'Target version must be lower than current',
+            'validation',
+          );
+        }
+
+        const revisions = await queryRows<{
+          version: number;
+          op: string;
+          payload: SchemaChangeInput & { field?: { name: string } };
+          ddl_down: string;
+        }>(
+          client,
+          `SELECT version, op, payload, ddl_down
+             FROM kitsune.schema_revisions
+            WHERE collection_id = $1 AND version > $2 AND reverted_at IS NULL
+            ORDER BY version DESC`,
+          [meta.id, toVersion],
+        );
+
+        await client.query(`SET LOCAL lock_timeout = '5000ms'`);
+        await client.query(
+          `LOCK TABLE ${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)} IN ACCESS EXCLUSIVE MODE`,
+        );
+
+        for (const rev of revisions) {
+          const payload = rev.payload;
+          const fieldName =
+            payload.fieldName ?? payload.field?.name ?? undefined;
+          if (rev.op === 'addField' && fieldName) {
+            const stale = await this.findOpsForField(
+              client,
+              workspaceId,
+              meta.id,
+              fieldName,
+            );
+            for (const id of stale) {
+              await client.query(
+                `UPDATE kitsune.change_sets SET status = 'stale' WHERE id = $1`,
+                [id],
+              );
+            }
+          }
+          for (const stmt of rev.ddl_down.split('\n').filter(Boolean)) {
+            await client.query(stmt);
+          }
+          if (rev.op === 'addField' && fieldName) {
+            await client.query(
+              `DELETE FROM kitsune.fields WHERE collection_id = $1 AND name = $2`,
+              [meta.id, fieldName],
+            );
+          } else if (rev.op === 'dropField' && fieldName && payload.field) {
+            const field = payload.field;
+            await client.query(
+              `INSERT INTO kitsune.fields
+                (id, collection_id, name, type, nullable, relation_target, relation_kind, enum_values, indexed)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              [
+                uuidv4(),
+                meta.id,
+                field.name,
+                field.type,
+                field.nullable ?? true,
+                null,
+                field.type === 'relation' ? 'many_to_one' : null,
+                field.enumValues ?? null,
+                field.indexed ?? false,
+              ],
+            );
+          } else if (rev.op === 'setIndexed' && fieldName) {
+            await client.query(
+              `UPDATE kitsune.fields SET indexed = $1 WHERE collection_id = $2 AND name = $3`,
+              [payload.indexed === false, meta.id, fieldName],
+            );
+          }
+          await client.query(
+            `UPDATE kitsune.schema_revisions SET reverted_at = now() WHERE collection_id = $1 AND version = $2`,
+            [meta.id, rev.version],
+          );
+        }
+
+        await client.query(
+          `UPDATE kitsune.collections SET schema_version = $1 WHERE id = $2`,
+          [toVersion, meta.id],
+        );
+        await client.query('COMMIT');
+        return toVersion;
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      }
+    });
+
+    await writeAudit(this.appPool, {
+      workspaceId,
+      principalId: actorId,
+      action: 'schema.revert',
+      outcome: 'allowed',
+      detail: { collection, schemaVersion },
+    });
+    return { schemaVersion };
+  }
+
+  async readRecordAt(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    recordId: string,
+    sel: { revision?: number; at?: string },
+  ): Promise<Record<string, JsonValue> | null> {
+    if (sel.revision === undefined && !sel.at) {
+      throw new KitsuneError('revision or at is required', 'validation');
+    }
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, {
+        schemaName,
+        principalId,
+        includeDeleted: true,
+      });
+      const meta = await getCollectionMeta(client, workspaceId, collection);
+      const grant = await loadResolvedGrant(client, principalId, meta.id);
+      if (!grant || grant.capability === 'none') {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      await assertRowAccessible(
+        client,
+        workspaceId,
+        principalId,
+        schemaName,
+        meta,
+        grant,
+        recordId,
+        { includeDeleted: true },
+      );
+      const snapshot =
+        sel.revision !== undefined
+          ? await getRevisionSnapshot(
+              client,
+              schemaName,
+              meta.tableName,
+              recordId,
+              sel.revision,
+            )
+          : ((
+              await getRevisionAtTime(
+                client,
+                schemaName,
+                meta.tableName,
+                recordId,
+                sel.at as string,
+              )
+            )?.snapshot ?? null);
+      await client.query('COMMIT');
+      if (!snapshot) {
+        return null;
+      }
+      const allowed =
+        grant.fieldMask === null
+          ? meta.fields
+          : grant.fieldMask.filter((f) => meta.fields.includes(f));
+      const row: Record<string, JsonValue> = {
+        id: recordId,
+      };
+      for (const field of allowed) {
+        row[field] = (snapshot[field] as JsonValue) ?? null;
+      }
+      return row;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      if (error instanceof KitsuneError && error.code === 'not_found') {
+        return null;
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listRecordRevisions(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    recordId: string,
+    opts: { limit: number; beforeRevision?: number },
+  ): Promise<{ revisions: RevisionSummary[]; hasMore: boolean }> {
+    const limit = Math.min(Math.max(opts.limit, 1), 100);
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, {
+        schemaName,
+        principalId,
+        includeDeleted: true,
+      });
+      const meta = await getCollectionMeta(client, workspaceId, collection);
+      const grant = await loadResolvedGrant(client, principalId, meta.id);
+      if (!grant || grant.capability === 'none') {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      await assertRowAccessible(
+        client,
+        workspaceId,
+        principalId,
+        schemaName,
+        meta,
+        grant,
+        recordId,
+        { includeDeleted: true },
+      );
+      const revTable = `${quoteIdent(schemaName)}.${quoteIdent(`${meta.tableName}__rev`)}`;
+      const params: unknown[] = [recordId];
+      let where = 'record_id = $1';
+      if (opts.beforeRevision !== undefined) {
+        params.push(opts.beforeRevision);
+        where += ` AND revision < $2`;
+      }
+      params.push(limit + 1);
+      const rows = await queryRows<{
+        revision: string;
+        changed_fields: string[];
+        principal_id: string;
+        change_set_id: string | null;
+        valid_from: Date;
+      }>(
+        client,
+        `SELECT revision, changed_fields, principal_id, change_set_id, valid_from
+           FROM ${revTable}
+          WHERE ${where}
+          ORDER BY revision DESC
+          LIMIT $${params.length}`,
+        params,
+      );
+      await client.query('COMMIT');
+      const hasMore = rows.length > limit;
+      const page = hasMore ? rows.slice(0, limit) : rows;
+      return {
+        hasMore,
+        revisions: page.map((r) => ({
+          collection,
+          recordId,
+          revision: Number(r.revision),
+          changedFields: r.changed_fields,
+          principalId: r.principal_id,
+          changeSetId: r.change_set_id,
+          validFrom: r.valid_from.toISOString(),
+        })),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listRevisionsByPrincipal(
+    workspaceId: string,
+    callerId: string,
+    opts: { authorId: string; from?: string; to?: string; limit: number },
+  ): Promise<RevisionSummary[]> {
+    const limit = Math.min(Math.max(opts.limit, 1), 200);
+    if (opts.authorId !== callerId) {
+      const admin = await this.hasAdminOnAnyCollection(workspaceId, callerId);
+      if (!admin) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+    }
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const collections = await this.ownerPool.query<{
+      name: string;
+      table_name: string;
+    }>(
+      `SELECT name, table_name FROM kitsune.collections WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    const results: RevisionSummary[] = [];
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, {
+        schemaName,
+        principalId: callerId,
+        includeDeleted: true,
+      });
+      for (const collection of collections.rows) {
+        const revTable = `${quoteIdent(schemaName)}.${quoteIdent(`${collection.table_name}__rev`)}`;
+        const params: unknown[] = [opts.authorId];
+        const where = ['principal_id = $1'];
+        if (opts.from) {
+          params.push(opts.from);
+          where.push(`valid_from >= $${params.length}::timestamptz`);
+        }
+        if (opts.to) {
+          params.push(opts.to);
+          where.push(`valid_from <= $${params.length}::timestamptz`);
+        }
+        params.push(limit);
+        const rows = await queryRows<{
+          record_id: string;
+          revision: string;
+          changed_fields: string[];
+          change_set_id: string | null;
+          valid_from: Date;
+        }>(
+          client,
+          `SELECT record_id, revision, changed_fields, change_set_id, valid_from
+             FROM ${revTable}
+            WHERE ${where.join(' AND ')}
+            ORDER BY valid_from DESC
+            LIMIT $${params.length}`,
+          params,
+        );
+        for (const row of rows) {
+          results.push({
+            collection: collection.name,
+            recordId: row.record_id,
+            revision: Number(row.revision),
+            changedFields: row.changed_fields,
+            principalId: opts.authorId,
+            changeSetId: row.change_set_id,
+            validFrom: row.valid_from.toISOString(),
+          });
+        }
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    results.sort((a, b) => b.validFrom.localeCompare(a.validFrom));
+    return results.slice(0, limit);
+  }
+
+  async queryAudit(
+    workspaceId: string,
+    principalId: string,
+    opts: AuditQuery,
+  ): Promise<AuditRow[]> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+    const params: unknown[] = [workspaceId];
+    const where = ['workspace_id = $1'];
+    if (opts.actorId) {
+      params.push(opts.actorId);
+      where.push(`principal_id = $${params.length}`);
+    }
+    if (opts.collectionId) {
+      params.push(opts.collectionId);
+      where.push(`collection_id = $${params.length}`);
+    }
+    if (opts.from) {
+      params.push(opts.from);
+      where.push(`at >= $${params.length}::timestamptz`);
+    }
+    if (opts.to) {
+      params.push(opts.to);
+      where.push(`at <= $${params.length}::timestamptz`);
+    }
+    if (opts.action) {
+      params.push(opts.action);
+      where.push(`action = $${params.length}`);
+    }
+    if (opts.outcome) {
+      params.push(opts.outcome);
+      where.push(`outcome = $${params.length}`);
+    }
+    params.push(limit);
+    const rows = await this.appPool.query<{
+      id: string;
+      principal_id: string;
+      action: string;
+      collection_id: string | null;
+      record_ids: string[] | null;
+      field_names: string[] | null;
+      outcome: 'allowed' | 'denied';
+      reason: string | null;
+      at: Date;
+    }>(
+      `SELECT id, principal_id, action, collection_id, record_ids, field_names, outcome, reason, at
+         FROM kitsune.audit_log
+        WHERE ${where.join(' AND ')}
+        ORDER BY at DESC
+        LIMIT $${params.length}`,
+      params,
+    );
+    return rows.rows.map((r) => ({
+      id: r.id,
+      principalId: r.principal_id,
+      action: r.action,
+      collectionId: r.collection_id,
+      recordIds: r.record_ids,
+      fieldNames: r.field_names,
+      outcome: r.outcome,
+      reason: r.reason,
+      at: r.at.toISOString(),
+    }));
+  }
+
+  async listGrants(
+    workspaceId: string,
+    callerId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      principalId: string;
+      collection: string;
+      capability: Capability;
+      fieldMask: string[] | null;
+      rowPredicate: Predicate | null;
+      revokedAt: string | null;
+    }>
+  > {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, callerId);
+    const params: unknown[] = [workspaceId];
+    let principalFilter = '';
+    if (!admin) {
+      params.push(callerId);
+      principalFilter = `AND g.principal_id = $${params.length}`;
+    }
+    const rows = await this.ownerPool.query<{
+      id: string;
+      principal_id: string;
+      collection: string;
+      capability: Capability;
+      field_mask: string[] | null;
+      row_predicate: Predicate | null;
+      revoked_at: Date | null;
+    }>(
+      `SELECT g.id, g.principal_id, c.name AS collection, g.capability,
+              g.field_mask, g.row_predicate, g.revoked_at
+         FROM kitsune.grants g
+         JOIN kitsune.collections c ON c.id = g.collection_id
+        WHERE g.workspace_id = $1 ${principalFilter}
+        ORDER BY c.name, g.created_at`,
+      params,
+    );
+    return rows.rows.map((r) => ({
+      id: r.id,
+      principalId: r.principal_id,
+      collection: r.collection,
+      capability: r.capability,
+      fieldMask: r.field_mask,
+      rowPredicate: r.row_predicate,
+      revokedAt: r.revoked_at ? r.revoked_at.toISOString() : null,
+    }));
+  }
+
+  private async hasAdminOnAnyCollection(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<boolean> {
+    const row = await this.ownerPool.query(
+      `SELECT 1 FROM kitsune.grants
+        WHERE workspace_id = $1 AND principal_id = $2
+          AND revoked_at IS NULL AND capability = 'admin'
+        LIMIT 1`,
+      [workspaceId, principalId],
+    );
+    return row.rows.length > 0;
+  }
+
+  private async requireCollectionAdmin(
+    workspaceId: string,
+    actorId: string,
+    collection: string,
+  ): Promise<void> {
+    const meta = await this.ownerPool.query<{ id: string }>(
+      `SELECT id FROM kitsune.collections WHERE workspace_id = $1 AND name = $2`,
+      [workspaceId, collection],
+    );
+    const collectionId = meta.rows[0]?.id;
+    if (!collectionId) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const grant = await withOwner(this.ownerPool, async (client) =>
+      loadResolvedGrant(client, actorId, collectionId),
+    );
+    if (
+      !grant ||
+      CAPABILITY_ORDER.indexOf(grant.capability) <
+        CAPABILITY_ORDER.indexOf('admin')
+    ) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+  }
+
+  private async findOpsForField(
+    client: {
+      query: (
+        sql: string,
+        params?: unknown[],
+      ) => Promise<{ rows: Array<{ id: string }> }>;
+    },
+    workspaceId: string,
+    collectionId: string,
+    fieldName: string,
+  ): Promise<string[]> {
+    const result = await client.query(
+      `SELECT DISTINCT cs.id
+         FROM kitsune.change_sets cs
+         JOIN kitsune.change_ops o ON o.change_set_id = cs.id
+        WHERE cs.workspace_id = $1
+          AND cs.status IN ('open','blocked')
+          AND o.collection_id = $2
+          AND o.field_name = $3`,
+      [workspaceId, collectionId, fieldName],
+    );
+    return result.rows.map((r) => r.id);
+  }
+
+  private async findIncompatibleChangeSets(
+    workspaceId: string,
+    input: SchemaChangeInput,
+  ): Promise<{
+    incompatibleChangeSetIds: string[];
+    reasons: Record<string, string>;
+  }> {
+    if (input.op !== 'dropField' || !input.fieldName) {
+      return { incompatibleChangeSetIds: [], reasons: {} };
+    }
+    const meta = await this.ownerPool.query<{ id: string }>(
+      `SELECT id FROM kitsune.collections WHERE workspace_id = $1 AND name = $2`,
+      [workspaceId, input.collection],
+    );
+    const collectionId = meta.rows[0]?.id;
+    if (!collectionId) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const ids = await this.findOpsForField(
+      this.ownerPool,
+      workspaceId,
+      collectionId,
+      input.fieldName,
+    );
+    const reasons: Record<string, string> = {};
+    for (const id of ids) {
+      reasons[id] = `Open operation references field ${input.fieldName}`;
+    }
+    return { incompatibleChangeSetIds: ids, reasons };
+  }
+
+  private async buildSchemaChangeDdl(
+    workspaceId: string,
+    schemaName: string,
+    input: SchemaChangeInput,
+  ): Promise<{
+    ddlUp: string[];
+    ddlDown: string[];
+    payload: Record<string, JsonValue>;
+    fieldRow?: { relationTargetId: string | null };
+  }> {
+    const meta = await withOwner(this.ownerPool, async (client) =>
+      getCollectionMeta(client, workspaceId, input.collection),
+    );
+    if (input.op === 'addField') {
+      if (!input.field) {
+        throw new KitsuneError('field is required for addField', 'validation');
+      }
+      validateFieldDefinition(input.field);
+      if (meta.fields.includes(input.field.name)) {
+        throw new KitsuneError(
+          `Field already exists: ${input.field.name}`,
+          'validation',
+        );
+      }
+      let relationTarget: { schemaName: string; tableName: string } | undefined;
+      let relationTargetId: string | null = null;
+      if (input.field.type === 'relation' && input.field.relationTarget) {
+        const target = await this.ownerPool.query<{
+          id: string;
+          table_name: string;
+        }>(
+          `SELECT id, table_name FROM kitsune.collections
+            WHERE workspace_id = $1 AND name = $2`,
+          [workspaceId, input.field.relationTarget],
+        );
+        if (!target.rows[0]) {
+          throw new KitsuneError(
+            `Relation target not found: ${input.field.relationTarget}`,
+            'validation',
+          );
+        }
+        relationTargetId = target.rows[0].id;
+        relationTarget = {
+          schemaName,
+          tableName: target.rows[0].table_name,
+        };
+      }
+      const ddlUp = generateAddFieldDdl(
+        schemaName,
+        meta.tableName,
+        input.field,
+        relationTarget,
+      );
+      const ddlDown = generateDropFieldDdl(
+        schemaName,
+        meta.tableName,
+        input.field.name,
+      );
+      return {
+        ddlUp,
+        ddlDown,
+        payload: {
+          collection: input.collection,
+          op: input.op,
+          field: input.field as unknown as JsonValue,
+        },
+        fieldRow: { relationTargetId },
+      };
+    }
+    if (input.op === 'dropField') {
+      if (!input.fieldName) {
+        throw new KitsuneError(
+          'fieldName is required for dropField',
+          'validation',
+        );
+      }
+      const existing = await this.ownerPool.query<{
+        name: string;
+        type: string;
+        nullable: boolean;
+        enum_values: string[] | null;
+        indexed: boolean;
+      }>(
+        `SELECT f.name, f.type, f.nullable, f.enum_values, f.indexed
+           FROM kitsune.fields f
+          WHERE f.collection_id = $1 AND f.name = $2`,
+        [meta.id, input.fieldName],
+      );
+      const field = existing.rows[0];
+      if (!field) {
+        throw new KitsuneError(
+          `Field not found: ${input.fieldName}`,
+          'validation',
+        );
+      }
+      const definition = {
+        name: field.name,
+        type: field.type as CollectionDefinition['fields'][0]['type'],
+        nullable: field.nullable,
+        enumValues: field.enum_values ?? undefined,
+        indexed: field.indexed,
+      };
+      return {
+        ddlUp: generateDropFieldDdl(
+          schemaName,
+          meta.tableName,
+          input.fieldName,
+        ),
+        ddlDown: generateAddFieldDdl(schemaName, meta.tableName, definition),
+        payload: {
+          collection: input.collection,
+          op: input.op,
+          fieldName: input.fieldName,
+          field: definition as unknown as JsonValue,
+        },
+      };
+    }
+    if (input.op === 'setIndexed') {
+      if (!input.fieldName || input.indexed === undefined) {
+        throw new KitsuneError(
+          'fieldName and indexed are required for setIndexed',
+          'validation',
+        );
+      }
+      return {
+        ddlUp: generateSetIndexedDdl(
+          schemaName,
+          meta.tableName,
+          input.fieldName,
+          input.indexed,
+        ),
+        ddlDown: generateSetIndexedDdl(
+          schemaName,
+          meta.tableName,
+          input.fieldName,
+          !input.indexed,
+        ),
+        payload: {
+          collection: input.collection,
+          op: input.op,
+          fieldName: input.fieldName,
+          indexed: input.indexed,
+        },
+      };
+    }
+    throw new KitsuneError(`Unsupported schema op: ${input.op}`, 'validation');
   }
 
   private async acquireApplyLocks(

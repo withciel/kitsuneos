@@ -147,6 +147,78 @@ export function generateCollectionDdl(
   return stmts;
 }
 
+export function pgTypeForField(field: FieldDefinition): string {
+  return pgType(field);
+}
+
+export function generateAddFieldDdl(
+  schemaName: string,
+  tableName: string,
+  field: FieldDefinition,
+  relationTarget?: { schemaName: string; tableName: string },
+): string[] {
+  const qSchema = quoteIdent(schemaName);
+  const qTable = quoteIdent(tableName);
+  const col = quoteIdent(field.name);
+  const isNullable = field.nullable !== false;
+  let def = `${col} ${pgType(field)}`;
+  if (!isNullable && field.type !== 'relation') {
+    def += ' NOT NULL';
+  }
+  if (field.type === 'enum' && field.enumValues?.length) {
+    const values = field.enumValues
+      .map((v) => `'${escapeSqlStringLiteral(v)}'`)
+      .join(', ');
+    def += ` CHECK (${col} IN (${values}))`;
+  }
+  if (field.type === 'relation') {
+    if (!relationTarget) {
+      throw new Error(`Missing relation target for ${field.name}`);
+    }
+    if (field.nullable === false) {
+      def += ' NOT NULL';
+    }
+    def += ` REFERENCES ${quoteIdent(relationTarget.schemaName)}.${quoteIdent(relationTarget.tableName)}(id) DEFERRABLE INITIALLY DEFERRED`;
+  }
+  const stmts = [`ALTER TABLE ${qSchema}.${qTable} ADD COLUMN ${def};`];
+  if (field.indexed || field.type === 'relation') {
+    stmts.push(
+      `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${tableName}_${field.name}_idx`)} ON ${qSchema}.${qTable} (${col}) WHERE _deleted_at IS NULL;`,
+    );
+  }
+  return stmts;
+}
+
+export function generateDropFieldDdl(
+  schemaName: string,
+  tableName: string,
+  fieldName: string,
+): string[] {
+  const qSchema = quoteIdent(schemaName);
+  const qTable = quoteIdent(tableName);
+  return [
+    `DROP INDEX IF EXISTS ${qSchema}.${quoteIdent(`${tableName}_${fieldName}_idx`)};`,
+    `ALTER TABLE ${qSchema}.${qTable} DROP COLUMN ${quoteIdent(fieldName)};`,
+  ];
+}
+
+export function generateSetIndexedDdl(
+  schemaName: string,
+  tableName: string,
+  fieldName: string,
+  indexed: boolean,
+): string[] {
+  const qSchema = quoteIdent(schemaName);
+  const qTable = quoteIdent(tableName);
+  const idx = quoteIdent(`${tableName}_${fieldName}_idx`);
+  if (indexed) {
+    return [
+      `CREATE INDEX IF NOT EXISTS ${idx} ON ${qSchema}.${qTable} (${quoteIdent(fieldName)}) WHERE _deleted_at IS NULL;`,
+    ];
+  }
+  return [`DROP INDEX IF EXISTS ${qSchema}.${idx};`];
+}
+
 export function generateWorkspaceSchemaDdl(schemaName: string): string[] {
   return [
     `CREATE SCHEMA IF NOT EXISTS ${quoteIdent(schemaName)} AUTHORIZATION kitsune_owner;`,

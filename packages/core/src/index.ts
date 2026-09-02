@@ -45,6 +45,12 @@ export {
   resolveGrantRows,
 } from './grants/resolve.js';
 export {
+  getChangedFieldsSince,
+  getRevisionAtTime,
+  getRevisionSnapshot,
+  writeRevision,
+} from './revisions/write.js';
+export {
   assertIdentifier,
   validateCollectionDefinition,
   validateFieldDefinition,

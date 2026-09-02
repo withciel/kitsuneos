@@ -4,7 +4,8 @@ import {
   loadResolvedGrant,
   projectFields,
 } from '../grants/resolve.js';
-import type { QueryAggregate, QueryRequest, ResolvedGrant } from '../types.js';
+import { assertIdentifier } from '../schema/validate-definition.js';
+import type { QueryRequest, ResolvedGrant } from '../types.js';
 import { KitsuneError, quoteIdent } from '../types.js';
 import { compileFilter, compilePredicate } from './predicate-sql.js';
 
@@ -81,6 +82,8 @@ const AGG_FN_SQL = {
 
 type AllowedAggFn = keyof typeof AGG_FN_SQL;
 
+const ROOT_ALIAS = 't';
+
 function assertAggregateFn(fn: string): AllowedAggFn {
   if (!(fn in AGG_FN_SQL)) {
     throw new KitsuneError(`Invalid aggregate function: ${fn}`, 'validation');
@@ -109,19 +112,49 @@ function coerceNonNegativeInteger(value: unknown, label: string): number {
   return value;
 }
 
-function validateAggregates(
-  grant: ResolvedGrant | null,
-  aggregates: QueryAggregate[] | undefined,
-): void {
-  if (!aggregates?.length) {
+export function splitQualifiedName(
+  raw: string,
+  joinAlias: string | null,
+): { alias: string; field: string } {
+  const dot = raw.indexOf('.');
+  if (dot === -1) {
+    return { alias: ROOT_ALIAS, field: raw };
+  }
+  const as = raw.slice(0, dot);
+  const field = raw.slice(dot + 1);
+  if (!joinAlias || as !== joinAlias) {
+    throw new KitsuneError(`Unknown field qualifier: ${as}`, 'validation');
+  }
+  if (!field || field.includes('.')) {
+    throw new KitsuneError(`Invalid field: ${raw}`, 'validation');
+  }
+  return { alias: as, field };
+}
+
+function outputAlias(raw: string): string {
+  return raw.replaceAll('.', '_');
+}
+
+function assertReadableField(grant: ResolvedGrant | null, field: string): void {
+  if (field === 'id') {
+    if (!grant || grant.capability === 'none') {
+      throw new KitsuneError('Not found', 'not_found');
+    }
     return;
   }
-  for (const agg of aggregates) {
-    assertAggregateFn(agg.fn);
-    if (agg.field) {
-      assertFieldAllowed(grant, agg.field, 'read');
-    }
-  }
+  assertFieldAllowed(grant, field, 'read');
+}
+
+function validateFieldRef(
+  raw: string,
+  joinAlias: string | null,
+  rootGrant: ResolvedGrant | null,
+  joinGrant: ResolvedGrant | null,
+): { alias: string; field: string } {
+  const parsed = splitQualifiedName(raw, joinAlias);
+  const grant = parsed.alias === ROOT_ALIAS ? rootGrant : joinGrant;
+  assertReadableField(grant, parsed.field);
+  return parsed;
 }
 
 export async function compileQuery(
@@ -137,39 +170,105 @@ export async function compileQuery(
     throw new KitsuneError('Not found', 'not_found');
   }
 
-  validateAggregates(grant, request.aggregates);
+  let joinMeta: CollectionMeta | null = null;
+  let joinGrant: ResolvedGrant | null = null;
+  let joinAlias: string | null = null;
+  let joinFk = '';
+  let joinClause = '';
 
+  if (request.join) {
+    assertIdentifier(request.join.as, 'join alias');
+    if (request.join.as === ROOT_ALIAS) {
+      throw new KitsuneError('Join alias cannot be t', 'validation');
+    }
+    const relation = meta.fieldMeta.find((f) => f.name === request.join?.field);
+    if (!relation || relation.type !== 'relation' || !relation.relationTarget) {
+      throw new KitsuneError(
+        `Join field is not a relation: ${request.join.field}`,
+        'validation',
+      );
+    }
+    joinMeta = await getCollectionMeta(
+      client,
+      workspaceId,
+      relation.relationTarget,
+    );
+    joinGrant = await loadResolvedGrant(client, principalId, joinMeta.id);
+    if (!joinGrant || joinGrant.capability === 'none') {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    joinAlias = request.join.as;
+    joinFk = request.join.field;
+    const joinTable = `${quoteIdent(schemaName)}.${quoteIdent(joinMeta.tableName)}`;
+    const qJoin = quoteIdent(joinAlias);
+    joinClause = `INNER JOIN ${joinTable} ${qJoin} ON ${qJoin}.${quoteIdent('id')} = ${ROOT_ALIAS}.${quoteIdent(joinFk)} AND ${qJoin}.${quoteIdent('_deleted_at')} IS NULL`;
+  }
+
+  for (const agg of request.aggregates ?? []) {
+    assertAggregateFn(agg.fn);
+    if (agg.field) {
+      validateFieldRef(agg.field, joinAlias, grant, joinGrant);
+    }
+  }
   for (const filter of request.filters ?? []) {
-    assertFieldAllowed(grant, filter.field, 'read');
+    validateFieldRef(filter.field, joinAlias, grant, joinGrant);
   }
   for (const sort of request.sort ?? []) {
-    assertFieldAllowed(grant, sort.field, 'read');
+    validateFieldRef(sort.field, joinAlias, grant, joinGrant);
     assertSortDirection(sort.direction);
   }
   for (const group of request.groupBy ?? []) {
-    assertFieldAllowed(grant, group, 'read');
+    validateFieldRef(group, joinAlias, grant, joinGrant);
   }
 
-  const projected = projectFields(grant, request.fields, meta.fields);
-  const alias = 't';
+  const rootRequested = (request.fields ?? []).filter(
+    (f) => splitQualifiedName(f, joinAlias).alias === ROOT_ALIAS,
+  );
+  const joinRequested = (request.fields ?? []).filter(
+    (f) => splitQualifiedName(f, joinAlias).alias !== ROOT_ALIAS,
+  );
+  const projected = projectFields(
+    grant,
+    request.fields === undefined ? undefined : rootRequested,
+    meta.fields,
+  );
+  if (joinRequested.length && joinMeta) {
+    projectFields(
+      joinGrant,
+      joinRequested.map((f) => splitQualifiedName(f, joinAlias).field),
+      joinMeta.fields,
+    );
+  }
+
   const table = `${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)}`;
   const params: unknown[] = [];
   let paramIdx = 1;
   const whereParts: string[] = [];
 
   if (grant.rowPredicate) {
-    const compiled = compilePredicate(grant.rowPredicate, alias, paramIdx);
+    const compiled = compilePredicate(grant.rowPredicate, ROOT_ALIAS, paramIdx);
+    whereParts.push(compiled.sql);
+    params.push(...compiled.params);
+    paramIdx += compiled.params.length;
+  }
+  if (joinGrant?.rowPredicate && joinAlias) {
+    const compiled = compilePredicate(
+      joinGrant.rowPredicate,
+      joinAlias,
+      paramIdx,
+    );
     whereParts.push(compiled.sql);
     params.push(...compiled.params);
     paramIdx += compiled.params.length;
   }
 
   for (const filter of request.filters ?? []) {
+    const parsed = splitQualifiedName(filter.field, joinAlias);
     const compiled = compileFilter(
-      filter.field,
+      parsed.field,
       filter.op,
       filter.value,
-      alias,
+      parsed.alias,
       paramIdx,
     );
     whereParts.push(compiled.sql);
@@ -180,40 +279,59 @@ export async function compileQuery(
   const whereClause = whereParts.length
     ? `WHERE ${whereParts.join(' AND ')}`
     : '';
+  const fromClause = joinClause
+    ? `${table} ${ROOT_ALIAS} ${joinClause}`
+    : `${table} ${ROOT_ALIAS}`;
 
   if (request.aggregates?.length) {
     const selectParts: string[] = [];
     for (const group of request.groupBy ?? []) {
-      selectParts.push(`${alias}.${quoteIdent(group)} AS ${quoteIdent(group)}`);
+      const parsed = splitQualifiedName(group, joinAlias);
+      selectParts.push(
+        `${quoteIdent(parsed.alias)}.${quoteIdent(parsed.field)} AS ${quoteIdent(outputAlias(group))}`,
+      );
     }
     for (const agg of request.aggregates) {
       if (agg.field) {
+        const parsed = splitQualifiedName(agg.field, joinAlias);
         selectParts.push(
-          `${aggFnSql(agg.fn)}(${alias}.${quoteIdent(agg.field)}) AS ${quoteIdent(agg.alias)}`,
+          `${aggFnSql(agg.fn)}(${quoteIdent(parsed.alias)}.${quoteIdent(parsed.field)}) AS ${quoteIdent(agg.alias)}`,
         );
       } else {
         selectParts.push(`${aggFnSql(agg.fn)}(*) AS ${quoteIdent(agg.alias)}`);
       }
     }
     const groupClause = request.groupBy?.length
-      ? `GROUP BY ${request.groupBy.map((g) => `${alias}.${quoteIdent(g)}`).join(', ')}`
+      ? `GROUP BY ${request.groupBy
+          .map((g) => {
+            const parsed = splitQualifiedName(g, joinAlias);
+            return `${quoteIdent(parsed.alias)}.${quoteIdent(parsed.field)}`;
+          })
+          .join(', ')}`
       : '';
     const sql =
-      `SELECT ${selectParts.join(', ')} FROM ${table} ${alias} ${whereClause} ${groupClause}`.trim();
+      `SELECT ${selectParts.join(', ')} FROM ${fromClause} ${whereClause} ${groupClause}`.trim();
     return { sql, params, projectedFields: projected };
   }
 
-  // id is the record's address, not one of its fields. Without it a masked principal
-  // gets rows it cannot address, so it could never propose a change against one.
-  // Row-level authorization still decides which rows are visible at all.
   const projectedWithId = ['id', ...projected.filter((f) => f !== 'id')];
-  const selectCols = projectedWithId.map((f) => `${alias}.${quoteIdent(f)}`);
+  const selectCols = projectedWithId.map(
+    (f) => `${ROOT_ALIAS}.${quoteIdent(f)}`,
+  );
+  if (joinAlias && joinRequested.length) {
+    for (const raw of joinRequested) {
+      const parsed = splitQualifiedName(raw, joinAlias);
+      selectCols.push(
+        `${quoteIdent(parsed.alias)}.${quoteIdent(parsed.field)} AS ${quoteIdent(outputAlias(raw))}`,
+      );
+    }
+  }
   const orderClause = request.sort?.length
     ? `ORDER BY ${request.sort
-        .map(
-          (s) =>
-            `${alias}.${quoteIdent(s.field)} ${assertSortDirection(s.direction)}`,
-        )
+        .map((s) => {
+          const parsed = splitQualifiedName(s.field, joinAlias);
+          return `${quoteIdent(parsed.alias)}.${quoteIdent(parsed.field)} ${assertSortDirection(s.direction)}`;
+        })
         .join(', ')}`
     : '';
   const limitClause =
@@ -225,7 +343,7 @@ export async function compileQuery(
       ? `OFFSET ${coerceNonNegativeInteger(request.offset, 'offset')}`
       : '';
   const sql =
-    `SELECT ${selectCols.join(', ')} FROM ${table} ${alias} ${whereClause} ${orderClause} ${limitClause} ${offsetClause}`.trim();
+    `SELECT ${selectCols.join(', ')} FROM ${fromClause} ${whereClause} ${orderClause} ${limitClause} ${offsetClause}`.trim();
 
   return { sql, params, projectedFields: projectedWithId };
 }

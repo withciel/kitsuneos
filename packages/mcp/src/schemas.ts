@@ -54,6 +54,21 @@ const querySchema = {
       },
     },
     groupBy: { type: 'array', items: { type: 'string' } },
+    join: {
+      type: 'object',
+      required: ['field', 'as'],
+      properties: {
+        field: {
+          type: 'string',
+          description: 'Many-to-one relation field on the root collection.',
+        },
+        as: {
+          type: 'string',
+          description:
+            'SQL alias used to qualify joined fields, e.g. account.name.',
+        },
+      },
+    },
     limit: { type: 'integer', minimum: 0 },
     offset: { type: 'integer', minimum: 0 },
   },
