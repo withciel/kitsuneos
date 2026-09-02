@@ -1,5 +1,6 @@
 {
   "name": "kitsuneos",
+  "description": "A database layer where agents propose changes and humans approve them.",
   "private": true,
   "type": "module",
   "scripts": {

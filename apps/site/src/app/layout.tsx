@@ -16,6 +16,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
+        <header className="site-header">
+          <Link href="/">KitsuneOS</Link>
+          <nav aria-label="Account">
+            <a href="https://app.kitsuneos.com">Sign in</a>
+          </nav>
+        </header>
         {children}
         <footer className="site-footer">
           <nav aria-label="Legal and support">

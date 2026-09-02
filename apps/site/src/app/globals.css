@@ -62,6 +62,25 @@ section {
   background: var(--k-surface-sunken);
 }
 
+.site-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 1rem 1.5rem 0;
+}
+
+.site-header a {
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.site-header nav a {
+  font-weight: 500;
+  font-size: var(--k-text-small);
+}
+
 .site-footer {
   max-width: 48rem;
   margin: 0 auto;
