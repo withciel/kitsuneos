@@ -157,7 +157,11 @@ export async function compileQuery(
     return { sql, params, projectedFields: projected };
   }
 
-  const selectCols = projected.map((f) => `${alias}.${quoteIdent(f)}`);
+  // id is the record's address, not one of its fields. Without it a masked principal
+  // gets rows it cannot address, so it could never propose a change against one.
+  // Row-level authorization still decides which rows are visible at all.
+  const projectedWithId = ['id', ...projected.filter((f) => f !== 'id')];
+  const selectCols = projectedWithId.map((f) => `${alias}.${quoteIdent(f)}`);
   const orderClause =
     request.sort && request.sort.length
       ? `ORDER BY ${request.sort.map((s) => `${alias}.${quoteIdent(s.field)} ${s.direction.toUpperCase()}`).join(', ')}`
@@ -166,7 +170,7 @@ export async function compileQuery(
   const offsetClause = request.offset !== undefined ? `OFFSET ${request.offset}` : '';
   const sql = `SELECT ${selectCols.join(', ')} FROM ${table} ${alias} ${whereClause} ${orderClause} ${limitClause} ${offsetClause}`.trim();
 
-  return { sql, params, projectedFields: projected };
+  return { sql, params, projectedFields: projectedWithId };
 }
 
 export async function compileReadRecord(

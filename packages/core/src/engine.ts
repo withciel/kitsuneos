@@ -90,8 +90,11 @@ export class KitsuneEngine {
     await this.appPool.end();
   }
 
-  async createWorkspace(slug: string): Promise<{ workspaceId: string; schemaName: string }> {
-    const workspaceId = uuidv4();
+  async createWorkspace(
+    slug: string,
+    options?: { workspaceId?: string },
+  ): Promise<{ workspaceId: string; schemaName: string }> {
+    const workspaceId = options?.workspaceId ?? uuidv4();
     const schemaName = schemaNameForWorkspace(workspaceId);
     await withOwner(this.ownerPool, async (client) => {
       for (const stmt of generateWorkspaceSchemaDdl(schemaName)) {
@@ -109,8 +112,9 @@ export class KitsuneEngine {
     workspaceId: string,
     kind: 'human' | 'agent' | 'service',
     displayName: string,
+    options?: { principalId?: string },
   ): Promise<string> {
-    const id = uuidv4();
+    const id = options?.principalId ?? uuidv4();
     await withOwner(this.ownerPool, async (client) => {
       await client.query(
         `INSERT INTO kitsune.principals (id, workspace_id, kind, display_name)
@@ -1026,6 +1030,7 @@ export class KitsuneEngine {
     principalId: string,
     collection: string,
     record: Record<string, JsonValue>,
+    options?: { recordId?: string },
   ): Promise<string> {
     const schemaName = schemaNameForWorkspace(workspaceId);
     const client = await this.appPool.connect();
@@ -1040,7 +1045,7 @@ export class KitsuneEngine {
       for (const field of Object.keys(record)) {
         assertFieldAllowed(grant, field, 'write');
       }
-      const recordId = uuidv4();
+      const recordId = options?.recordId ?? uuidv4();
       const table = `${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)}`;
       const row = {
         id: recordId,

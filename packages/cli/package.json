@@ -1,0 +1,28 @@
+{
+  "name": "@kitsuneos/cli",
+  "version": "0.1.0-preview",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "kitsuneos": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "quickstart": "node --import tsx src/index.ts quickstart",
+    "review": "node --import tsx src/index.ts review",
+    "history": "node --import tsx src/index.ts history"
+  },
+  "dependencies": {
+    "@kitsuneos/core": "workspace:*",
+    "pg": "^8.16.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.2",
+    "tsx": "^4.20.0",
+    "typescript": "5.9.2"
+  }
+}

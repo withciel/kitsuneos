@@ -872,6 +872,26 @@ describe('KitsuneOS Acceptance Suite', () => {
     });
   });
 
+  it('Projection supplementary evidence: a masked principal still receives record ids but no masked field', async () => {
+    const accountId = await seedAccount(engine, fixture, { name: 'Projection' });
+    const oppId = await seedOpportunity(engine, fixture, {
+      account_id: accountId,
+      name: 'Projection Opp',
+      stage: 'prospecting',
+      amount: 4242,
+    });
+
+    const rows = await engine.query(fixture.workspaceId, fixture.readerId, {
+      collection: 'opportunities',
+      filters: [{ field: 'name', op: 'eq', value: 'Projection Opp' }],
+    });
+
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.id).toBe(oppId);
+    expect(Object.keys(rows[0]!).sort()).toEqual(['id', 'name', 'stage']);
+    expect(rows[0]).not.toHaveProperty('amount');
+  });
+
   it('RLS supplementary evidence: mismatched workspace GUC returns zero rows', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'RLS' });
     const client = await engine.appPool.connect();

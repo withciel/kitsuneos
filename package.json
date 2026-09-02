@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "build": "pnpm -r run build",
+    "quickstart": "pnpm -r run build && pnpm --filter @kitsuneos/cli run quickstart",
+    "review": "pnpm --filter @kitsuneos/cli run review",
+    "history": "pnpm --filter @kitsuneos/cli run history",
     "acceptance": "pnpm --filter @kitsuneos/acceptance test",
     "acceptance:loop": "node scripts/acceptance-loop.mjs",
-    "db:init": "sudo -u postgres psql -f scripts/db-init.sql && pnpm --filter @kitsuneos/core run migrate",
     "lint": "biome check .",
     "typecheck": "pnpm -r run typecheck"
   },
