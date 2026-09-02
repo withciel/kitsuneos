@@ -872,6 +872,64 @@ describe('KitsuneOS Acceptance Suite', () => {
     });
   });
 
+  it('24. describe_schema exposes only the collections and fields the caller is granted', async () => {
+    const handlers = createMcpHandlers(engine, () => ({
+      workspaceId: fixture.workspaceId,
+      principalId: fixture.readerId,
+    }));
+
+    const described = await handlers.describe_schema();
+
+    // The reader is granted read on opportunities masked to name and stage, and
+    // nothing at all on accounts or contacts.
+    expect(described.collections.map((c) => c.name)).toEqual(['opportunities']);
+
+    const opportunities = described.collections[0]!;
+    expect(opportunities.capability).toBe('read');
+    expect(opportunities.fields.map((f) => f.name).sort()).toEqual(['name', 'stage']);
+    expect(opportunities.fields.every((f) => f.writable === false)).toBe(true);
+
+    // The mask is not advertised as a forbidden field; it is simply absent.
+    const serialized = JSON.stringify(described);
+    expect(serialized).not.toContain('amount');
+    expect(serialized).not.toContain('next_step');
+    expect(serialized).not.toContain('accounts');
+
+    const adminHandlers = createMcpHandlers(engine, () => ({
+      workspaceId: fixture.workspaceId,
+      principalId: fixture.adminId,
+    }));
+    const adminView = await adminHandlers.describe_schema();
+    expect(adminView.collections.map((c) => c.name).sort()).toEqual([
+      'accounts',
+      'contacts',
+      'opportunities',
+    ]);
+  });
+
+  it('Audit supplementary evidence: the application role cannot update or delete audit rows', async () => {
+    const client = await engine.appPool.connect();
+    try {
+      const privileges = await client.query<{ privilege_type: string }>(
+        `SELECT privilege_type
+           FROM information_schema.table_privileges
+          WHERE table_schema = 'kitsune'
+            AND table_name = 'audit_log'
+            AND grantee = 'kitsune_app'`,
+      );
+      const granted = privileges.rows.map((r) => r.privilege_type);
+      expect(granted).toContain('INSERT');
+      expect(granted).not.toContain('UPDATE');
+      expect(granted).not.toContain('DELETE');
+
+      await expect(
+        client.query(`UPDATE kitsune.audit_log SET outcome = 'allowed'`),
+      ).rejects.toMatchObject({ code: '42501' });
+    } finally {
+      client.release();
+    }
+  });
+
   it('Projection supplementary evidence: a masked principal still receives record ids but no masked field', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'Projection' });
     const oppId = await seedOpportunity(engine, fixture, {

@@ -113,9 +113,12 @@ CREATE TABLE IF NOT EXISTS kitsune.audit_log (
   at             timestamptz NOT NULL DEFAULT now()
 );
 
-REVOKE UPDATE, DELETE ON kitsune.audit_log FROM kitsune_app;
 GRANT USAGE ON SCHEMA kitsune TO kitsune_app;
 GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA kitsune TO kitsune_app;
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA kitsune TO kitsune_app;
 ALTER DEFAULT PRIVILEGES IN SCHEMA kitsune GRANT SELECT, INSERT, UPDATE ON TABLES TO kitsune_app;
+
+-- Must come after the blanket grant above, which would otherwise hand UPDATE
+-- straight back and leave the audit log rewritable by the application role.
+REVOKE UPDATE, DELETE ON kitsune.audit_log FROM kitsune_app;
 `;
