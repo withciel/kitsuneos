@@ -910,11 +910,30 @@ describe('KitsuneOS Acceptance Suite', () => {
   });
 
   it('No SELECT * guard in core source', async () => {
-    const { execSync } = await import('node:child_process');
-    const result = execSync(
-      `rg -i "select \\*" /workspace/packages/core/src --glob '!**/*.test.ts' || true`,
-      { encoding: 'utf8' },
+    const { readdirSync, readFileSync } = await import('node:fs');
+    const { dirname, join, resolve } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+
+    const coreSrc = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      'core',
+      'src',
     );
-    expect(result.trim()).toBe('');
+
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) return walk(path);
+        return entry.isFile() && path.endsWith('.ts') ? [path] : [];
+      });
+
+    const files = walk(coreSrc);
+    // Guard the guard: a path typo here would make this test pass vacuously.
+    expect(files.length).toBeGreaterThan(5);
+
+    const offenders = files.filter((file) => /select\s+\*/i.test(readFileSync(file, 'utf8')));
+    expect(offenders).toEqual([]);
   });
 });
