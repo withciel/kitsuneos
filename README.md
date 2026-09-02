@@ -197,6 +197,8 @@ against your own Postgres with `pnpm acceptance`.
 | Ten query shapes across seven principal classes match an independently written authorization oracle, exercised through the MCP handlers | 21 |
 | Reads, writes, denials and grant changes all produce audit rows attributable to a principal | 22 |
 | A relation target the author cannot see is byte-identical to one that does not exist | 23 |
+| `describe_schema` shows only the collections and fields the caller is granted; the rest are absent, not marked forbidden | 24 |
+| The application role can insert audit rows but cannot update or delete them | supplementary |
 | A masked principal still receives record ids, but never a masked field | supplementary |
 | Row level security really bites: a mismatched workspace GUC returns zero rows | supplementary |
 | No code path issues `SELECT *`; every projection is an explicit column list | supplementary |
@@ -238,7 +240,9 @@ disclosed here rather than hidden: there is no other way to prove atomicity on t
   their own name as the password. Fine on a laptop, unacceptable anywhere else. Override with
   `KITSUNE_OWNER_URL` and `KITSUNE_APP_URL`.
 - **The audit log is append-only for the application, not for the operator.** `UPDATE` and `DELETE`
-  are revoked from `kitsune_app`, but `kitsune_owner` — which runs migrations — can still rewrite it.
+  are revoked from `kitsune_app` (supplementary test), but `kitsune_owner` — which runs migrations —
+  can still rewrite it. Immutability holds against a compromised application, not a compromised
+  operator.
 - **Grants union rather than intersect.** Two grants on the same collection resolve to the highest
   capability, the union of their field masks, and the OR of their row predicates. You cannot narrow
   a principal by adding a second, more restrictive grant; you have to revoke the broad one.
