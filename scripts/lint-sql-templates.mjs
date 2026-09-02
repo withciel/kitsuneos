@@ -9,6 +9,7 @@ const ALLOWED_CALLEES = new Set([
   'revTableName',
   'policySchemaLiteral',
   'escapeSqlStringLiteral',
+  'applyLockTimeoutLiteral',
   'aggFnSql',
   'assertSortDirection',
 ]);
@@ -86,7 +87,10 @@ function isExcludedContext(node) {
   let current = node.parent;
   while (current) {
     if (ts.isNewExpression(current) && ts.isIdentifier(current.expression)) {
-      if (current.expression.text === 'KitsuneError' || current.expression.text === 'Error') {
+      if (
+        current.expression.text === 'KitsuneError' ||
+        current.expression.text === 'Error'
+      ) {
         return true;
       }
     }
@@ -123,7 +127,10 @@ function isMapJoinChain(node) {
 }
 
 function isDisallowedExpression(node) {
-  if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+  if (
+    ts.isCallExpression(node) &&
+    ts.isPropertyAccessExpression(node.expression)
+  ) {
     if (node.expression.name.text === 'toUpperCase') {
       return true;
     }

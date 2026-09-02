@@ -1,8 +1,8 @@
-import { describe, expect, it, beforeAll } from 'vitest';
-import { v4 as uuidv4 } from 'uuid';
-import { getEngine } from './fixtures.js';
-import { provisionUserWorkspace } from '@kitsuneos/provisioning';
 import type { KitsuneEngine } from '@kitsuneos/core';
+import { provisionUserWorkspace } from '@kitsuneos/provisioning';
+import { v4 as uuidv4 } from 'uuid';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { getEngine } from './fixtures.js';
 
 describe('Signup provisioning', () => {
   let engine: KitsuneEngine;
@@ -57,7 +57,7 @@ describe('Signup provisioning', () => {
       a.workspaceId,
       a.principalId,
       'opportunities',
-      rowsB[0]!.id as string,
+      rowsB[0]?.id as string,
       ['name'],
     );
     expect(crossRead).toBeNull();

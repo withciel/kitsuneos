@@ -1,8 +1,7 @@
-import { describe, expect, it, beforeAll } from 'vitest';
-import { getEngine, createStandardFixture, type Fixture } from './fixtures.js';
-import { validateCollectionDefinition } from '@kitsuneos/core';
-import { KitsuneError } from '@kitsuneos/core';
 import type { KitsuneEngine } from '@kitsuneos/core';
+import { KitsuneError, validateCollectionDefinition } from '@kitsuneos/core';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { createStandardFixture, type Fixture, getEngine } from './fixtures.js';
 
 describe('Schema definition API validation', () => {
   let engine: KitsuneEngine;
@@ -69,7 +68,12 @@ describe('Schema definition API validation', () => {
       engine.defineCollection(fixture.workspaceId, {
         name: 'orphans',
         fields: [
-          { name: 'parent_id', type: 'relation', relationTarget: 'nonexistent', nullable: false },
+          {
+            name: 'parent_id',
+            type: 'relation',
+            relationTarget: 'nonexistent',
+            nullable: false,
+          },
         ],
       }),
     ).rejects.toMatchObject({ code: 'validation' });

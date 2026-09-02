@@ -1,10 +1,10 @@
-import type { KitsuneEngine } from '@kitsuneos/core';
 import type {
+  CollectionDefinition,
   JsonValue,
+  KitsuneEngine,
   ProposeChangeSetInput,
   QueryRequest,
   ReviewDecision,
-  CollectionDefinition,
 } from '@kitsuneos/core';
 
 export interface McpContext {
@@ -12,7 +12,10 @@ export interface McpContext {
   principalId: string;
 }
 
-export function createMcpHandlers(engine: KitsuneEngine, getContext: () => McpContext) {
+export function createMcpHandlers(
+  engine: KitsuneEngine,
+  getContext: () => McpContext,
+) {
   return {
     async describe_schema() {
       const ctx = getContext();

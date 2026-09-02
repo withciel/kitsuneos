@@ -1,8 +1,8 @@
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { v4 as uuidv4 } from 'uuid';
 import { DEFAULT_CONFIG, KitsuneEngine } from '@kitsuneos/core';
 import { provisionUserWorkspace } from '@kitsuneos/provisioning';
 import { createHttpMcpServer, resetRateLimits } from '@kitsuneos/server';
+import { v4 as uuidv4 } from 'uuid';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { getEngine, issueApiKey } from './fixtures.js';
 
 interface ProvisionedTenant {
@@ -70,7 +70,7 @@ describe('Gate 0b against provisioned workspaces', () => {
     tenantB = {
       workspaceId: provB.workspaceId,
       principalId: provB.principalId,
-      agentPrincipalId: agentB.rows[0]!.id,
+      agentPrincipalId: agentB.rows[0]?.id,
       apiKey: keyB.plaintext,
     };
 
@@ -193,18 +193,26 @@ describe('Gate 0b against provisioned workspaces', () => {
       appPoolMax: 1,
     });
     try {
-      const fromA = await isolatedEngine.query(tenantA.workspaceId, tenantA.principalId, {
-        collection: 'opportunities',
-        fields: ['name'],
-      });
+      const fromA = await isolatedEngine.query(
+        tenantA.workspaceId,
+        tenantA.principalId,
+        {
+          collection: 'opportunities',
+          fields: ['name'],
+        },
+      );
       expect(fromA.some((row) => row.name === 'Gate0b B Secret')).toBe(false);
 
-      const fromB = await isolatedEngine.query(tenantB.workspaceId, tenantB.principalId, {
-        collection: 'opportunities',
-        filters: [{ field: 'name', op: 'eq', value: 'Gate0b B Secret' }],
-      });
+      const fromB = await isolatedEngine.query(
+        tenantB.workspaceId,
+        tenantB.principalId,
+        {
+          collection: 'opportunities',
+          filters: [{ field: 'name', op: 'eq', value: 'Gate0b B Secret' }],
+        },
+      );
       expect(fromB.length).toBe(1);
-      expect(fromB[0]!.id).toBe(oppBId);
+      expect(fromB[0]?.id).toBe(oppBId);
     } finally {
       await isolatedEngine.close();
     }

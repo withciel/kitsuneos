@@ -14,10 +14,7 @@ export interface AuditEntry {
   detail?: Record<string, JsonValue>;
 }
 
-export async function writeAudit(
-  pool: Pool,
-  entry: AuditEntry,
-): Promise<void> {
+export async function writeAudit(pool: Pool, entry: AuditEntry): Promise<void> {
   const client = await pool.connect();
   try {
     await client.query(

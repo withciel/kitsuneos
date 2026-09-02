@@ -1,4 +1,9 @@
-import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import {
+  createHash,
+  randomBytes,
+  scryptSync,
+  timingSafeEqual,
+} from 'node:crypto';
 import type { Pool } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { KitsuneError } from '../types.js';
@@ -34,7 +39,9 @@ function verifyKey(plaintext: string, stored: string): boolean {
   return timingSafeEqual(expected, actual);
 }
 
-export function generateApiKeyPlaintext(mode: 'live' | 'test' = 'live'): string {
+export function generateApiKeyPlaintext(
+  mode: 'live' | 'test' = 'live',
+): string {
   const prefix = mode === 'live' ? KEY_PREFIX_LIVE : KEY_PREFIX_TEST;
   const body = randomBytes(24).toString('base64url');
   return `${prefix}${body}`;
@@ -60,7 +67,10 @@ export async function createApiKey(
   return { keyId, plaintext, prefix };
 }
 
-export async function revokeApiKey(ownerPool: Pool, keyId: string): Promise<void> {
+export async function revokeApiKey(
+  ownerPool: Pool,
+  keyId: string,
+): Promise<void> {
   await ownerPool.query(
     `UPDATE kitsune.api_keys SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`,
     [keyId],
@@ -71,7 +81,10 @@ export async function resolveApiKey(
   ownerPool: Pool,
   bearer: string,
 ): Promise<ResolvedApiKey> {
-  if (!bearer.startsWith(KEY_PREFIX_LIVE) && !bearer.startsWith(KEY_PREFIX_TEST)) {
+  if (
+    !bearer.startsWith(KEY_PREFIX_LIVE) &&
+    !bearer.startsWith(KEY_PREFIX_TEST)
+  ) {
     throw new KitsuneError('Invalid API key', 'forbidden');
   }
   const prefix = apiKeyDisplayPrefix(bearer);
@@ -93,14 +106,17 @@ export async function resolveApiKey(
     [prefix],
   );
 
-  const row = result.rows.find((candidate) => verifyKey(bearer, candidate.key_hash));
+  const row = result.rows.find((candidate) =>
+    verifyKey(bearer, candidate.key_hash),
+  );
   if (!row) {
     throw new KitsuneError('Invalid API key', 'forbidden');
   }
 
-  await ownerPool.query(`UPDATE kitsune.api_keys SET last_used_at = now() WHERE id = $1`, [
-    row.id,
-  ]);
+  await ownerPool.query(
+    `UPDATE kitsune.api_keys SET last_used_at = now() WHERE id = $1`,
+    [row.id],
+  );
 
   return {
     keyId: row.id,

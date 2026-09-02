@@ -1,13 +1,10 @@
-import { KitsuneError, SYSTEM_COLUMNS } from '../types.js';
 import type { CollectionDefinition, FieldDefinition } from '../types.js';
+import { KitsuneError, SYSTEM_COLUMNS } from '../types.js';
 
 const IDENT_RE = /^[a-z_][a-z0-9_]*$/;
 const MAX_FIELDS = 50;
 
-const RESERVED_NAMES = new Set([
-  'id',
-  ...SYSTEM_COLUMNS,
-]);
+const RESERVED_NAMES = new Set(['id', ...SYSTEM_COLUMNS]);
 
 function isReservedRevName(name: string): boolean {
   return name.endsWith('__rev') || RESERVED_NAMES.has(name);
@@ -43,7 +40,9 @@ export function validateFieldDefinition(field: FieldDefinition): void {
   }
 }
 
-export function validateCollectionDefinition(definition: CollectionDefinition): void {
+export function validateCollectionDefinition(
+  definition: CollectionDefinition,
+): void {
   assertIdentifier(definition.name, 'collection name');
   if (definition.fields.length > MAX_FIELDS) {
     throw new KitsuneError(`Too many fields (max ${MAX_FIELDS})`, 'validation');

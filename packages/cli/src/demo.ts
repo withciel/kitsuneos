@@ -101,7 +101,9 @@ export async function provisionDemo(
   if (await workspaceExists(engine)) {
     skipped.push('workspace');
   } else {
-    await engine.createWorkspace(DEMO.workspaceSlug, { workspaceId: DEMO.workspaceId });
+    await engine.createWorkspace(DEMO.workspaceSlug, {
+      workspaceId: DEMO.workspaceId,
+    });
     created.push('workspace');
   }
 
@@ -112,7 +114,9 @@ export async function provisionDemo(
     if (await principalExists(engine, id)) {
       skipped.push(`principal ${name}`);
     } else {
-      await engine.createPrincipal(DEMO.workspaceId, kind, name, { principalId: id });
+      await engine.createPrincipal(DEMO.workspaceId, kind, name, {
+        principalId: id,
+      });
       created.push(`principal ${name}`);
     }
   }
@@ -142,7 +146,12 @@ export async function provisionDemo(
     collections.contacts = await engine.defineCollection(DEMO.workspaceId, {
       name: 'contacts',
       fields: [
-        { name: 'account_id', type: 'relation', relationTarget: 'accounts', nullable: false },
+        {
+          name: 'account_id',
+          type: 'relation',
+          relationTarget: 'accounts',
+          nullable: false,
+        },
         { name: 'name', type: 'text', nullable: false },
         { name: 'email', type: 'text' },
       ],
@@ -155,22 +164,35 @@ export async function provisionDemo(
     collections.opportunities = existingOpportunities;
     skipped.push('collection opportunities');
   } else {
-    collections.opportunities = await engine.defineCollection(DEMO.workspaceId, {
-      name: 'opportunities',
-      fields: [
-        { name: 'account_id', type: 'relation', relationTarget: 'accounts', nullable: false },
-        { name: 'name', type: 'text', nullable: false },
-        { name: 'amount', type: 'number' },
-        {
-          name: 'stage',
-          type: 'enum',
-          nullable: false,
-          enumValues: ['prospecting', 'negotiation', 'closed_won', 'closed_lost'],
-          indexed: true,
-        },
-        { name: 'next_step', type: 'prose' },
-      ],
-    });
+    collections.opportunities = await engine.defineCollection(
+      DEMO.workspaceId,
+      {
+        name: 'opportunities',
+        fields: [
+          {
+            name: 'account_id',
+            type: 'relation',
+            relationTarget: 'accounts',
+            nullable: false,
+          },
+          { name: 'name', type: 'text', nullable: false },
+          { name: 'amount', type: 'number' },
+          {
+            name: 'stage',
+            type: 'enum',
+            nullable: false,
+            enumValues: [
+              'prospecting',
+              'negotiation',
+              'closed_won',
+              'closed_lost',
+            ],
+            indexed: true,
+          },
+          { name: 'next_step', type: 'prose' },
+        ],
+      },
+    );
     created.push('collection opportunities');
   }
 
@@ -209,7 +231,11 @@ export async function provisionDemo(
   }
 
   const seedAccounts = [
-    { id: DEMO.accounts.northwind, name: 'Northwind Traders', industry: 'logistics' },
+    {
+      id: DEMO.accounts.northwind,
+      name: 'Northwind Traders',
+      industry: 'logistics',
+    },
     { id: DEMO.accounts.globex, name: 'Globex', industry: 'manufacturing' },
     { id: DEMO.accounts.initech, name: 'Initech', industry: 'software' },
   ];
@@ -251,7 +277,11 @@ export async function provisionDemo(
       DEMO.workspaceId,
       DEMO.ownerId,
       'contacts',
-      { account_id: contact.account_id, name: contact.name, email: contact.email },
+      {
+        account_id: contact.account_id,
+        name: contact.name,
+        email: contact.email,
+      },
       { recordId: contact.id },
     );
     created.push(`contact ${contact.name}`);

@@ -49,7 +49,9 @@ function has(command: string): boolean {
 
 export function requirePostgres(): void {
   if (!has('psql')) {
-    console.error('KitsuneOS needs a local PostgreSQL server, but `psql` was not found.\n');
+    console.error(
+      'KitsuneOS needs a local PostgreSQL server, but `psql` was not found.\n',
+    );
     console.error('Install it with:\n');
     console.error(installHint());
     console.error('\nThen run `pnpm quickstart` again.');
@@ -58,7 +60,9 @@ export function requirePostgres(): void {
 
   const ready = spawnSync('pg_isready', ['-q'], { stdio: 'ignore' });
   if (ready.status !== 0) {
-    console.error('PostgreSQL is installed but not accepting connections on localhost:5432.\n');
+    console.error(
+      'PostgreSQL is installed but not accepting connections on localhost:5432.\n',
+    );
     console.error('Start it with:\n');
     console.error(installHint());
     console.error('\nThen run `pnpm quickstart` again.');
@@ -81,17 +85,30 @@ function superuserRoutes(): SuperuserRoute[] {
     {
       describe: 'psql -d postgres (current user)',
       run: (sql) =>
-        execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-d', 'postgres', '-f', '-'], {
-          input: sql,
-          stdio: ['pipe', 'ignore', 'pipe'],
-        }),
+        execFileSync(
+          'psql',
+          ['-v', 'ON_ERROR_STOP=1', '-d', 'postgres', '-f', '-'],
+          {
+            input: sql,
+            stdio: ['pipe', 'ignore', 'pipe'],
+          },
+        ),
     },
     {
       describe: 'psql -U postgres -d postgres',
       run: (sql) =>
         execFileSync(
           'psql',
-          ['-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'postgres', '-f', '-'],
+          [
+            '-v',
+            'ON_ERROR_STOP=1',
+            '-U',
+            'postgres',
+            '-d',
+            'postgres',
+            '-f',
+            '-',
+          ],
           { input: sql, stdio: ['pipe', 'ignore', 'pipe'] },
         ),
     },
@@ -103,7 +120,18 @@ function superuserRoutes(): SuperuserRoute[] {
       run: (sql) =>
         execFileSync(
           'sudo',
-          ['-n', '-u', 'postgres', 'psql', '-v', 'ON_ERROR_STOP=1', '-d', 'postgres', '-f', '-'],
+          [
+            '-n',
+            '-u',
+            'postgres',
+            'psql',
+            '-v',
+            'ON_ERROR_STOP=1',
+            '-d',
+            'postgres',
+            '-f',
+            '-',
+          ],
           { input: sql, stdio: ['pipe', 'ignore', 'pipe'] },
         ),
     });
@@ -114,8 +142,10 @@ function superuserRoutes(): SuperuserRoute[] {
 
 function rolesAndDatabaseReady(): boolean {
   return (
-    spawnSync('psql', [OWNER_URL, '-c', 'SELECT 1'], { stdio: 'ignore' }).status === 0 &&
-    spawnSync('psql', [APP_URL, '-c', 'SELECT 1'], { stdio: 'ignore' }).status === 0
+    spawnSync('psql', [OWNER_URL, '-c', 'SELECT 1'], { stdio: 'ignore' })
+      .status === 0 &&
+    spawnSync('psql', [APP_URL, '-c', 'SELECT 1'], { stdio: 'ignore' })
+      .status === 0
   );
 }
 
@@ -134,17 +164,22 @@ export function ensureRolesAndDatabase(): 'created' | 'already-present' {
       }
       failures.push(`${route.describe}: ran but roles still unreachable`);
     } catch (error) {
-      const detail = error instanceof Error ? error.message.split('\n')[0] : String(error);
+      const detail =
+        error instanceof Error ? error.message.split('\n')[0] : String(error);
       failures.push(`${route.describe}: ${detail}`);
     }
   }
 
-  console.error('Could not create the KitsuneOS roles and database automatically.\n');
+  console.error(
+    'Could not create the KitsuneOS roles and database automatically.\n',
+  );
   console.error('Tried:');
   for (const failure of failures) {
     console.error(`  - ${failure}`);
   }
-  console.error('\nRun this yourself as a Postgres superuser, then re-run `pnpm quickstart`:\n');
+  console.error(
+    '\nRun this yourself as a Postgres superuser, then re-run `pnpm quickstart`:\n',
+  );
   console.error(BOOTSTRAP_SQL.trim());
   console.error('\n  CREATE DATABASE kitsune OWNER kitsune_owner;');
   process.exit(1);

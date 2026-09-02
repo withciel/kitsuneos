@@ -62,7 +62,10 @@ export function ActionConsent({
           Some changes cannot be reversed once applied.
         </p>
       ) : null}
-      <ol className="k-action-consent__operations" aria-labelledby={`${listId}-count`}>
+      <ol
+        className="k-action-consent__operations"
+        aria-labelledby={`${listId}-count`}
+      >
         {actions.map((action) => (
           <li key={action.id} className="k-action-consent__operation">
             <strong>
@@ -79,11 +82,14 @@ export function ActionConsent({
           type="button"
           className="k-action-consent__decline"
           onClick={onDecline}
-          autoFocus
         >
           Decline changes
         </button>
-        <button type="button" className="k-action-consent__approve" onClick={onApprove}>
+        <button
+          type="button"
+          className="k-action-consent__approve"
+          onClick={onApprove}
+        >
           Approve changes
         </button>
       </div>
@@ -93,5 +99,9 @@ export function ActionConsent({
 
 export function StatusBadge({ status }: { status: string }) {
   const normalized = status.toLowerCase();
-  return <span className={`k-status-badge k-status-badge--${normalized}`}>{status}</span>;
+  return (
+    <span className={`k-status-badge k-status-badge--${normalized}`}>
+      {status}
+    </span>
+  );
 }

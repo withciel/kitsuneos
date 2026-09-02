@@ -20,7 +20,10 @@ export function resolveGrantRows(rows: GrantRow[]): ResolvedGrant | null {
   const rowPredicates: Predicate[] = [];
 
   for (const row of rows) {
-    if (CAPABILITY_ORDER.indexOf(row.capability) > CAPABILITY_ORDER.indexOf(capability)) {
+    if (
+      CAPABILITY_ORDER.indexOf(row.capability) >
+      CAPABILITY_ORDER.indexOf(capability)
+    ) {
       capability = row.capability;
     }
     if (row.field_mask === null) {
@@ -82,7 +85,10 @@ export function assertFieldAllowed(
   const required: Capability =
     action === 'read' ? 'read' : action === 'propose' ? 'propose' : 'write';
 
-  if (CAPABILITY_ORDER.indexOf(grant.capability) < CAPABILITY_ORDER.indexOf(required)) {
+  if (
+    CAPABILITY_ORDER.indexOf(grant.capability) <
+    CAPABILITY_ORDER.indexOf(required)
+  ) {
     if (action === 'read') {
       throw new KitsuneError('Not found', 'not_found');
     }
@@ -112,13 +118,17 @@ export function projectFields(
     return [];
   }
   const allowed =
-    grant.fieldMask === null ? allFields : grant.fieldMask.filter((f) => allFields.includes(f));
+    grant.fieldMask === null
+      ? allFields
+      : grant.fieldMask.filter((f) => allFields.includes(f));
   if (!requested || requested.length === 0) {
     return allowed;
   }
   for (const field of requested) {
     if (!allowed.includes(field)) {
-      throw new KitsuneError(`Field not permitted: ${field}`, 'forbidden', { field });
+      throw new KitsuneError(`Field not permitted: ${field}`, 'forbidden', {
+        field,
+      });
     }
   }
   return requested;

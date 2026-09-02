@@ -1,10 +1,9 @@
-import type { KitsuneEngine } from '@kitsuneos/core';
+import type { KitsuneEngine, ResolvedApiKey } from '@kitsuneos/core';
 import {
-  KitsuneError,
   apiKeyDisplayPrefix,
+  KitsuneError,
   resolveApiKey,
 } from '@kitsuneos/core';
-import type { ResolvedApiKey } from '@kitsuneos/core';
 
 export interface CredentialContext extends ResolvedApiKey {}
 

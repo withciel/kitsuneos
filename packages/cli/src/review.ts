@@ -1,4 +1,8 @@
-import { KitsuneEngine, type JsonValue, type ReviewDecision } from '@kitsuneos/core';
+import {
+  type JsonValue,
+  KitsuneEngine,
+  type ReviewDecision,
+} from '@kitsuneos/core';
 import { DEMO } from './demo.js';
 import { APP_URL, OWNER_URL } from './postgres.js';
 
@@ -50,7 +54,10 @@ async function listChangeSets(engine: KitsuneEngine): Promise<ChangeSetRow[]> {
   return result.rows;
 }
 
-async function loadOps(engine: KitsuneEngine, changeSetId: string): Promise<OpRow[]> {
+async function loadOps(
+  engine: KitsuneEngine,
+  changeSetId: string,
+): Promise<OpRow[]> {
   const result = await engine.ownerPool.query<OpRow>(
     `SELECT o.id, c.name AS collection, o.record_id, o.op, o.field_name,
             o.new_value, o.status, o.review_comment, o.seq
@@ -83,10 +90,15 @@ async function currentValue(
   return record?.[field];
 }
 
-async function showChangeSet(engine: KitsuneEngine, changeSet: ChangeSetRow): Promise<void> {
+async function showChangeSet(
+  engine: KitsuneEngine,
+  changeSet: ChangeSetRow,
+): Promise<void> {
   console.log(`\nchange set ${changeSet.id}`);
   console.log(`  ${changeSet.title ?? '(untitled)'}`);
-  console.log(`  by ${changeSet.author}, ${age(changeSet.created_at)}, status ${changeSet.status}`);
+  console.log(
+    `  by ${changeSet.author}, ${age(changeSet.created_at)}, status ${changeSet.status}`,
+  );
   if (changeSet.rationale) {
     console.log(`  rationale: ${changeSet.rationale}`);
   }
@@ -108,7 +120,12 @@ async function showChangeSet(engine: KitsuneEngine, changeSet: ChangeSetRow): Pr
       const before =
         op.op === 'insert' || !op.record_id || !op.field_name
           ? undefined
-          : await currentValue(engine, op.collection, op.record_id, op.field_name);
+          : await currentValue(
+              engine,
+              op.collection,
+              op.record_id,
+              op.field_name,
+            );
       console.log(`    [${op.status}] ${op.field_name}`);
       console.log(`        - ${render(before)}`);
       console.log(`        + ${render(op.new_value)}`);
@@ -137,7 +154,9 @@ export async function review(args: string[]): Promise<void> {
     return;
   }
 
-  const engine = new KitsuneEngine({ config: { ownerUrl: OWNER_URL, appUrl: APP_URL } });
+  const engine = new KitsuneEngine({
+    config: { ownerUrl: OWNER_URL, appUrl: APP_URL },
+  });
   try {
     const [changeSetId, action, ...rest] = args;
 
@@ -145,7 +164,9 @@ export async function review(args: string[]): Promise<void> {
       const changeSets = await listChangeSets(engine);
       if (changeSets.length === 0) {
         console.log('No open change sets.\n');
-        console.log('Ask your agent to propose one, then run `pnpm review` again.');
+        console.log(
+          'Ask your agent to propose one, then run `pnpm review` again.',
+        );
         return;
       }
       console.log(`${changeSets.length} open change set(s)`);
@@ -184,10 +205,13 @@ export async function review(args: string[]): Promise<void> {
 
     const commentIndex = rest.indexOf('--comment');
     const comment = commentIndex >= 0 ? rest[commentIndex + 1] : undefined;
-    const explicitOpIds = (commentIndex >= 0 ? rest.slice(0, commentIndex) : rest).filter(Boolean);
+    const explicitOpIds = (
+      commentIndex >= 0 ? rest.slice(0, commentIndex) : rest
+    ).filter(Boolean);
 
     const ops = await loadOps(engine, changeSet.id);
-    const targetOps = explicitOpIds.length > 0 ? explicitOpIds : ops.map((o) => o.id);
+    const targetOps =
+      explicitOpIds.length > 0 ? explicitOpIds : ops.map((o) => o.id);
     const status = action === 'approve' ? 'approved' : 'rejected';
 
     const decisions: ReviewDecision[] = targetOps.map((opId) => ({
@@ -197,7 +221,12 @@ export async function review(args: string[]): Promise<void> {
     }));
 
     for (const decision of decisions) {
-      await engine.reviewChangeSet(DEMO.workspaceId, DEMO.ownerId, changeSet.id, [decision]);
+      await engine.reviewChangeSet(
+        DEMO.workspaceId,
+        DEMO.ownerId,
+        changeSet.id,
+        [decision],
+      );
     }
     console.log(`${status} ${decisions.length} operation(s)`);
 
@@ -215,16 +244,24 @@ export async function review(args: string[]): Promise<void> {
       return;
     }
 
-    const result = await engine.applyChangeSet(DEMO.workspaceId, DEMO.ownerId, changeSet.id);
+    const result = await engine.applyChangeSet(
+      DEMO.workspaceId,
+      DEMO.ownerId,
+      changeSet.id,
+    );
     if (result.status === 'applied') {
       console.log('applied');
       console.log('\nSee the attributed revision with:');
       const touched = ops.find((o) => o.record_id);
       if (touched) {
-        console.log(`  pnpm history ${touched.collection} ${touched.record_id}`);
+        console.log(
+          `  pnpm history ${touched.collection} ${touched.record_id}`,
+        );
       }
     } else if (result.status === 'blocked') {
-      console.log(`blocked on conflicting field(s): ${result.conflicts?.join(', ')}`);
+      console.log(
+        `blocked on conflicting field(s): ${result.conflicts?.join(', ')}`,
+      );
     } else {
       console.log(result.status);
     }

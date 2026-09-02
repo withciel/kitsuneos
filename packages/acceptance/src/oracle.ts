@@ -33,9 +33,14 @@ export interface OracleQueryShape {
 }
 
 function evalPredicate(predicate: Predicate, record: OracleRecord): boolean {
-  if ('operands' in predicate && (predicate.op === 'and' || predicate.op === 'or')) {
+  if (
+    'operands' in predicate &&
+    (predicate.op === 'and' || predicate.op === 'or')
+  ) {
     const results = predicate.operands.map((o) => evalPredicate(o, record));
-    return predicate.op === 'and' ? results.every(Boolean) : results.some(Boolean);
+    return predicate.op === 'and'
+      ? results.every(Boolean)
+      : results.some(Boolean);
   }
   if ('operand' in predicate && predicate.op === 'not') {
     return !evalPredicate(predicate.operand, record);
@@ -56,7 +61,10 @@ function evalPredicate(predicate: Predicate, record: OracleRecord): boolean {
       case 'gte':
         return Number(value) >= Number(predicate.value);
       case 'in':
-        return Array.isArray(predicate.value) && predicate.value.includes(value as JsonValue);
+        return (
+          Array.isArray(predicate.value) &&
+          predicate.value.includes(value as JsonValue)
+        );
       case 'is_null':
         return value === null || value === undefined;
       case 'is_not_null':
@@ -72,7 +80,10 @@ function matchesFilter(
   record: OracleRecord,
   filter: { field: string; op: string; value: JsonValue },
 ): boolean {
-  return evalPredicate({ field: filter.field, op: filter.op as 'eq', value: filter.value }, record);
+  return evalPredicate(
+    { field: filter.field, op: filter.op as 'eq', value: filter.value },
+    record,
+  );
 }
 
 export function oracleQuery(
@@ -86,10 +97,12 @@ export function oracleQuery(
   }
 
   const allFields = records.find((r) => r.collection === shape.collection)
-    ? Object.keys(records.find((r) => r.collection === shape.collection)!.fields)
+    ? Object.keys(
+        records.find((r) => r.collection === shape.collection)?.fields,
+      )
     : [];
 
-  const requestedFields = shape.request.fields ?? (grant.fieldMask ?? allFields);
+  const requestedFields = shape.request.fields ?? grant.fieldMask ?? allFields;
   for (const field of requestedFields) {
     if (grant.fieldMask !== null && !grant.fieldMask.includes(field)) {
       return 'forbidden';
@@ -106,12 +119,18 @@ export function oracleQuery(
     }
   }
   for (const agg of shape.request.aggregates ?? []) {
-    if (agg.field && grant.fieldMask !== null && !grant.fieldMask.includes(agg.field)) {
+    if (
+      agg.field &&
+      grant.fieldMask !== null &&
+      !grant.fieldMask.includes(agg.field)
+    ) {
       return 'forbidden';
     }
   }
 
-  let filtered = records.filter((r) => r.collection === shape.collection && !r.deleted);
+  let filtered = records.filter(
+    (r) => r.collection === shape.collection && !r.deleted,
+  );
   if (grant.rowPredicate) {
     filtered = filtered.filter((r) => evalPredicate(grant.rowPredicate!, r));
   }
@@ -122,7 +141,9 @@ export function oracleQuery(
   if (shape.request.aggregates?.length) {
     const groups = new Map<string, OracleRecord[]>();
     for (const record of filtered) {
-      const key = (shape.request.groupBy ?? []).map((g) => String(record.fields[g])).join('|');
+      const key = (shape.request.groupBy ?? [])
+        .map((g) => String(record.fields[g]))
+        .join('|');
       const list = groups.get(key) ?? [];
       list.push(record);
       groups.set(key, list);
@@ -131,7 +152,7 @@ export function oracleQuery(
     for (const [, group] of groups) {
       const row: Record<string, JsonValue> = {};
       for (const g of shape.request.groupBy ?? []) {
-        row[g] = group[0]!.fields[g] ?? null;
+        row[g] = group[0]?.fields[g] ?? null;
       }
       for (const agg of shape.request.aggregates) {
         if (agg.fn === 'count') {
@@ -180,21 +201,88 @@ export function oracleQuery(
     });
   }
 
-  const limited = shape.request.limit ? projected.slice(0, shape.request.limit) : projected;
+  const limited = shape.request.limit
+    ? projected.slice(0, shape.request.limit)
+    : projected;
   return limited;
 }
 
 export const QUERY_SHAPES: OracleQueryShape[] = [
-  { name: 'list_all', collection: 'opportunities', request: { fields: ['name', 'stage'] } },
-  { name: 'filter_stage', collection: 'opportunities', request: { fields: ['name', 'stage'], filters: [{ field: 'stage', op: 'eq', value: 'prospecting' }] } },
-  { name: 'sort_amount', collection: 'opportunities', request: { fields: ['name', 'stage'], sort: [{ field: 'name', direction: 'asc' }] } },
-  { name: 'read_single', collection: 'opportunities', request: { fields: ['name'], filters: [{ field: 'name', op: 'eq', value: 'Opp A' }] } },
-  { name: 'aggregate_sum', collection: 'opportunities', request: { aggregates: [{ fn: 'sum', field: 'amount', alias: 'total' }], groupBy: ['stage'] } },
-  { name: 'aggregate_count', collection: 'opportunities', request: { aggregates: [{ fn: 'count', alias: 'cnt' }], groupBy: ['stage'] } },
-  { name: 'masked_field_read', collection: 'opportunities', request: { fields: ['amount'] }, expectError: 'forbidden' },
-  { name: 'filter_masked', collection: 'opportunities', request: { fields: ['name'], filters: [{ field: 'amount', op: 'gt', value: 100 }] }, expectError: 'forbidden' },
-  { name: 'sort_masked', collection: 'opportunities', request: { fields: ['name'], sort: [{ field: 'amount', direction: 'asc' }] }, expectError: 'forbidden' },
-  { name: 'aggregate_masked', collection: 'opportunities', request: { aggregates: [{ fn: 'sum', field: 'amount', alias: 'total' }] }, expectError: 'forbidden' },
+  {
+    name: 'list_all',
+    collection: 'opportunities',
+    request: { fields: ['name', 'stage'] },
+  },
+  {
+    name: 'filter_stage',
+    collection: 'opportunities',
+    request: {
+      fields: ['name', 'stage'],
+      filters: [{ field: 'stage', op: 'eq', value: 'prospecting' }],
+    },
+  },
+  {
+    name: 'sort_amount',
+    collection: 'opportunities',
+    request: {
+      fields: ['name', 'stage'],
+      sort: [{ field: 'name', direction: 'asc' }],
+    },
+  },
+  {
+    name: 'read_single',
+    collection: 'opportunities',
+    request: {
+      fields: ['name'],
+      filters: [{ field: 'name', op: 'eq', value: 'Opp A' }],
+    },
+  },
+  {
+    name: 'aggregate_sum',
+    collection: 'opportunities',
+    request: {
+      aggregates: [{ fn: 'sum', field: 'amount', alias: 'total' }],
+      groupBy: ['stage'],
+    },
+  },
+  {
+    name: 'aggregate_count',
+    collection: 'opportunities',
+    request: {
+      aggregates: [{ fn: 'count', alias: 'cnt' }],
+      groupBy: ['stage'],
+    },
+  },
+  {
+    name: 'masked_field_read',
+    collection: 'opportunities',
+    request: { fields: ['amount'] },
+    expectError: 'forbidden',
+  },
+  {
+    name: 'filter_masked',
+    collection: 'opportunities',
+    request: {
+      fields: ['name'],
+      filters: [{ field: 'amount', op: 'gt', value: 100 }],
+    },
+    expectError: 'forbidden',
+  },
+  {
+    name: 'sort_masked',
+    collection: 'opportunities',
+    request: {
+      fields: ['name'],
+      sort: [{ field: 'amount', direction: 'asc' }],
+    },
+    expectError: 'forbidden',
+  },
+  {
+    name: 'aggregate_masked',
+    collection: 'opportunities',
+    request: { aggregates: [{ fn: 'sum', field: 'amount', alias: 'total' }] },
+    expectError: 'forbidden',
+  },
 ];
 
 export const PRINCIPAL_CLASSES = [

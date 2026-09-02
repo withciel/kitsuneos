@@ -20,7 +20,9 @@ export async function history(args: string[]): Promise<void> {
     return;
   }
 
-  const engine = new KitsuneEngine({ config: { ownerUrl: OWNER_URL, appUrl: APP_URL } });
+  const engine = new KitsuneEngine({
+    config: { ownerUrl: OWNER_URL, appUrl: APP_URL },
+  });
   try {
     const exists = await engine.ownerPool.query(
       `SELECT 1 FROM kitsune.collections WHERE workspace_id = $1 AND name = $2`,
@@ -53,14 +55,20 @@ export async function history(args: string[]): Promise<void> {
       const who = revision.author
         ? `${revision.author} (${revision.author_kind})`
         : 'unknown principal';
-      console.log(`  revision ${revision.revision}  ${revision.valid_from.toISOString()}`);
+      console.log(
+        `  revision ${revision.revision}  ${revision.valid_from.toISOString()}`,
+      );
       console.log(`    by       ${who}`);
-      console.log(`    changed  ${revision.changed_fields.join(', ') || '(none)'}`);
+      console.log(
+        `    changed  ${revision.changed_fields.join(', ') || '(none)'}`,
+      );
       if (revision.change_set_id) {
         console.log(`    via change set ${revision.change_set_id}`);
       }
       for (const field of revision.changed_fields) {
-        console.log(`    ${field} = ${JSON.stringify(revision.snapshot[field] ?? null)}`);
+        console.log(
+          `    ${field} = ${JSON.stringify(revision.snapshot[field] ?? null)}`,
+        );
       }
       console.log('');
     }

@@ -4,7 +4,10 @@ const filterSchema = {
   type: 'object',
   required: ['field', 'op'],
   properties: {
-    field: { type: 'string', description: 'Field name. Must be readable by the caller.' },
+    field: {
+      type: 'string',
+      description: 'Field name. Must be readable by the caller.',
+    },
     op: { type: 'string', enum: [...PREDICATE_OPS] },
     value: {
       description: 'Comparison value. An array when op is "in".',
@@ -16,7 +19,10 @@ const querySchema = {
   type: 'object',
   required: ['collection'],
   properties: {
-    collection: { type: 'string', description: 'Collection name from describe_schema.' },
+    collection: {
+      type: 'string',
+      description: 'Collection name from describe_schema.',
+    },
     fields: {
       type: 'array',
       items: { type: 'string' },
@@ -71,10 +77,14 @@ const proposeChangeSetSchema = {
   type: 'object',
   required: ['operations'],
   properties: {
-    title: { type: 'string', description: 'Short summary shown to the reviewer.' },
+    title: {
+      type: 'string',
+      description: 'Short summary shown to the reviewer.',
+    },
     rationale: {
       type: 'string',
-      description: 'Why you are proposing this. Reviewers read it, so cite your source.',
+      description:
+        'Why you are proposing this. Reviewers read it, so cite your source.',
     },
     operations: {
       type: 'array',
@@ -94,7 +104,8 @@ const proposeChangeSetSchema = {
           op: { type: 'string', enum: ['insert', 'update', 'delete'] },
           fieldName: {
             type: 'string',
-            description: 'Required for insert and update. Omit for delete, which is whole-record.',
+            description:
+              'Required for insert and update. Omit for delete, which is whole-record.',
           },
           newValue: { description: 'The proposed value. Omit for delete.' },
         },
@@ -107,7 +118,10 @@ const readChangeSetFeedbackSchema = {
   type: 'object',
   required: ['changeSetId'],
   properties: {
-    changeSetId: { type: 'string', description: 'Change set uuid from propose_change_set.' },
+    changeSetId: {
+      type: 'string',
+      description: 'Change set uuid from propose_change_set.',
+    },
   },
 } as const;
 
@@ -153,7 +167,15 @@ const defineCollectionSchema = {
           name: { type: 'string' },
           type: {
             type: 'string',
-            enum: ['text', 'number', 'boolean', 'timestamp', 'enum', 'relation', 'prose'],
+            enum: [
+              'text',
+              'number',
+              'boolean',
+              'timestamp',
+              'enum',
+              'relation',
+              'prose',
+            ],
           },
           nullable: { type: 'boolean' },
           relationTarget: { type: 'string' },
@@ -198,7 +220,8 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'review_change_set',
-    description: 'Approve or reject individual operations in a change set awaiting review.',
+    description:
+      'Approve or reject individual operations in a change set awaiting review.',
     inputSchema: reviewChangeSetSchema,
   },
   {

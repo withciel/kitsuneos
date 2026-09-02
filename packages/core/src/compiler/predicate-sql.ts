@@ -62,7 +62,10 @@ export function compilePredicate(
           return `${col} IN (${placeholders.join(', ')})`;
         }
         default:
-          throw new KitsuneError(`Unsupported predicate op: ${(node as Predicate).op}`, 'validation');
+          throw new KitsuneError(
+            `Unsupported predicate op: ${(node as Predicate).op}`,
+            'validation',
+          );
       }
     }
     throw new KitsuneError('Invalid predicate node', 'validation');
@@ -73,7 +76,10 @@ export function compilePredicate(
 
 function quoteField(field: string): string {
   if (!/^[a-z_][a-z0-9_]*$/.test(field)) {
-    throw new KitsuneError(`Invalid field in predicate: ${field}`, 'validation');
+    throw new KitsuneError(
+      `Invalid field in predicate: ${field}`,
+      'validation',
+    );
   }
   return `"${field}"`;
 }

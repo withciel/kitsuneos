@@ -68,5 +68,5 @@ export function createHttpMcpServer(
   };
 }
 
-export { handleMcpHttpRequest } from './mcp-handlers.js';
 export type { McpHttpResult } from './mcp-handlers.js';
+export { handleMcpHttpRequest } from './mcp-handlers.js';

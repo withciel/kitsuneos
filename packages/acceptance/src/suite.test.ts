@@ -1,23 +1,26 @@
-import { describe, expect, it, beforeAll } from 'vitest';
-import { v4 as uuidv4 } from 'uuid';
-import { KitsuneError, migrate, DEFAULT_CONFIG, KitsuneEngine } from '@kitsuneos/core';
+import {
+  DEFAULT_CONFIG,
+  KitsuneEngine,
+  type KitsuneError,
+} from '@kitsuneos/core';
 import { createMcpHandlers } from '@kitsuneos/mcp';
+import { v4 as uuidv4 } from 'uuid';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
   createStandardFixture,
+  type Fixture,
   getEngine,
   getRecordRevision,
   getRevisionCount,
   seedAccount,
   seedOpportunity,
-  type Fixture,
 } from './fixtures.js';
 import {
+  type OraclePrincipal,
+  type OracleRecord,
   oracleQuery,
   PRINCIPAL_CLASSES,
   QUERY_SHAPES,
-  type OracleGrant,
-  type OraclePrincipal,
-  type OracleRecord,
 } from './oracle.js';
 
 describe('KitsuneOS Acceptance Suite', () => {
@@ -41,9 +44,9 @@ describe('KitsuneOS Acceptance Suite', () => {
            FROM pg_roles WHERE rolname = current_user`,
       );
       expect(role.rows.length).toBe(1);
-      expect(role.rows[0]!.current_user).toBe('kitsune_app');
-      expect(role.rows[0]!.rolsuper).toBe(false);
-      expect(role.rows[0]!.rolbypassrls).toBe(false);
+      expect(role.rows[0]?.current_user).toBe('kitsune_app');
+      expect(role.rows[0]?.rolsuper).toBe(false);
+      expect(role.rows[0]?.rolbypassrls).toBe(false);
 
       const tables = await client.query<{
         relname: string;
@@ -58,9 +61,11 @@ describe('KitsuneOS Acceptance Suite', () => {
       );
       expect(tables.rows.length).toBeGreaterThan(0);
       for (const table of tables.rows) {
-        expect(
-          { table: table.relname, enabled: table.relrowsecurity, forced: table.relforcerowsecurity },
-        ).toEqual({ table: table.relname, enabled: true, forced: true });
+        expect({
+          table: table.relname,
+          enabled: table.relrowsecurity,
+          forced: table.relforcerowsecurity,
+        }).toEqual({ table: table.relname, enabled: true, forced: true });
       }
     } finally {
       client.release();
@@ -68,7 +73,7 @@ describe('KitsuneOS Acceptance Suite', () => {
   });
 
   it('1. Creating a collection generates real DDL with real indexes and a real foreign key', async () => {
-    const tables = await engine['ownerPool'].query(
+    const tables = await engine.ownerPool.query(
       `SELECT tablename FROM pg_tables WHERE schemaname = $1 AND tablename IN ('accounts','opportunities','opportunities__rev')`,
       [fixture.schemaName],
     );
@@ -78,7 +83,7 @@ describe('KitsuneOS Acceptance Suite', () => {
       'opportunities__rev',
     ]);
 
-    const fk = await engine['ownerPool'].query(
+    const fk = await engine.ownerPool.query(
       `SELECT c.condeferrable, c.condeferred
        FROM pg_constraint c
        JOIN pg_class t ON t.oid = c.conrelid
@@ -90,7 +95,7 @@ describe('KitsuneOS Acceptance Suite', () => {
     expect(fk.rows[0].condeferrable).toBe(true);
     expect(fk.rows[0].condeferred).toBe(true);
 
-    const idx = await engine['ownerPool'].query(
+    const idx = await engine.ownerPool.query(
       `SELECT indexname FROM pg_indexes WHERE schemaname = $1 AND tablename = 'opportunities'`,
       [fixture.schemaName],
     );
@@ -101,16 +106,24 @@ describe('KitsuneOS Acceptance Suite', () => {
     const client = await engine.appPool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`SET LOCAL search_path TO ${fixture.schemaName}, kitsune, public`);
-      await client.query(`SET LOCAL kitsune.schema_name = '${fixture.schemaName}'`);
-      await client.query(`SET LOCAL kitsune.principal_id = '${fixture.adminId}'`);
+      await client.query(
+        `SET LOCAL search_path TO ${fixture.schemaName}, kitsune, public`,
+      );
+      await client.query(
+        `SET LOCAL kitsune.schema_name = '${fixture.schemaName}'`,
+      );
+      await client.query(
+        `SET LOCAL kitsune.principal_id = '${fixture.adminId}'`,
+      );
       await client.query(`SET LOCAL kitsune.include_deleted = 'false'`);
       await client.query(
         `INSERT INTO opportunities (id, account_id, name, stage, _revision, _updated_by)
          VALUES ($1, $2, 'Bad Opp', 'prospecting', 1, $3)`,
         [uuidv4(), uuidv4(), fixture.adminId],
       );
-      await expect(client.query('COMMIT')).rejects.toThrow(/foreign key|violates/);
+      await expect(client.query('COMMIT')).rejects.toThrow(
+        /foreign key|violates/,
+      );
     } finally {
       try {
         await client.query('ROLLBACK');
@@ -125,63 +138,166 @@ describe('KitsuneOS Acceptance Suite', () => {
     const accountId = uuidv4();
     const oppId = uuidv4();
 
-    const cs1 = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'insert', fieldName: 'name', newValue: 'Acme' },
-        { collection: 'opportunities', recordId: oppId, op: 'insert', fieldName: 'account_id', newValue: accountId },
-        { collection: 'opportunities', recordId: oppId, op: 'insert', fieldName: 'name', newValue: 'Deal 1' },
-        { collection: 'opportunities', recordId: oppId, op: 'insert', fieldName: 'stage', newValue: 'prospecting' },
-      ],
-    });
+    const cs1 = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'insert',
+            fieldName: 'name',
+            newValue: 'Acme',
+          },
+          {
+            collection: 'opportunities',
+            recordId: oppId,
+            op: 'insert',
+            fieldName: 'account_id',
+            newValue: accountId,
+          },
+          {
+            collection: 'opportunities',
+            recordId: oppId,
+            op: 'insert',
+            fieldName: 'name',
+            newValue: 'Deal 1',
+          },
+          {
+            collection: 'opportunities',
+            recordId: oppId,
+            op: 'insert',
+            fieldName: 'stage',
+            newValue: 'prospecting',
+          },
+        ],
+      },
+    );
     for (const opId of cs1.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs1.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs1.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
-    const r1 = await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs1.changeSetId);
+    const r1 = await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs1.changeSetId,
+    );
     expect(r1.status).toBe('applied');
 
     const accountId2 = uuidv4();
     const oppId2 = uuidv4();
-    const cs2 = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'opportunities', recordId: oppId2, op: 'insert', fieldName: 'account_id', newValue: accountId2 },
-        { collection: 'opportunities', recordId: oppId2, op: 'insert', fieldName: 'name', newValue: 'Deal 2' },
-        { collection: 'opportunities', recordId: oppId2, op: 'insert', fieldName: 'stage', newValue: 'prospecting' },
-        { collection: 'accounts', recordId: accountId2, op: 'insert', fieldName: 'name', newValue: 'Beta' },
-      ],
-    });
+    const cs2 = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'opportunities',
+            recordId: oppId2,
+            op: 'insert',
+            fieldName: 'account_id',
+            newValue: accountId2,
+          },
+          {
+            collection: 'opportunities',
+            recordId: oppId2,
+            op: 'insert',
+            fieldName: 'name',
+            newValue: 'Deal 2',
+          },
+          {
+            collection: 'opportunities',
+            recordId: oppId2,
+            op: 'insert',
+            fieldName: 'stage',
+            newValue: 'prospecting',
+          },
+          {
+            collection: 'accounts',
+            recordId: accountId2,
+            op: 'insert',
+            fieldName: 'name',
+            newValue: 'Beta',
+          },
+        ],
+      },
+    );
     for (const opId of cs2.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs2.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs2.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
-    const r2 = await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs2.changeSetId);
+    const r2 = await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs2.changeSetId,
+    );
     expect(r2.status).toBe('applied');
   });
 
   it('4. Every write produces exactly one __rev row with correct changed_fields', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'RevCo' });
-    const before = await getRevisionCount(engine, fixture.schemaName, 'accounts', accountId);
+    const before = await getRevisionCount(
+      engine,
+      fixture.schemaName,
+      'accounts',
+      accountId,
+    );
     expect(before).toBe(1);
 
-    const cs = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'RevCo Updated' },
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'industry', newValue: 'Tech' },
-      ],
-    });
+    const cs = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'RevCo Updated',
+          },
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'industry',
+            newValue: 'Tech',
+          },
+        ],
+      },
+    );
     for (const opId of cs.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
-    await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId);
+    await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs.changeSetId,
+    );
 
-    const after = await getRevisionCount(engine, fixture.schemaName, 'accounts', accountId);
+    const after = await getRevisionCount(
+      engine,
+      fixture.schemaName,
+      'accounts',
+      accountId,
+    );
     expect(after).toBe(2);
 
-    const rev = await engine['ownerPool'].query(
+    const rev = await engine.ownerPool.query(
       `SELECT changed_fields FROM ${fixture.schemaName}.accounts__rev WHERE record_id = $1 AND revision = 2`,
       [accountId],
     );
@@ -189,20 +305,40 @@ describe('KitsuneOS Acceptance Suite', () => {
   });
 
   it('5. A record state at an arbitrary past revision is reconstructable', async () => {
-    const accountId = await seedAccount(engine, fixture, { name: 'V1', industry: 'A' });
-    const cs = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'V2' },
-      ],
+    const accountId = await seedAccount(engine, fixture, {
+      name: 'V1',
+      industry: 'A',
     });
+    const cs = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'V2',
+          },
+        ],
+      },
+    );
     for (const opId of cs.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
-    await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId);
+    await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs.changeSetId,
+    );
 
-    const snap = await engine['ownerPool'].query(
+    const snap = await engine.ownerPool.query(
       `SELECT snapshot FROM ${fixture.schemaName}.accounts__rev WHERE record_id = $1 AND revision = 1`,
       [accountId],
     );
@@ -212,15 +348,28 @@ describe('KitsuneOS Acceptance Suite', () => {
 
   it('6. A soft-deleted record is absent from queries but present in history', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'DeleteMe' });
-    const cs = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [{ collection: 'accounts', recordId: accountId, op: 'delete' }],
-    });
+    const cs = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          { collection: 'accounts', recordId: accountId, op: 'delete' },
+        ],
+      },
+    );
     for (const opId of cs.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
-    await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId);
+    await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs.changeSetId,
+    );
 
     const visible = await engine.readRecord(
       fixture.workspaceId,
@@ -230,56 +379,125 @@ describe('KitsuneOS Acceptance Suite', () => {
     );
     expect(visible).toBeNull();
 
-    const history = await getRevisionCount(engine, fixture.schemaName, 'accounts', accountId);
+    const history = await getRevisionCount(
+      engine,
+      fixture.schemaName,
+      'accounts',
+      accountId,
+    );
     expect(history).toBeGreaterThan(0);
   });
 
   it('7. A clean change set applies and bumps _revision on every touched record', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'Bump' });
-    const revBefore = await getRecordRevision(engine, fixture.schemaName, 'accounts', accountId);
-    const cs = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'Bumped' },
-      ],
-    });
+    const revBefore = await getRecordRevision(
+      engine,
+      fixture.schemaName,
+      'accounts',
+      accountId,
+    );
+    const cs = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'Bumped',
+          },
+        ],
+      },
+    );
     for (const opId of cs.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
-    const result = await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId);
+    const result = await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs.changeSetId,
+    );
     expect(result.status).toBe('applied');
-    const revAfter = await getRecordRevision(engine, fixture.schemaName, 'accounts', accountId);
+    const revAfter = await getRecordRevision(
+      engine,
+      fixture.schemaName,
+      'accounts',
+      accountId,
+    );
     expect(revAfter).toBe(revBefore + 1);
   });
 
   it('8. Two change sets touching different fields of the same record both apply cleanly', async () => {
-    const accountId = await seedAccount(engine, fixture, { name: 'Multi', industry: 'X' });
+    const accountId = await seedAccount(engine, fixture, {
+      name: 'Multi',
+      industry: 'X',
+    });
 
-    const cs1 = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'Multi-A' },
-      ],
-    });
-    const cs2 = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'industry', newValue: 'Y' },
-      ],
-    });
+    const cs1 = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'Multi-A',
+          },
+        ],
+      },
+    );
+    const cs2 = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'industry',
+            newValue: 'Y',
+          },
+        ],
+      },
+    );
 
     for (const opId of cs1.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs1.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs1.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
     for (const opId of cs2.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs2.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs2.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
 
-    const r1 = await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs1.changeSetId);
-    const r2 = await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs2.changeSetId);
+    const r1 = await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs1.changeSetId,
+    );
+    const r2 = await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs2.changeSetId,
+    );
     expect(r1.status).toBe('applied');
     expect(r2.status).toBe('applied');
 
@@ -296,32 +514,66 @@ describe('KitsuneOS Acceptance Suite', () => {
   it('9. Two change sets touching the same field: first applies, second blocked with conflicting field named', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'Conflict' });
 
-    const cs1 = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'First' },
-      ],
-    });
-    const cs2 = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'Second' },
-      ],
-    });
+    const cs1 = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'First',
+          },
+        ],
+      },
+    );
+    const cs2 = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'Second',
+          },
+        ],
+      },
+    );
 
     for (const opId of cs1.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs1.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs1.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
     for (const opId of cs2.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs2.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs2.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
 
-    const applied1 = await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs1.changeSetId);
+    const applied1 = await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs1.changeSetId,
+    );
     expect(applied1.status).toBe('applied');
 
-    const blocked = await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs2.changeSetId);
+    const blocked = await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs2.changeSetId,
+    );
     expect(blocked.status).toBe('blocked');
     expect(blocked.conflicts).toContain('name');
   });
@@ -333,21 +585,56 @@ describe('KitsuneOS Acceptance Suite', () => {
       config: DEFAULT_CONFIG,
       applyFaultInjection: { afterOpIndex: 4 },
     });
-    const cs = await faultEngine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'insert', fieldName: 'name', newValue: 'Atomic' },
-        { collection: 'opportunities', recordId: oppId, op: 'insert', fieldName: 'account_id', newValue: accountId },
-        { collection: 'opportunities', recordId: oppId, op: 'insert', fieldName: 'name', newValue: 'Atomic Opp' },
-        { collection: 'opportunities', recordId: oppId, op: 'insert', fieldName: 'stage', newValue: 'prospecting' },
-      ],
-    });
+    const cs = await faultEngine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'insert',
+            fieldName: 'name',
+            newValue: 'Atomic',
+          },
+          {
+            collection: 'opportunities',
+            recordId: oppId,
+            op: 'insert',
+            fieldName: 'account_id',
+            newValue: accountId,
+          },
+          {
+            collection: 'opportunities',
+            recordId: oppId,
+            op: 'insert',
+            fieldName: 'name',
+            newValue: 'Atomic Opp',
+          },
+          {
+            collection: 'opportunities',
+            recordId: oppId,
+            op: 'insert',
+            fieldName: 'stage',
+            newValue: 'prospecting',
+          },
+        ],
+      },
+    );
     for (const opId of cs.operationIds) {
-      await faultEngine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await faultEngine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
     await expect(
-      faultEngine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId),
+      faultEngine.applyChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+      ),
     ).rejects.toThrow(/Fault injection/);
 
     const account = await engine.readRecord(
@@ -368,21 +655,55 @@ describe('KitsuneOS Acceptance Suite', () => {
   });
 
   it('11. Partial approval applies exactly approved operations', async () => {
-    const accountId = await seedAccount(engine, fixture, { name: 'Partial', industry: 'Old' });
-    const cs = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'Approved Name' },
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'industry', newValue: 'New' },
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'Rejected Name' },
-      ],
+    const accountId = await seedAccount(engine, fixture, {
+      name: 'Partial',
+      industry: 'Old',
     });
+    const cs = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'Approved Name',
+          },
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'industry',
+            newValue: 'New',
+          },
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'Rejected Name',
+          },
+        ],
+      },
+    );
     const decisions = cs.operationIds.map((opId, i) => ({
       opId,
       status: i < 2 ? ('approved' as const) : ('rejected' as const),
       comment: i === 2 ? 'Duplicate field change' : undefined,
     }));
-    await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, decisions);
-    await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId);
+    await engine.reviewChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs.changeSetId,
+      decisions,
+    );
+    await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      cs.changeSetId,
+    );
 
     const record = await engine.readRecord(
       fixture.workspaceId,
@@ -398,28 +719,40 @@ describe('KitsuneOS Acceptance Suite', () => {
       fixture.agentId,
       cs.changeSetId,
     );
-    expect(feedback.operations.find((o) => o.comment)?.comment).toBe('Duplicate field change');
+    expect(feedback.operations.find((o) => o.comment)?.comment).toBe(
+      'Duplicate field change',
+    );
   });
 
   it('12. Concurrent applies touching overlapping records do not deadlock', async () => {
-    const accountId = await seedAccount(engine, fixture, { name: 'Concurrent', industry: 'Z' });
+    const accountId = await seedAccount(engine, fixture, {
+      name: 'Concurrent',
+      industry: 'Z',
+    });
     const changeSets = [];
     for (let i = 0; i < 20; i++) {
-      const cs = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-        operations: [
-          {
-            collection: 'accounts',
-            recordId: accountId,
-            op: 'update',
-            fieldName: i % 2 === 0 ? 'name' : 'industry',
-            newValue: i % 2 === 0 ? `Name-${i}` : `Ind-${i}`,
-          },
-        ],
-      });
+      const cs = await engine.proposeChangeSet(
+        fixture.workspaceId,
+        fixture.agentId,
+        {
+          operations: [
+            {
+              collection: 'accounts',
+              recordId: accountId,
+              op: 'update',
+              fieldName: i % 2 === 0 ? 'name' : 'industry',
+              newValue: i % 2 === 0 ? `Name-${i}` : `Ind-${i}`,
+            },
+          ],
+        },
+      );
       for (const opId of cs.operationIds) {
-        await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, [
-          { opId, status: 'approved' },
-        ]);
+        await engine.reviewChangeSet(
+          fixture.workspaceId,
+          fixture.reviewerId,
+          cs.changeSetId,
+          [{ opId, status: 'approved' }],
+        );
       }
       changeSets.push(cs.changeSetId);
     }
@@ -438,46 +771,93 @@ describe('KitsuneOS Acceptance Suite', () => {
 
   it('13. A change set referencing a deleted record fails at apply and does not resurrect it', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'Gone' });
-    const delCs = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [{ collection: 'accounts', recordId: accountId, op: 'delete' }],
-    });
+    const delCs = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          { collection: 'accounts', recordId: accountId, op: 'delete' },
+        ],
+      },
+    );
     for (const opId of delCs.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, delCs.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        delCs.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
-    await engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, delCs.changeSetId);
+    await engine.applyChangeSet(
+      fixture.workspaceId,
+      fixture.reviewerId,
+      delCs.changeSetId,
+    );
 
-    const cs = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'Resurrect' },
-      ],
-    });
+    const cs = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'Resurrect',
+          },
+        ],
+      },
+    );
     for (const opId of cs.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
     await expect(
-      engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId),
+      engine.applyChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+      ),
     ).rejects.toMatchObject({ code: 'blocked' });
   });
 
   it('14. An expired change set cannot be applied', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'Expire' });
-    const cs = await engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
-      operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'Expired' },
-      ],
-    });
+    const cs = await engine.proposeChangeSet(
+      fixture.workspaceId,
+      fixture.agentId,
+      {
+        operations: [
+          {
+            collection: 'accounts',
+            recordId: accountId,
+            op: 'update',
+            fieldName: 'name',
+            newValue: 'Expired',
+          },
+        ],
+      },
+    );
     await engine.expireChangeSet(cs.changeSetId);
     for (const opId of cs.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
     await expect(
-      engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId),
+      engine.applyChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+      ),
     ).rejects.toMatchObject({ code: 'expired' });
   });
 
@@ -545,7 +925,7 @@ describe('KitsuneOS Acceptance Suite', () => {
 
   it('16. A principal with a row predicate receives not-found for excluded rows', async () => {
     const accountId = await seedAccount(engine, fixture, { name: 'Pred' });
-    const openId = await seedOpportunity(engine, fixture, {
+    const _openId = await seedOpportunity(engine, fixture, {
       account_id: accountId,
       name: 'Open',
       stage: 'prospecting',
@@ -558,10 +938,14 @@ describe('KitsuneOS Acceptance Suite', () => {
       amount: 200,
     });
 
-    const list = await engine.query(fixture.workspaceId, fixture.predicateAgentId, {
-      collection: 'opportunities',
-      fields: ['name', 'stage'],
-    });
+    const list = await engine.query(
+      fixture.workspaceId,
+      fixture.predicateAgentId,
+      {
+        collection: 'opportunities',
+        fields: ['name', 'stage'],
+      },
+    );
     expect(list.map((r) => r.name)).toContain('Open');
     expect(list.map((r) => r.name)).not.toContain('Closed');
 
@@ -585,14 +969,27 @@ describe('KitsuneOS Acceptance Suite', () => {
     await expect(
       engine.proposeChangeSet(fixture.workspaceId, fixture.agentId, {
         operations: [
-          { collection: 'opportunities', recordId: oppId, op: 'update', fieldName: 'amount', newValue: 999 },
+          {
+            collection: 'opportunities',
+            recordId: oppId,
+            op: 'update',
+            fieldName: 'amount',
+            newValue: 999,
+          },
         ],
       }),
-    ).rejects.toMatchObject({ code: 'forbidden', message: expect.stringContaining('amount') });
+    ).rejects.toMatchObject({
+      code: 'forbidden',
+      message: expect.stringContaining('amount'),
+    });
   });
 
   it('18. Revoking the author grant after creation but before apply blocks the apply', async () => {
-    const tempAgent = await engine.createPrincipal(fixture.workspaceId, 'agent', 'Temp');
+    const tempAgent = await engine.createPrincipal(
+      fixture.workspaceId,
+      'agent',
+      'Temp',
+    );
     await engine.createGrant(
       fixture.workspaceId,
       tempAgent,
@@ -605,21 +1002,38 @@ describe('KitsuneOS Acceptance Suite', () => {
     const accountId = await seedAccount(engine, fixture, { name: 'Revoke' });
     const cs = await engine.proposeChangeSet(fixture.workspaceId, tempAgent, {
       operations: [
-        { collection: 'accounts', recordId: accountId, op: 'update', fieldName: 'name', newValue: 'Revoked' },
+        {
+          collection: 'accounts',
+          recordId: accountId,
+          op: 'update',
+          fieldName: 'name',
+          newValue: 'Revoked',
+        },
       ],
     });
-    const grant = await engine['ownerPool'].query(
+    const grant = await engine.ownerPool.query(
       `SELECT id FROM kitsune.grants WHERE principal_id = $1 AND revoked_at IS NULL`,
       [tempAgent],
     );
-    await engine.revokeGrant(grant.rows[0].id, fixture.adminId, fixture.workspaceId);
+    await engine.revokeGrant(
+      grant.rows[0].id,
+      fixture.adminId,
+      fixture.workspaceId,
+    );
     for (const opId of cs.operationIds) {
-      await engine.reviewChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId, [
-        { opId, status: 'approved' },
-      ]);
+      await engine.reviewChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+        [{ opId, status: 'approved' }],
+      );
     }
     await expect(
-      engine.applyChangeSet(fixture.workspaceId, fixture.reviewerId, cs.changeSetId),
+      engine.applyChangeSet(
+        fixture.workspaceId,
+        fixture.reviewerId,
+        cs.changeSetId,
+      ),
     ).rejects.toMatchObject({ code: 'blocked' });
   });
 
@@ -635,14 +1049,27 @@ describe('KitsuneOS Acceptance Suite', () => {
     await expect(
       engine.proposeChangeSet(fixture.workspaceId, fixture.limitedAgentId, {
         operations: [
-          { collection: 'opportunities', recordId: oppId, op: 'update', fieldName: 'amount', newValue: 2000 },
+          {
+            collection: 'opportunities',
+            recordId: oppId,
+            op: 'update',
+            fieldName: 'amount',
+            newValue: 2000,
+          },
         ],
       }),
-    ).rejects.toMatchObject({ code: 'forbidden', message: expect.stringContaining('amount') });
+    ).rejects.toMatchObject({
+      code: 'forbidden',
+      message: expect.stringContaining('amount'),
+    });
   });
 
   it('20. An agent principal cannot be granted write without explicit admin action and audit event', async () => {
-    const tempAgent = await engine.createPrincipal(fixture.workspaceId, 'agent', 'WriteAgent');
+    const tempAgent = await engine.createPrincipal(
+      fixture.workspaceId,
+      'agent',
+      'WriteAgent',
+    );
     await expect(
       engine.createGrant(
         fixture.workspaceId,
@@ -664,7 +1091,7 @@ describe('KitsuneOS Acceptance Suite', () => {
       { adminOverrideAgentWrite: true, actorId: fixture.adminId },
     );
 
-    const audit = await engine['ownerPool'].query(
+    const audit = await engine.ownerPool.query(
       `SELECT action FROM kitsune.audit_log WHERE action = 'grant.agent_write_override' AND principal_id = $1`,
       [fixture.adminId],
     );
@@ -675,7 +1102,9 @@ describe('KitsuneOS Acceptance Suite', () => {
     const matrixEngine = await getEngine();
     const matrixFixture = await createStandardFixture(matrixEngine);
 
-    const accountId = await seedAccount(matrixEngine, matrixFixture, { name: 'MatrixCo' });
+    const accountId = await seedAccount(matrixEngine, matrixFixture, {
+      name: 'MatrixCo',
+    });
     const oppA = await seedOpportunity(matrixEngine, matrixFixture, {
       account_id: accountId,
       name: 'Opp A',
@@ -706,7 +1135,11 @@ describe('KitsuneOS Acceptance Suite', () => {
       admin: {
         id: matrixFixture.adminId,
         grants: {
-          opportunities: { capability: 'admin', fieldMask: null, rowPredicate: null },
+          opportunities: {
+            capability: 'admin',
+            fieldMask: null,
+            rowPredicate: null,
+          },
         },
       },
       reader: {
@@ -773,21 +1206,27 @@ describe('KitsuneOS Acceptance Suite', () => {
         const grant = oraclePrincipal.grants[shape.collection];
 
         if (!grant || grant.capability === 'none') {
-          await expect(handlers.query(matrixQuery(shape))).rejects.toMatchObject({
+          await expect(
+            handlers.query(matrixQuery(shape)),
+          ).rejects.toMatchObject({
             code: 'not_found',
           });
           continue;
         }
 
         if (expected === 'forbidden') {
-          await expect(handlers.query(matrixQuery(shape))).rejects.toMatchObject({
+          await expect(
+            handlers.query(matrixQuery(shape)),
+          ).rejects.toMatchObject({
             code: 'forbidden',
           });
           continue;
         }
 
         if (expected === 'not_found') {
-          await expect(handlers.query(matrixQuery(shape))).rejects.toMatchObject({
+          await expect(
+            handlers.query(matrixQuery(shape)),
+          ).rejects.toMatchObject({
             code: 'not_found',
           });
           continue;
@@ -806,7 +1245,7 @@ describe('KitsuneOS Acceptance Suite', () => {
   });
 
   it('22. Reads, writes, denials, and grant changes all produce audit rows attributable to a principal', async () => {
-    const before = await engine['ownerPool'].query(
+    const before = await engine.ownerPool.query(
       `SELECT COUNT(*)::int AS c FROM kitsune.audit_log WHERE workspace_id = $1`,
       [fixture.workspaceId],
     );
@@ -828,7 +1267,7 @@ describe('KitsuneOS Acceptance Suite', () => {
     const accountId = await seedAccount(engine, fixture, { name: 'Audit' });
     expect(accountId).toBeTruthy();
 
-    const after = await engine['ownerPool'].query(
+    const after = await engine.ownerPool.query(
       `SELECT action, outcome, principal_id FROM kitsune.audit_log WHERE workspace_id = $1`,
       [fixture.workspaceId],
     );
@@ -876,7 +1315,11 @@ describe('KitsuneOS Acceptance Suite', () => {
     const nonexistent = await captureError(nonexistentAccount);
 
     expect(hidden).not.toBeNull();
-    expect(hidden).toEqual({ code: 'not_found', message: 'Not found', details: undefined });
+    expect(hidden).toEqual({
+      code: 'not_found',
+      message: 'Not found',
+      details: undefined,
+    });
     expect(hidden).toEqual(nonexistent);
 
     // A target the author can actually see is still accepted.
@@ -899,7 +1342,10 @@ describe('KitsuneOS Acceptance Suite', () => {
 
     const opportunities = described.collections[0]!;
     expect(opportunities.capability).toBe('read');
-    expect(opportunities.fields.map((f) => f.name).sort()).toEqual(['name', 'stage']);
+    expect(opportunities.fields.map((f) => f.name).sort()).toEqual([
+      'name',
+      'stage',
+    ]);
     expect(opportunities.fields.every((f) => f.writable === false)).toBe(true);
 
     // The mask is not advertised as a forbidden field; it is simply absent.
@@ -921,7 +1367,9 @@ describe('KitsuneOS Acceptance Suite', () => {
   });
 
   it('Compiler security: aggregate fn, sort direction, limit, and offset reject injection', async () => {
-    const accountId = await seedAccount(engine, fixture, { name: 'CompilerSec' });
+    const accountId = await seedAccount(engine, fixture, {
+      name: 'CompilerSec',
+    });
     await seedOpportunity(engine, fixture, {
       account_id: accountId,
       name: 'Sec Opp',
@@ -1050,10 +1498,14 @@ describe('KitsuneOS Acceptance Suite', () => {
       }),
     ).rejects.toMatchObject({ code: 'validation' });
 
-    const rowsAfterInjection = await engine.query(fixtureA.workspaceId, fixtureA.adminId, {
-      collection: 'opportunities',
-      filters: [{ field: 'name', op: 'eq', value: 'B Secret' }],
-    });
+    const rowsAfterInjection = await engine.query(
+      fixtureA.workspaceId,
+      fixtureA.adminId,
+      {
+        collection: 'opportunities',
+        filters: [{ field: 'name', op: 'eq', value: 'B Secret' }],
+      },
+    );
     expect(rowsAfterInjection).toEqual([]);
 
     const isolatedEngine = new KitsuneEngine({
@@ -1061,25 +1513,35 @@ describe('KitsuneOS Acceptance Suite', () => {
       appPoolMax: 1,
     });
     try {
-      const fromA = await isolatedEngine.query(fixtureA.workspaceId, fixtureA.adminId, {
-        collection: 'opportunities',
-        fields: ['name'],
-      });
+      const fromA = await isolatedEngine.query(
+        fixtureA.workspaceId,
+        fixtureA.adminId,
+        {
+          collection: 'opportunities',
+          fields: ['name'],
+        },
+      );
       expect(fromA.some((row) => row.name === 'B Secret')).toBe(false);
 
-      const fromB = await isolatedEngine.query(fixtureB.workspaceId, fixtureB.adminId, {
-        collection: 'opportunities',
-        filters: [{ field: 'name', op: 'eq', value: 'B Secret' }],
-      });
+      const fromB = await isolatedEngine.query(
+        fixtureB.workspaceId,
+        fixtureB.adminId,
+        {
+          collection: 'opportunities',
+          filters: [{ field: 'name', op: 'eq', value: 'B Secret' }],
+        },
+      );
       expect(fromB.length).toBe(1);
-      expect(fromB[0]!.id).toBe(oppB);
+      expect(fromB[0]?.id).toBe(oppB);
     } finally {
       await isolatedEngine.close();
     }
   });
 
   it('search_path removal: queries resolve with a deliberately wrong search_path', async () => {
-    const accountId = await seedAccount(engine, fixture, { name: 'SearchPath' });
+    const accountId = await seedAccount(engine, fixture, {
+      name: 'SearchPath',
+    });
     const oppId = await seedOpportunity(engine, fixture, {
       account_id: accountId,
       name: 'Path Opp',
@@ -1094,30 +1556,46 @@ describe('KitsuneOS Acceptance Suite', () => {
       await client.query(`SELECT set_config('kitsune.schema_name', $1, true)`, [
         fixture.schemaName,
       ]);
-      await client.query(`SELECT set_config('kitsune.principal_id', $1, true)`, [
-        fixture.adminId,
-      ]);
-      await client.query(`SELECT set_config('kitsune.include_deleted', $1, true)`, ['false']);
+      await client.query(
+        `SELECT set_config('kitsune.principal_id', $1, true)`,
+        [fixture.adminId],
+      );
+      await client.query(
+        `SELECT set_config('kitsune.include_deleted', $1, true)`,
+        ['false'],
+      );
 
       const compiled = await import('@kitsuneos/core').then((m) =>
-        m.compileQuery(client, fixture.workspaceId, fixture.adminId, fixture.schemaName, {
-          collection: 'opportunities',
-          fields: ['name', 'stage'],
-          filters: [{ field: 'id', op: 'eq', value: oppId }],
-        }),
+        m.compileQuery(
+          client,
+          fixture.workspaceId,
+          fixture.adminId,
+          fixture.schemaName,
+          {
+            collection: 'opportunities',
+            fields: ['name', 'stage'],
+            filters: [{ field: 'id', op: 'eq', value: oppId }],
+          },
+        ),
       );
       const rows = await client.query(compiled.sql, compiled.params);
       expect(rows.rows.length).toBe(1);
-      expect(rows.rows[0]!.name).toBe('Path Opp');
+      expect(rows.rows[0]?.name).toBe('Path Opp');
 
       const aggCompiled = await import('@kitsuneos/core').then((m) =>
-        m.compileQuery(client, fixture.workspaceId, fixture.adminId, fixture.schemaName, {
-          collection: 'opportunities',
-          aggregates: [{ fn: 'count', alias: 'n' }],
-        }),
+        m.compileQuery(
+          client,
+          fixture.workspaceId,
+          fixture.adminId,
+          fixture.schemaName,
+          {
+            collection: 'opportunities',
+            aggregates: [{ fn: 'count', alias: 'n' }],
+          },
+        ),
       );
       const aggRows = await client.query(aggCompiled.sql, aggCompiled.params);
-      expect(Number(aggRows.rows[0]!.n)).toBeGreaterThan(0);
+      expect(Number(aggRows.rows[0]?.n)).toBeGreaterThan(0);
 
       await client.query('COMMIT');
     } finally {
@@ -1129,7 +1607,12 @@ describe('KitsuneOS Acceptance Suite', () => {
     const { execSync } = await import('node:child_process');
     const { resolve, dirname } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
-    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+    const root = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      '..',
+    );
     const output = execSync('node scripts/lint-sql-templates.mjs', {
       cwd: root,
       encoding: 'utf8',
@@ -1163,7 +1646,9 @@ describe('KitsuneOS Acceptance Suite', () => {
   });
 
   it('Projection supplementary evidence: a masked principal still receives record ids but no masked field', async () => {
-    const accountId = await seedAccount(engine, fixture, { name: 'Projection' });
+    const accountId = await seedAccount(engine, fixture, {
+      name: 'Projection',
+    });
     const oppId = await seedOpportunity(engine, fixture, {
       account_id: accountId,
       name: 'Projection Opp',
@@ -1177,7 +1662,7 @@ describe('KitsuneOS Acceptance Suite', () => {
     });
 
     expect(rows.length).toBe(1);
-    expect(rows[0]!.id).toBe(oppId);
+    expect(rows[0]?.id).toBe(oppId);
     expect(Object.keys(rows[0]!).sort()).toEqual(['id', 'name', 'stage']);
     expect(rows[0]).not.toHaveProperty('amount');
   });
@@ -1202,13 +1687,18 @@ describe('KitsuneOS Acceptance Suite', () => {
     const client1 = await engine.appPool.connect();
     try {
       await client1.query('BEGIN');
-      await client1.query(`SELECT set_config('kitsune.schema_name', $1, true)`, [
-        fixture.schemaName,
-      ]);
-      await client1.query(`SELECT set_config('kitsune.principal_id', $1, true)`, [
-        fixture.adminId,
-      ]);
-      await client1.query(`SELECT set_config('kitsune.include_deleted', $1, true)`, ['true']);
+      await client1.query(
+        `SELECT set_config('kitsune.schema_name', $1, true)`,
+        [fixture.schemaName],
+      );
+      await client1.query(
+        `SELECT set_config('kitsune.principal_id', $1, true)`,
+        [fixture.adminId],
+      );
+      await client1.query(
+        `SELECT set_config('kitsune.include_deleted', $1, true)`,
+        ['true'],
+      );
       const during = await client1.query<{
         schema_name: string | null;
         principal_id: string | null;
@@ -1218,7 +1708,7 @@ describe('KitsuneOS Acceptance Suite', () => {
                 current_setting('kitsune.principal_id', true) AS principal_id,
                 current_setting('kitsune.include_deleted', true) AS include_deleted`,
       );
-      expect(during.rows[0]!.schema_name).toBe(fixture.schemaName);
+      expect(during.rows[0]?.schema_name).toBe(fixture.schemaName);
       await client1.query('COMMIT');
     } finally {
       client1.release();
@@ -1235,9 +1725,9 @@ describe('KitsuneOS Acceptance Suite', () => {
                 current_setting('kitsune.principal_id', true) AS principal_id,
                 current_setting('kitsune.include_deleted', true) AS include_deleted`,
       );
-      expect(after.rows[0]!.schema_name ?? '').toBe('');
-      expect(after.rows[0]!.principal_id ?? '').toBe('');
-      expect(after.rows[0]!.include_deleted ?? '').toBe('');
+      expect(after.rows[0]?.schema_name ?? '').toBe('');
+      expect(after.rows[0]?.principal_id ?? '').toBe('');
+      expect(after.rows[0]?.include_deleted ?? '').toBe('');
     } finally {
       client2.release();
     }
@@ -1251,10 +1741,14 @@ describe('KitsuneOS Acceptance Suite', () => {
       await client.query(`SELECT set_config('kitsune.schema_name', $1, true)`, [
         'ws_wrongschema00000000000000000000',
       ]);
-      await client.query(`SELECT set_config('kitsune.principal_id', $1, true)`, [
-        fixture.adminId,
-      ]);
-      await client.query(`SELECT set_config('kitsune.include_deleted', $1, true)`, ['false']);
+      await client.query(
+        `SELECT set_config('kitsune.principal_id', $1, true)`,
+        [fixture.adminId],
+      );
+      await client.query(
+        `SELECT set_config('kitsune.include_deleted', $1, true)`,
+        ['false'],
+      );
       const result = await client.query(
         `SELECT id FROM ${fixture.schemaName}.accounts WHERE id = $1`,
         [accountId],
@@ -1270,7 +1764,12 @@ describe('KitsuneOS Acceptance Suite', () => {
     const { execSync } = await import('node:child_process');
     const { resolve, dirname } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
-    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+    const root = resolve(
+      dirname(fileURLToPath(import.meta.url)),
+      '..',
+      '..',
+      '..',
+    );
     const output = execSync('node scripts/lint-no-workspace-from-client.mjs', {
       cwd: root,
       encoding: 'utf8',
@@ -1302,7 +1801,9 @@ describe('KitsuneOS Acceptance Suite', () => {
     // Guard the guard: a path typo here would make this test pass vacuously.
     expect(files.length).toBeGreaterThan(5);
 
-    const offenders = files.filter((file) => /select\s+\*/i.test(readFileSync(file, 'utf8')));
+    const offenders = files.filter((file) =>
+      /select\s+\*/i.test(readFileSync(file, 'utf8')),
+    );
     expect(offenders).toEqual([]);
   });
 });

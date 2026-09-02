@@ -94,9 +94,27 @@
   text-transform: uppercase;
 }
 
-.k-status-badge--open { background: var(--k-pending); color: var(--k-surface); }
-.k-status-badge--applied { background: var(--k-applied); color: var(--k-surface); }
-.k-status-badge--blocked { background: var(--k-blocked); color: var(--k-ink); }
-.k-status-badge--stale { background: var(--k-stale); color: var(--k-ink); }
-.k-status-badge--rejected { background: var(--k-blocked); color: var(--k-ink); }
-.k-status-badge--expired { background: var(--k-stale); color: var(--k-ink); }
+.k-status-badge--open {
+  background: var(--k-pending);
+  color: var(--k-surface);
+}
+.k-status-badge--applied {
+  background: var(--k-applied);
+  color: var(--k-surface);
+}
+.k-status-badge--blocked {
+  background: var(--k-blocked);
+  color: var(--k-ink);
+}
+.k-status-badge--stale {
+  background: var(--k-stale);
+  color: var(--k-ink);
+}
+.k-status-badge--rejected {
+  background: var(--k-blocked);
+  color: var(--k-ink);
+}
+.k-status-badge--expired {
+  background: var(--k-stale);
+  color: var(--k-ink);
+}

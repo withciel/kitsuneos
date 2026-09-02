@@ -1,23 +1,28 @@
 import type { Pool, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { writeAudit, writeAuditInTxn } from './audit/log.js';
+import { assertWriteEntitlement } from './billing/entitlement.js';
+import { compilePredicate } from './compiler/predicate-sql.js';
 import {
+  type CollectionMeta,
   compileQuery,
   compileReadRecord,
   getCollectionMeta,
-  type CollectionMeta,
 } from './compiler/query.js';
-import { compilePredicate } from './compiler/predicate-sql.js';
+import {
+  createPools,
+  queryOne,
+  queryRows,
+  setSessionContext,
+  withOwner,
+} from './db/pool.js';
 import {
   generateCollectionDdl,
   generateWorkspaceSchemaDdl,
 } from './ddl/generator.js';
-import { validateCollectionDefinition } from './schema/validate-definition.js';
-import {
-  assertFieldAllowed,
-  loadResolvedGrant,
-} from './grants/resolve.js';
+import { assertFieldAllowed, loadResolvedGrant } from './grants/resolve.js';
 import { getChangedFieldsSince, writeRevision } from './revisions/write.js';
+import { validateCollectionDefinition } from './schema/validate-definition.js';
 import type {
   Capability,
   ChangeOpInput,
@@ -27,8 +32,8 @@ import type {
   Predicate,
   ProposeChangeSetInput,
   QueryRequest,
-  ReviewDecision,
   ResolvedGrant,
+  ReviewDecision,
 } from './types.js';
 import {
   CAPABILITY_ORDER,
@@ -36,8 +41,6 @@ import {
   quoteIdent,
   schemaNameForWorkspace,
 } from './types.js';
-import { createPools, queryOne, queryRows, setSessionContext, withOwner } from './db/pool.js';
-import { assertWriteEntitlement } from './billing/entitlement.js';
 
 export interface ApplyFaultInjection {
   afterOpIndex?: number;
@@ -76,7 +79,9 @@ const DEFAULT_CONFIG: DbConfig = {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const APPLY_LOCK_TIMEOUT_MS = Number(process.env.KITSUNE_APPLY_LOCK_TIMEOUT_MS ?? 5000);
+const APPLY_LOCK_TIMEOUT_MS = Number(
+  process.env.KITSUNE_APPLY_LOCK_TIMEOUT_MS ?? 5000,
+);
 const APPLY_LOCK_RETRIES = 1;
 /** Postgres raises this when lock_timeout expires. */
 const LOCK_NOT_AVAILABLE = '55P03';
@@ -156,16 +161,25 @@ export class KitsuneEngine {
     const tableName = definition.name;
 
     await withOwner(this.ownerPool, async (client) => {
-      const existingCollections = await queryRows<{ id: string; name: string; table_name: string }>(
+      const existingCollections = await queryRows<{
+        id: string;
+        name: string;
+        table_name: string;
+      }>(
         client,
         `SELECT id, name, table_name FROM kitsune.collections WHERE workspace_id = $1`,
         [workspaceId],
       );
 
-      const relationTargets = new Map<string, { schemaName: string; tableName: string }>();
+      const relationTargets = new Map<
+        string,
+        { schemaName: string; tableName: string }
+      >();
       for (const field of definition.fields) {
         if (field.type === 'relation' && field.relationTarget) {
-          const target = existingCollections.find((c) => c.name === field.relationTarget);
+          const target = existingCollections.find(
+            (c) => c.name === field.relationTarget,
+          );
           if (!target) {
             throw new KitsuneError(
               `Relation target not found: ${field.relationTarget}`,
@@ -188,7 +202,9 @@ export class KitsuneEngine {
       for (const field of definition.fields) {
         let relationTargetId: string | null = null;
         if (field.type === 'relation' && field.relationTarget) {
-          const target = existingCollections.find((c) => c.name === field.relationTarget);
+          const target = existingCollections.find(
+            (c) => c.name === field.relationTarget,
+          );
           relationTargetId = target?.id ?? null;
         }
         await client.query(
@@ -209,7 +225,12 @@ export class KitsuneEngine {
         );
       }
 
-      for (const stmt of generateCollectionDdl(schemaName, tableName, definition.fields, relationTargets)) {
+      for (const stmt of generateCollectionDdl(
+        schemaName,
+        tableName,
+        definition.fields,
+        relationTargets,
+      )) {
         await client.query(stmt);
       }
     });
@@ -239,7 +260,8 @@ export class KitsuneEngine {
 
       if (
         principal.kind === 'agent' &&
-        CAPABILITY_ORDER.indexOf(capability) >= CAPABILITY_ORDER.indexOf('write')
+        CAPABILITY_ORDER.indexOf(capability) >=
+          CAPABILITY_ORDER.indexOf('write')
       ) {
         if (!options?.adminOverrideAgentWrite) {
           throw new KitsuneError(
@@ -268,7 +290,8 @@ export class KitsuneEngine {
     if (options?.actorId) {
       let principalKind: string | undefined;
       if (
-        CAPABILITY_ORDER.indexOf(capability) >= CAPABILITY_ORDER.indexOf('write') &&
+        CAPABILITY_ORDER.indexOf(capability) >=
+          CAPABILITY_ORDER.indexOf('write') &&
         options.adminOverrideAgentWrite
       ) {
         await withOwner(this.ownerPool, async (client) => {
@@ -303,7 +326,11 @@ export class KitsuneEngine {
     return grantId;
   }
 
-  async revokeGrant(grantId: string, actorId: string, workspaceId: string): Promise<void> {
+  async revokeGrant(
+    grantId: string,
+    actorId: string,
+    workspaceId: string,
+  ): Promise<void> {
     await withOwner(this.ownerPool, async (client) => {
       await client.query(
         `UPDATE kitsune.grants SET revoked_at = now() WHERE id = $1`,
@@ -332,7 +359,11 @@ export class KitsuneEngine {
       );
       const result = [];
       for (const collection of collections) {
-        const grant = await loadResolvedGrant(client, principalId, collection.id);
+        const grant = await loadResolvedGrant(
+          client,
+          principalId,
+          collection.id,
+        );
         if (!grant || grant.capability === 'none') {
           continue;
         }
@@ -511,8 +542,16 @@ export class KitsuneEngine {
       throw new KitsuneError('Not found', 'not_found');
     }
 
-    const targetMeta = await getCollectionMeta(client, workspaceId, field.relationTarget);
-    const targetGrant = await loadResolvedGrant(client, authorId, targetMeta.id);
+    const targetMeta = await getCollectionMeta(
+      client,
+      workspaceId,
+      field.relationTarget,
+    );
+    const targetGrant = await loadResolvedGrant(
+      client,
+      authorId,
+      targetMeta.id,
+    );
     if (!targetGrant) {
       throw new KitsuneError('Not found', 'not_found');
     }
@@ -540,7 +579,11 @@ export class KitsuneEngine {
     const client = await this.appPool.connect();
     try {
       await client.query('BEGIN');
-      await setSessionContext(client, { schemaName, principalId: authorId, includeDeleted: true });
+      await setSessionContext(client, {
+        schemaName,
+        principalId: authorId,
+        includeDeleted: true,
+      });
 
       const normalizedOps = normalizeOperations(input.operations);
 
@@ -553,7 +596,11 @@ export class KitsuneEngine {
       );
 
       for (const op of normalizedOps) {
-        const meta = await getCollectionMeta(client, workspaceId, op.collection);
+        const meta = await getCollectionMeta(
+          client,
+          workspaceId,
+          op.collection,
+        );
         const grant = await loadResolvedGrant(client, authorId, meta.id);
         if (!grant) {
           throw new KitsuneError('Not found', 'not_found');
@@ -597,19 +644,32 @@ export class KitsuneEngine {
       await client.query(
         `INSERT INTO kitsune.change_sets (id, workspace_id, author_id, status, title, rationale)
          VALUES ($1, $2, $3, 'open', $4, $5)`,
-        [changeSetId, workspaceId, authorId, input.title ?? null, input.rationale ?? null],
+        [
+          changeSetId,
+          workspaceId,
+          authorId,
+          input.title ?? null,
+          input.rationale ?? null,
+        ],
       );
 
       let seq = 0;
       for (const op of normalizedOps) {
-        const meta = await getCollectionMeta(client, workspaceId, op.collection);
+        const meta = await getCollectionMeta(
+          client,
+          workspaceId,
+          op.collection,
+        );
         const opId = uuidv4();
         operationIds.push(opId);
 
         let baseRevision: number | null = null;
         if (op.op !== 'insert' && op.recordId) {
           const table = `${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)}`;
-          const current = await queryOne<{ _revision: number; _deleted_at: string | null }>(
+          const current = await queryOne<{
+            _revision: number;
+            _deleted_at: string | null;
+          }>(
             client,
             `SELECT _revision, _deleted_at FROM ${table} WHERE id = $1`,
             [op.recordId],
@@ -682,7 +742,12 @@ export class KitsuneEngine {
           `UPDATE kitsune.change_ops
            SET status = $1, review_comment = $2
            WHERE id = $3 AND change_set_id = $4`,
-          [decision.status, decision.comment ?? null, decision.opId, changeSetId],
+          [
+            decision.status,
+            decision.comment ?? null,
+            decision.opId,
+            changeSetId,
+          ],
         );
       }
       await client.query(
@@ -729,7 +794,10 @@ export class KitsuneEngine {
       if (!changeSet) {
         throw new KitsuneError('Not found', 'not_found');
       }
-      if (changeSet.status === 'expired' || new Date(changeSet.expires_at) < new Date()) {
+      if (
+        changeSet.status === 'expired' ||
+        new Date(changeSet.expires_at) < new Date()
+      ) {
         await metaClient.query(
           `UPDATE kitsune.change_sets SET status = 'expired' WHERE id = $1`,
           [changeSetId],
@@ -737,7 +805,10 @@ export class KitsuneEngine {
         throw new KitsuneError('Change set expired', 'expired');
       }
       if (changeSet.status !== 'open' && changeSet.status !== 'blocked') {
-        throw new KitsuneError(`Change set status is ${changeSet.status}`, 'blocked');
+        throw new KitsuneError(
+          `Change set status is ${changeSet.status}`,
+          'blocked',
+        );
       }
 
       ops = await queryRows<ApplyOp>(
@@ -752,7 +823,10 @@ export class KitsuneEngine {
 
       const undecided = ops.filter((o) => o.status === 'proposed');
       if (undecided.length > 0) {
-        throw new KitsuneError('All operations must be approved or rejected before apply', 'validation');
+        throw new KitsuneError(
+          'All operations must be approved or rejected before apply',
+          'validation',
+        );
       }
     } finally {
       metaClient.release();
@@ -760,7 +834,12 @@ export class KitsuneEngine {
 
     const approvedOps = ops.filter((o) => o.status === 'approved');
     if (approvedOps.length === 0) {
-      await this.markChangeSetStatus(workspaceId, reviewerId, changeSetId, 'rejected');
+      await this.markChangeSetStatus(
+        workspaceId,
+        reviewerId,
+        changeSetId,
+        'rejected',
+      );
       return { status: 'rejected' };
     }
 
@@ -768,7 +847,11 @@ export class KitsuneEngine {
     const conflicts: string[] = [];
     try {
       await client.query('BEGIN');
-      await setSessionContext(client, { schemaName, principalId: reviewerId, includeDeleted: true });
+      await setSessionContext(client, {
+        schemaName,
+        principalId: reviewerId,
+        includeDeleted: true,
+      });
 
       const lockTargets = [
         ...new Map(
@@ -778,7 +861,9 @@ export class KitsuneEngine {
         ).values(),
       ].sort((a, b) => {
         const ca = a.collection_id.localeCompare(b.collection_id);
-        return ca !== 0 ? ca : (a.record_id ?? '').localeCompare(b.record_id ?? '');
+        return ca !== 0
+          ? ca
+          : (a.record_id ?? '').localeCompare(b.record_id ?? '');
       });
 
       // Locks are taken row by row in sorted order, so applies cannot deadlock against
@@ -786,14 +871,25 @@ export class KitsuneEngine {
       // without a timeout that wait is unbounded. Bound it, and retry the batch once
       // in case the blocker was transient.
       // sql-safe: applyLockTimeoutLiteral returns a coerced non-negative integer
-      await client.query(`SET LOCAL lock_timeout = '${applyLockTimeoutLiteral()}'`);
+      await client.query(
+        `SET LOCAL lock_timeout = '${applyLockTimeoutLiteral()}'`,
+      );
       await this.acquireApplyLocks(client, schemaName, reviewerId, lockTargets);
 
       for (const op of approvedOps) {
-        const grant = await loadResolvedGrant(client, changeSet.author_id, op.collection_id);
+        const grant = await loadResolvedGrant(
+          client,
+          changeSet.author_id,
+          op.collection_id,
+        );
         if (!grant) {
           await client.query('ROLLBACK');
-          await this.markChangeSetStatus(workspaceId, reviewerId, changeSetId, 'blocked');
+          await this.markChangeSetStatus(
+            workspaceId,
+            reviewerId,
+            changeSetId,
+            'blocked',
+          );
           await writeAudit(this.appPool, {
             workspaceId,
             principalId: reviewerId,
@@ -810,7 +906,12 @@ export class KitsuneEngine {
             CAPABILITY_ORDER.indexOf('propose')
           ) {
             await client.query('ROLLBACK');
-            await this.markChangeSetStatus(workspaceId, reviewerId, changeSetId, 'blocked');
+            await this.markChangeSetStatus(
+              workspaceId,
+              reviewerId,
+              changeSetId,
+              'blocked',
+            );
             throw new KitsuneError('Author grant revoked', 'blocked');
           }
         } else if (op.field_name) {
@@ -826,14 +927,22 @@ export class KitsuneEngine {
           continue;
         }
         const table = `${quoteIdent(schemaName)}.${quoteIdent(op.table_name)}`;
-        const current = await queryOne<{ _revision: number; _deleted_at: string | null }>(
+        const current = await queryOne<{
+          _revision: number;
+          _deleted_at: string | null;
+        }>(
           client,
           `SELECT _revision, _deleted_at FROM ${table} WHERE id = $1`,
           [op.record_id],
         );
         if (!current || current._deleted_at) {
           await client.query('ROLLBACK');
-          await this.markChangeSetStatus(workspaceId, reviewerId, changeSetId, 'blocked');
+          await this.markChangeSetStatus(
+            workspaceId,
+            reviewerId,
+            changeSetId,
+            'blocked',
+          );
           throw new KitsuneError('Record deleted', 'blocked');
         }
 
@@ -867,7 +976,9 @@ export class KitsuneEngine {
         return { status: 'blocked', conflicts: [...new Set(conflicts)] };
       }
 
-      const insertGroups = groupInsertOps(approvedOps.filter((o) => o.op === 'insert'));
+      const insertGroups = groupInsertOps(
+        approvedOps.filter((o) => o.op === 'insert'),
+      );
       const updateDeleteOps = approvedOps.filter((o) => o.op !== 'insert');
 
       let opIndex = 0;
@@ -916,8 +1027,19 @@ export class KitsuneEngine {
         const sample = groupOps[0]!;
         const table = `${quoteIdent(schemaName)}.${quoteIdent(sample.table_name)}`;
         const recordId = sample.record_id!;
-        const meta = await getCollectionMeta(client, workspaceId, sample.collection_name);
-        const readCols = ['id', '_revision', '_updated_at', '_updated_by', '_deleted_at', ...meta.fields]
+        const meta = await getCollectionMeta(
+          client,
+          workspaceId,
+          sample.collection_name,
+        );
+        const readCols = [
+          'id',
+          '_revision',
+          '_updated_at',
+          '_updated_by',
+          '_deleted_at',
+          ...meta.fields,
+        ]
           .map((c) => quoteIdent(c))
           .join(', ');
         const current = await queryOne<Record<string, unknown>>(
@@ -1064,7 +1186,11 @@ export class KitsuneEngine {
       await setSessionContext(client, { schemaName, principalId });
       const meta = await getCollectionMeta(client, workspaceId, collection);
       const grant = await loadResolvedGrant(client, principalId, meta.id);
-      if (!grant || CAPABILITY_ORDER.indexOf(grant.capability) < CAPABILITY_ORDER.indexOf('write')) {
+      if (
+        !grant ||
+        CAPABILITY_ORDER.indexOf(grant.capability) <
+          CAPABILITY_ORDER.indexOf('write')
+      ) {
         throw new KitsuneError('Not found', 'not_found');
       }
       for (const field of Object.keys(record)) {
@@ -1131,9 +1257,10 @@ export class KitsuneEngine {
       try {
         for (const target of targets) {
           const table = `${quoteIdent(schemaName)}.${quoteIdent(target.table_name)}`;
-          await client.query(`SELECT id FROM ${table} WHERE id = $1 FOR UPDATE`, [
-            target.record_id,
-          ]);
+          await client.query(
+            `SELECT id FROM ${table} WHERE id = $1 FOR UPDATE`,
+            [target.record_id],
+          );
         }
         return;
       } catch (error) {
@@ -1161,7 +1288,9 @@ export class KitsuneEngine {
           includeDeleted: true,
         });
         // sql-safe: applyLockTimeoutLiteral returns a coerced non-negative integer
-      await client.query(`SET LOCAL lock_timeout = '${applyLockTimeoutLiteral()}'`);
+        await client.query(
+          `SET LOCAL lock_timeout = '${applyLockTimeoutLiteral()}'`,
+        );
       }
     }
   }
@@ -1207,7 +1336,6 @@ export class KitsuneEngine {
     });
   }
 }
-
 
 interface NormalizedOp {
   collection: string;
@@ -1278,4 +1406,3 @@ function groupRecordOps(ops: ApplyOp[]): Map<string, ApplyOp[]> {
 }
 
 export { DEFAULT_CONFIG };
-

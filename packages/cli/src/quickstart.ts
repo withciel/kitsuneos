@@ -3,11 +3,21 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KitsuneEngine, migrate } from '@kitsuneos/core';
 import { DEMO, DEMO_SCHEMA_NAME, provisionDemo } from './demo.js';
-import { APP_URL, OWNER_URL, ensureRolesAndDatabase, requirePostgres } from './postgres.js';
+import {
+  APP_URL,
+  ensureRolesAndDatabase,
+  OWNER_URL,
+  requirePostgres,
+} from './postgres.js';
 
 // This file lives at packages/cli/{src,dist}/quickstart.{ts,js}; the repo root is
 // three levels up either way, so the printed config does not depend on the cwd.
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+const REPO_ROOT = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+);
 
 function step(n: number, message: string): void {
   console.log(`[${n}/5] ${message}`);
@@ -31,18 +41,24 @@ export async function quickstart(): Promise<void> {
   step(3, 'Running control-plane migrations');
   await migrate({ ownerUrl: OWNER_URL, appUrl: APP_URL });
 
-  const engine = new KitsuneEngine({ config: { ownerUrl: OWNER_URL, appUrl: APP_URL } });
+  const engine = new KitsuneEngine({
+    config: { ownerUrl: OWNER_URL, appUrl: APP_URL },
+  });
   try {
     step(4, 'Provisioning the demo workspace');
     const { created, skipped } = await provisionDemo(engine);
     if (created.length === 0) {
-      console.log(`      nothing to do, all ${skipped.length} demo objects already present`);
+      console.log(
+        `      nothing to do, all ${skipped.length} demo objects already present`,
+      );
     } else {
       for (const item of created) {
         console.log(`      created ${item}`);
       }
       if (skipped.length > 0) {
-        console.log(`      skipped ${skipped.length} objects that already existed`);
+        console.log(
+          `      skipped ${skipped.length} objects that already existed`,
+        );
       }
     }
 

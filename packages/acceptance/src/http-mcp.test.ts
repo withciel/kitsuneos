@@ -1,17 +1,16 @@
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import {
-  issueApiKey,
-  createStandardFixture,
-  getEngine,
-  seedAccount,
-  seedOpportunity,
-  type Fixture,
-} from './fixtures.js';
-import { createHttpMcpServer } from '@kitsuneos/server';
-import { TOOL_DEFINITIONS } from '@kitsuneos/mcp/schemas';
-import { resetRateLimits } from '@kitsuneos/server';
 import type { KitsuneEngine } from '@kitsuneos/core';
 import { revokeApiKey } from '@kitsuneos/core';
+import { TOOL_DEFINITIONS } from '@kitsuneos/mcp/schemas';
+import { createHttpMcpServer, resetRateLimits } from '@kitsuneos/server';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  createStandardFixture,
+  type Fixture,
+  getEngine,
+  issueApiKey,
+  seedAccount,
+  seedOpportunity,
+} from './fixtures.js';
 
 async function callTool(
   baseUrl: string,
@@ -39,7 +38,7 @@ describe('Remote MCP and API keys', () => {
   let baseUrl: string;
   let keyA: string;
   let keyB: string;
-  let keyAId: string;
+  let _keyAId: string;
 
   beforeAll(async () => {
     engine = await getEngine();
@@ -48,7 +47,7 @@ describe('Remote MCP and API keys', () => {
     const createdA = await issueApiKey(engine, fixtureA.adminId);
     const createdB = await issueApiKey(engine, fixtureB.adminId);
     keyA = createdA.plaintext;
-    keyAId = createdA.keyId;
+    _keyAId = createdA.keyId;
     keyB = createdB.plaintext;
     httpServer = createHttpMcpServer(engine);
     const bound = await httpServer.listen();
@@ -62,7 +61,9 @@ describe('Remote MCP and API keys', () => {
 
   it('Leak defense 1: workspace is derived from credential, not client input', async () => {
     for (const tool of TOOL_DEFINITIONS) {
-      const schema = tool.inputSchema as { properties?: Record<string, unknown> };
+      const schema = tool.inputSchema as {
+        properties?: Record<string, unknown>;
+      };
       const props = schema.properties ?? {};
       expect(props).not.toHaveProperty('workspace');
       expect(props).not.toHaveProperty('workspaceId');
@@ -75,11 +76,15 @@ describe('Remote MCP and API keys', () => {
       workspaceId: fixtureB.workspaceId,
     } as never);
     expect(cross.status).toBe(400);
-    expect(cross.body.message).toMatch(/workspace parameters are not permitted/i);
+    expect(cross.body.message).toMatch(
+      /workspace parameters are not permitted/i,
+    );
   });
 
   it('API key for workspace A cannot reach workspace B data via HTTP MCP', async () => {
-    const accountB = await seedAccount(engine, fixtureB, { name: 'HTTP Tenant B' });
+    const accountB = await seedAccount(engine, fixtureB, {
+      name: 'HTTP Tenant B',
+    });
     const oppB = await seedOpportunity(engine, fixtureB, {
       account_id: accountB,
       name: 'HTTP Secret',
@@ -103,7 +108,9 @@ describe('Remote MCP and API keys', () => {
     const response = await callTool(baseUrl, temp.plaintext, 'describe_schema');
     expect(response.status).toBe(401);
 
-    const audit = await engine.ownerPool.query<{ detail: { keyPrefix: string } }>(
+    const audit = await engine.ownerPool.query<{
+      detail: { keyPrefix: string };
+    }>(
       `SELECT detail FROM kitsune.audit_log
         WHERE action = 'auth_failed'
         ORDER BY at DESC
@@ -136,7 +143,9 @@ describe('Remote MCP and API keys', () => {
   });
 
   it('Gate 0b over HTTP: cross-tenant isolation via remote MCP', async () => {
-    const accountB = await seedAccount(engine, fixtureB, { name: 'Gate HTTP B' });
+    const accountB = await seedAccount(engine, fixtureB, {
+      name: 'Gate HTTP B',
+    });
     const oppB = await seedOpportunity(engine, fixtureB, {
       account_id: accountB,
       name: 'Gate HTTP Secret',

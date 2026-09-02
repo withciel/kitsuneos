@@ -1,11 +1,11 @@
 import type { PoolClient } from 'pg';
-import type { QueryAggregate, QueryRequest, ResolvedGrant } from '../types.js';
-import { KitsuneError, quoteIdent } from '../types.js';
 import {
   assertFieldAllowed,
   loadResolvedGrant,
   projectFields,
 } from '../grants/resolve.js';
+import type { QueryAggregate, QueryRequest, ResolvedGrant } from '../types.js';
+import { KitsuneError, quoteIdent } from '../types.js';
 import { compileFilter, compilePredicate } from './predicate-sql.js';
 
 export interface CollectionFieldMeta {
@@ -165,13 +165,21 @@ export async function compileQuery(
   }
 
   for (const filter of request.filters ?? []) {
-    const compiled = compileFilter(filter.field, filter.op, filter.value, alias, paramIdx);
+    const compiled = compileFilter(
+      filter.field,
+      filter.op,
+      filter.value,
+      alias,
+      paramIdx,
+    );
     whereParts.push(compiled.sql);
     params.push(...compiled.params);
     paramIdx += compiled.params.length;
   }
 
-  const whereClause = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
+  const whereClause = whereParts.length
+    ? `WHERE ${whereParts.join(' AND ')}`
+    : '';
 
   if (request.aggregates?.length) {
     const selectParts: string[] = [];
@@ -187,11 +195,11 @@ export async function compileQuery(
         selectParts.push(`${aggFnSql(agg.fn)}(*) AS ${quoteIdent(agg.alias)}`);
       }
     }
-    const groupClause =
-      request.groupBy && request.groupBy.length
-        ? `GROUP BY ${request.groupBy.map((g) => `${alias}.${quoteIdent(g)}`).join(', ')}`
-        : '';
-    const sql = `SELECT ${selectParts.join(', ')} FROM ${table} ${alias} ${whereClause} ${groupClause}`.trim();
+    const groupClause = request.groupBy?.length
+      ? `GROUP BY ${request.groupBy.map((g) => `${alias}.${quoteIdent(g)}`).join(', ')}`
+      : '';
+    const sql =
+      `SELECT ${selectParts.join(', ')} FROM ${table} ${alias} ${whereClause} ${groupClause}`.trim();
     return { sql, params, projectedFields: projected };
   }
 
@@ -200,15 +208,14 @@ export async function compileQuery(
   // Row-level authorization still decides which rows are visible at all.
   const projectedWithId = ['id', ...projected.filter((f) => f !== 'id')];
   const selectCols = projectedWithId.map((f) => `${alias}.${quoteIdent(f)}`);
-  const orderClause =
-    request.sort && request.sort.length
-      ? `ORDER BY ${request.sort
-          .map(
-            (s) =>
-              `${alias}.${quoteIdent(s.field)} ${assertSortDirection(s.direction)}`,
-          )
-          .join(', ')}`
-      : '';
+  const orderClause = request.sort?.length
+    ? `ORDER BY ${request.sort
+        .map(
+          (s) =>
+            `${alias}.${quoteIdent(s.field)} ${assertSortDirection(s.direction)}`,
+        )
+        .join(', ')}`
+    : '';
   const limitClause =
     request.limit !== undefined
       ? `LIMIT ${coerceNonNegativeInteger(request.limit, 'limit')}`
@@ -217,7 +224,8 @@ export async function compileQuery(
     request.offset !== undefined
       ? `OFFSET ${coerceNonNegativeInteger(request.offset, 'offset')}`
       : '';
-  const sql = `SELECT ${selectCols.join(', ')} FROM ${table} ${alias} ${whereClause} ${orderClause} ${limitClause} ${offsetClause}`.trim();
+  const sql =
+    `SELECT ${selectCols.join(', ')} FROM ${table} ${alias} ${whereClause} ${orderClause} ${limitClause} ${offsetClause}`.trim();
 
   return { sql, params, projectedFields: projectedWithId };
 }

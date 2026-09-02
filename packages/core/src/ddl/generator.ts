@@ -78,7 +78,9 @@ export function generateCollectionDdl(
     '_deleted_at timestamptz',
   );
 
-  stmts.push(`CREATE TABLE IF NOT EXISTS ${qSchema}.${qTable} (\n  ${columnDefs.join(',\n  ')}\n);`);
+  stmts.push(
+    `CREATE TABLE IF NOT EXISTS ${qSchema}.${qTable} (\n  ${columnDefs.join(',\n  ')}\n);`,
+  );
 
   for (const field of fields) {
     if (field.indexed || field.type === 'relation') {
@@ -104,14 +106,18 @@ export function generateCollectionDdl(
 
   stmts.push(`ALTER TABLE ${qSchema}.${qTable} ENABLE ROW LEVEL SECURITY;`);
   stmts.push(`ALTER TABLE ${qSchema}.${qTable} FORCE ROW LEVEL SECURITY;`);
-  stmts.push(`DROP POLICY IF EXISTS kitsune_app_access ON ${qSchema}.${qTable};`);
+  stmts.push(
+    `DROP POLICY IF EXISTS kitsune_app_access ON ${qSchema}.${qTable};`,
+  );
   stmts.push(`CREATE POLICY kitsune_app_access ON ${qSchema}.${qTable}
   TO kitsune_app
   USING (
     current_setting('kitsune.schema_name', true) = ${policySchemaLiteral(schemaName)}
     AND (_deleted_at IS NULL OR current_setting('kitsune.include_deleted', true) = 'true')
   );`);
-  stmts.push(`DROP POLICY IF EXISTS kitsune_owner_bypass ON ${qSchema}.${qTable};`);
+  stmts.push(
+    `DROP POLICY IF EXISTS kitsune_owner_bypass ON ${qSchema}.${qTable};`,
+  );
   stmts.push(`CREATE POLICY kitsune_owner_bypass ON ${qSchema}.${qTable}
   TO kitsune_owner
   USING (true)
@@ -123,14 +129,20 @@ export function generateCollectionDdl(
   stmts.push(`CREATE POLICY kitsune_app_access ON ${qSchema}.${qRev}
   TO kitsune_app
   USING (current_setting('kitsune.schema_name', true) = ${policySchemaLiteral(schemaName)});`);
-  stmts.push(`DROP POLICY IF EXISTS kitsune_owner_bypass ON ${qSchema}.${qRev};`);
+  stmts.push(
+    `DROP POLICY IF EXISTS kitsune_owner_bypass ON ${qSchema}.${qRev};`,
+  );
   stmts.push(`CREATE POLICY kitsune_owner_bypass ON ${qSchema}.${qRev}
   TO kitsune_owner
   USING (true)
   WITH CHECK (true);`);
 
-  stmts.push(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${qSchema}.${qTable} TO kitsune_app;`);
-  stmts.push(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${qSchema}.${qRev} TO kitsune_app;`);
+  stmts.push(
+    `GRANT SELECT, INSERT, UPDATE, DELETE ON ${qSchema}.${qTable} TO kitsune_app;`,
+  );
+  stmts.push(
+    `GRANT SELECT, INSERT, UPDATE, DELETE ON ${qSchema}.${qRev} TO kitsune_app;`,
+  );
 
   return stmts;
 }

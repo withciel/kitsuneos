@@ -1,6 +1,6 @@
-import { v4 as uuidv4 } from 'uuid';
 import type { KitsuneEngine } from '@kitsuneos/core';
 import { createApiKey } from '@kitsuneos/core';
+import { v4 as uuidv4 } from 'uuid';
 
 export interface ProvisionUserInput {
   workosId: string;
@@ -24,7 +24,9 @@ export async function provisionUserWorkspace(
   const created: string[] = [];
   const skipped: string[] = [];
 
-  await engine.ownerPool.query(`SELECT pg_advisory_lock(hashtext($1))`, [input.workosId]);
+  await engine.ownerPool.query(`SELECT pg_advisory_lock(hashtext($1))`, [
+    input.workosId,
+  ]);
   try {
     const existing = await engine.ownerPool.query<{
       id: string;
@@ -55,7 +57,11 @@ export async function provisionUserWorkspace(
     const { workspaceId, schemaName } = await engine.createWorkspace(slug);
     created.push('workspace');
 
-    const principalId = await engine.createPrincipal(workspaceId, 'human', input.email);
+    const principalId = await engine.createPrincipal(
+      workspaceId,
+      'human',
+      input.email,
+    );
     created.push('principal');
 
     const accountsId = await engine.defineCollection(workspaceId, {
@@ -70,7 +76,12 @@ export async function provisionUserWorkspace(
     await engine.defineCollection(workspaceId, {
       name: 'contacts',
       fields: [
-        { name: 'account_id', type: 'relation', relationTarget: 'accounts', nullable: false },
+        {
+          name: 'account_id',
+          type: 'relation',
+          relationTarget: 'accounts',
+          nullable: false,
+        },
         { name: 'name', type: 'text', nullable: false },
         { name: 'email', type: 'text' },
       ],
@@ -80,14 +91,24 @@ export async function provisionUserWorkspace(
     const opportunitiesId = await engine.defineCollection(workspaceId, {
       name: 'opportunities',
       fields: [
-        { name: 'account_id', type: 'relation', relationTarget: 'accounts', nullable: false },
+        {
+          name: 'account_id',
+          type: 'relation',
+          relationTarget: 'accounts',
+          nullable: false,
+        },
         { name: 'name', type: 'text', nullable: false },
         { name: 'amount', type: 'number' },
         {
           name: 'stage',
           type: 'enum',
           nullable: false,
-          enumValues: ['prospecting', 'negotiation', 'closed_won', 'closed_lost'],
+          enumValues: [
+            'prospecting',
+            'negotiation',
+            'closed_won',
+            'closed_lost',
+          ],
           indexed: true,
         },
         { name: 'next_step', type: 'prose' },
@@ -95,16 +116,28 @@ export async function provisionUserWorkspace(
     });
     created.push('collection:opportunities');
 
-    const assistantId = await engine.createPrincipal(workspaceId, 'agent', 'assistant');
+    const assistantId = await engine.createPrincipal(
+      workspaceId,
+      'agent',
+      'assistant',
+    );
     created.push('principal:assistant');
 
     for (const [collectionId, collectionName] of [
       [accountsId, 'accounts'],
       [opportunitiesId, 'opportunities'],
     ] as const) {
-      await engine.createGrant(workspaceId, principalId, collectionId, 'admin', null, null, {
-        actorId: principalId,
-      });
+      await engine.createGrant(
+        workspaceId,
+        principalId,
+        collectionId,
+        'admin',
+        null,
+        null,
+        {
+          actorId: principalId,
+        },
+      );
       created.push(`grant:owner:${collectionName}`);
     }
 
@@ -113,10 +146,18 @@ export async function provisionUserWorkspace(
         `SELECT id FROM kitsune.collections WHERE workspace_id = $1 AND name = 'contacts'`,
         [workspaceId],
       )
-    ).rows[0]!.id;
-    await engine.createGrant(workspaceId, principalId, contactsId, 'admin', null, null, {
-      actorId: principalId,
-    });
+    ).rows[0]?.id;
+    await engine.createGrant(
+      workspaceId,
+      principalId,
+      contactsId,
+      'admin',
+      null,
+      null,
+      {
+        actorId: principalId,
+      },
+    );
     created.push('grant:owner:contacts');
 
     await engine.createGrant(
@@ -138,18 +179,13 @@ export async function provisionUserWorkspace(
       { name: 'Starter Account', industry: 'software' },
       { recordId: accountId },
     );
-    await engine.directWrite(
-      workspaceId,
-      principalId,
-      'opportunities',
-      {
-        account_id: accountId,
-        name: 'Starter Opportunity',
-        amount: 1000,
-        stage: 'prospecting',
-        next_step: 'Review KitsuneOS docs',
-      },
-    );
+    await engine.directWrite(workspaceId, principalId, 'opportunities', {
+      account_id: accountId,
+      name: 'Starter Opportunity',
+      amount: 1000,
+      stage: 'prospecting',
+      next_step: 'Review KitsuneOS docs',
+    });
     created.push('seed');
 
     await engine.ownerPool.query(
@@ -172,6 +208,8 @@ export async function provisionUserWorkspace(
       skipped,
     };
   } finally {
-    await engine.ownerPool.query(`SELECT pg_advisory_unlock(hashtext($1))`, [input.workosId]);
+    await engine.ownerPool.query(`SELECT pg_advisory_unlock(hashtext($1))`, [
+      input.workosId,
+    ]);
   }
 }

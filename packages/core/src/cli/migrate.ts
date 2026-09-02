@@ -11,7 +11,9 @@ const DEFAULT_CONFIG: DbConfig = {
     'postgresql://kitsune_app:kitsune_app@localhost:5432/kitsune',
 };
 
-export async function migrate(config: DbConfig = DEFAULT_CONFIG): Promise<void> {
+export async function migrate(
+  config: DbConfig = DEFAULT_CONFIG,
+): Promise<void> {
   const { ownerPool } = createPools(config);
   const client = await ownerPool.connect();
   try {

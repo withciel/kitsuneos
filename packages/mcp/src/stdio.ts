@@ -6,9 +6,9 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { TOOL_DEFINITIONS } from './schemas.js';
-import { invokeMcpTool, isKitsuneError } from './invoke.js';
 import { parseJsonArgs } from './handlers.js';
+import { invokeMcpTool, isKitsuneError } from './invoke.js';
+import { TOOL_DEFINITIONS } from './schemas.js';
 
 const workspaceId = process.env.KITSUNE_WORKSPACE_ID ?? '';
 const principalId = process.env.KITSUNE_PRINCIPAL_ID ?? '';
@@ -51,7 +51,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         {
           type: 'text',
           text: isKitsuneError(error)
-            ? JSON.stringify({ error: error.code, message: error.message, ...error.details }, null, 2)
+            ? JSON.stringify(
+                { error: error.code, message: error.message, ...error.details },
+                null,
+                2,
+              )
             : `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
         },
       ],
