@@ -8,16 +8,20 @@ let consecutiveFull = 0;
 
 while (true) {
   iteration++;
-  const result = spawnSync('pnpm', ['--filter', '@kitsuneos/acceptance', 'test'], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const result = spawnSync(
+    'pnpm',
+    ['--filter', '@kitsuneos/acceptance', 'test'],
+    {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
   const output = `${result.stdout}\n${result.stderr}`;
   const passMatch = output.match(/Tests\s+(\d+) passed/);
   const failMatch = output.match(/Tests\s+.*?(\d+) failed/);
   const passCount = passMatch ? Number.parseInt(passMatch[1], 10) : 0;
   const failCount = failMatch ? Number.parseInt(failMatch[1], 10) : 0;
-  const total = 22;
+  const total = 60;
   const mainPassing = failCount === 0 && passCount >= total;
   console.log(
     `iteration ${iteration} — ${mainPassing ? total : passCount}/${total} passing — fixed: (see failures)`,

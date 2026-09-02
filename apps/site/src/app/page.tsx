@@ -6,8 +6,8 @@ export default function LandingPage() {
       <header className="hero">
         <h1>Agents propose. You approve.</h1>
         <p>
-          KitsuneOS is a database layer where agents propose changes and humans approve them
-          before anything lands.
+          KitsuneOS is a database layer where agents propose changes and humans
+          approve them before anything lands.
         </p>
         <Link className="cta" href="https://app.kitsuneos.com">
           Start free
@@ -25,7 +25,12 @@ export default function LandingPage() {
         </p>
         <ul>
           <li>
-            <a href="https://github.com/withciel/kitsuneos">49 passing acceptance tests</a>
+            <a
+              href="https://github.com/withciel/kitsuneos"
+              aria-label="KitsuneOS on GitHub — 60 passing acceptance tests"
+            >
+              60 passing acceptance tests
+            </a>
           </li>
           <li>Cross-tenant isolation verified by named Gate 0b tests</li>
         </ul>
@@ -34,27 +39,51 @@ export default function LandingPage() {
       <section id="problem">
         <h2>The problem</h2>
         <p>
-          Agents write. Postgres assumes human-reviewed code. Teams rebuild staging and approval
-          flows badly, over and over.
+          Agents write. Postgres assumes human-reviewed code. Teams rebuild
+          staging and approval flows badly, over and over.
         </p>
       </section>
 
       <section id="product">
         <h2>Product</h2>
         <h3>Change sets</h3>
-        <p>Every mutation is a proposed change set. Nothing lands without review.</p>
+        <p>
+          Every mutation is a proposed change set. Nothing lands without review.
+        </p>
         <h3>Grants</h3>
-        <p>Field masks and row predicates restrict what each principal can see or propose.</p>
+        <p>
+          Field masks and row predicates restrict what each principal can see or
+          propose.
+        </p>
         <h3>History</h3>
-        <p>Every write produces a revision attributed to the acting principal.</p>
+        <p>
+          Every write produces a revision attributed to the acting principal.
+        </p>
       </section>
 
       <section id="proof">
         <h2>Proof</h2>
-        <div className="proof-placeholder" aria-label="Demo video placeholder">
-          30-second demo recording — agent proposes next_step, amount rejected, human approves,
-          history shows attribution (coming after review UI ships).
-        </div>
+        <video
+          className="proof-video"
+          controls
+          preload="metadata"
+          poster="/proof-poster.svg"
+          aria-label="Demo: agent proposes next_step, amount rejected, human approves, history shows attribution"
+        >
+          <source src="/proof-demo.mp4" type="video/mp4" />
+          <track
+            kind="captions"
+            src="/proof-demo.vtt"
+            srcLang="en"
+            label="English"
+            default
+          />
+          <p>
+            30-second demo: agent proposes <code>next_step</code>,{' '}
+            <code>amount</code> rejected, human approves in the review queue,
+            history shows agent attribution.
+          </p>
+        </video>
       </section>
 
       <section id="limitations">

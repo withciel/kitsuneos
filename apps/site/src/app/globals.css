@@ -1,4 +1,4 @@
-@import '../../../../design/kitsuneos-tokens-dark.css';
+@import "../../../../design/kitsuneos-tokens-dark.css";
 
 * {
   box-sizing: border-box;
@@ -47,9 +47,35 @@ section {
 }
 
 .proof-placeholder {
-  border: 1px dashed var(--k-border);
-  border-radius: var(--k-radius-lg);
+  border: 1px dashed var(--k-border-control);
+  border-radius: var(--k-radius-md);
   padding: 3rem 1rem;
   text-align: center;
   color: var(--k-ink-muted);
+}
+
+.proof-video {
+  width: 100%;
+  max-width: 48rem;
+  border-radius: var(--k-radius-md);
+  border: 1px solid var(--k-border-control);
+  background: var(--k-surface-sunken);
+}
+
+.site-footer {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem 3rem;
+  color: var(--k-ink-muted);
+  font-size: var(--k-text-small);
+}
+
+.legal {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.legal h1 {
+  color: var(--k-ink);
 }

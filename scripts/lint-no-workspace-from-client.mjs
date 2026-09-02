@@ -1,13 +1,9 @@
 #!/usr/bin/env node
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import ts from 'typescript';
 
 const ROOT = resolve('apps/app/src');
-const ALLOWED_FILES = new Set([
-  'require-workspace.ts',
-  'auth.ts',
-]);
+const ALLOWED_FILES = new Set(['require-workspace.ts', 'auth.ts']);
 
 const FORBIDDEN_PATTERNS = [
   /searchParams\.get\(['"]workspace/,

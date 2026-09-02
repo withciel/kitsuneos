@@ -1,7 +1,18 @@
-import pg from 'pg';
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
+import pg from 'pg';
 import type { DbConfig } from '../types.js';
 import { assertSchemaName, assertUuid } from '../types.js';
+
+function poolConfig(connectionString: string, max: number) {
+  const local =
+    connectionString.includes('localhost') ||
+    connectionString.includes('127.0.0.1');
+  return {
+    connectionString,
+    max,
+    ...(local ? {} : { ssl: { rejectUnauthorized: true } }),
+  };
+}
 
 export function createPools(
   config: DbConfig,
@@ -11,14 +22,10 @@ export function createPools(
   appPool: Pool;
 } {
   return {
-    ownerPool: new pg.Pool({
-      connectionString: config.ownerUrl,
-      max: options?.ownerMax ?? 10,
-    }),
-    appPool: new pg.Pool({
-      connectionString: config.appUrl,
-      max: options?.appMax ?? 20,
-    }),
+    ownerPool: new pg.Pool(
+      poolConfig(config.ownerUrl, options?.ownerMax ?? 10),
+    ),
+    appPool: new pg.Pool(poolConfig(config.appUrl, options?.appMax ?? 20)),
   };
 }
 

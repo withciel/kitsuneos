@@ -1,7 +1,14 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@kitsuneos/ui', '@kitsuneos/core', '@kitsuneos/server'],
+  output: 'standalone',
+  transpilePackages: [
+    '@kitsuneos/ui',
+    '@kitsuneos/core',
+    '@kitsuneos/server',
+    '@kitsuneos/provisioning',
+    '@kitsuneos/mcp',
+  ],
 };
 
 export default nextConfig;

@@ -1,0 +1,10 @@
+name: kitsuneos
+runtime:
+  name: nodejs
+  options:
+    typescript: true
+description: KitsuneOS AWS infrastructure (site + app + RDS)
+config:
+  aws:region: us-east-1
+  kitsuneos:domain: kitsuneos.com
+  kitsuneos:appDomain: app.kitsuneos.com

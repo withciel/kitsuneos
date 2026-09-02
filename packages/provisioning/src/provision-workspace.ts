@@ -51,7 +51,7 @@ export async function provisionUserWorkspace(
     }
 
     const userId = uuidv4();
-    const slug = `ws-${input.workosId.slice(0, 8)}`;
+    const slug = `ws-${uuidv4().replace(/-/g, '').slice(0, 16)}`;
     const { workspaceId, schemaName } = await engine.createWorkspace(slug);
     created.push('workspace');
 

@@ -161,4 +161,37 @@ CREATE TABLE IF NOT EXISTS kitsune.provisioning_steps (
   step          text NOT NULL,
   completed_at  timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS kitsune.subscriptions (
+  id                    uuid PRIMARY KEY,
+  workspace_id          uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  dodo_subscription_id  text UNIQUE,
+  dodo_customer_id      text,
+  status                text NOT NULL CHECK (status IN
+                          ('pending','active','on_hold','paused','cancelled','failed','expired','past_due')),
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now(),
+  last_webhook_at       timestamptz
+);
+CREATE INDEX IF NOT EXISTS subscriptions_workspace_idx
+  ON kitsune.subscriptions (workspace_id, created_at DESC);
+
+ALTER TABLE kitsune.subscriptions
+  ADD COLUMN IF NOT EXISTS last_webhook_at timestamptz;
+
+CREATE TABLE IF NOT EXISTS kitsune.billing_events (
+  event_id       text PRIMARY KEY,
+  payload        jsonb NOT NULL,
+  processed_at   timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS kitsune.usage_events (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  workspace_id   uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  kind           text NOT NULL,
+  count          int NOT NULL DEFAULT 1,
+  at             timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS usage_events_workspace_at_idx
+  ON kitsune.usage_events (workspace_id, at DESC);
 `;

@@ -55,6 +55,15 @@ describe('Schema definition API validation', () => {
     ).rejects.toMatchObject({ code: 'validation' });
   });
 
+  it('rejects id as a field name', async () => {
+    await expect(
+      engine.defineCollection(fixture.workspaceId, {
+        name: 'notes',
+        fields: [{ name: 'id', type: 'text' }],
+      }),
+    ).rejects.toMatchObject({ code: 'validation' });
+  });
+
   it('rejects relation targets that do not exist', async () => {
     await expect(
       engine.defineCollection(fixture.workspaceId, {

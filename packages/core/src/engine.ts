@@ -37,6 +37,7 @@ import {
   schemaNameForWorkspace,
 } from './types.js';
 import { createPools, queryOne, queryRows, setSessionContext, withOwner } from './db/pool.js';
+import { assertWriteEntitlement } from './billing/entitlement.js';
 
 export interface ApplyFaultInjection {
   afterOpIndex?: number;
@@ -148,6 +149,7 @@ export class KitsuneEngine {
     workspaceId: string,
     definition: CollectionDefinition,
   ): Promise<string> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
     validateCollectionDefinition(definition);
     const schemaName = schemaNameForWorkspace(workspaceId);
     const collectionId = uuidv4();
@@ -530,6 +532,7 @@ export class KitsuneEngine {
     authorId: string,
     input: ProposeChangeSetInput,
   ): Promise<{ changeSetId: string; operationIds: string[] }> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
     const schemaName = schemaNameForWorkspace(workspaceId);
     const changeSetId = uuidv4();
     const operationIds: string[] = [];
@@ -707,6 +710,7 @@ export class KitsuneEngine {
     reviewerId: string,
     changeSetId: string,
   ): Promise<{ status: string; conflicts?: string[] }> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
     const schemaName = schemaNameForWorkspace(workspaceId);
 
     const metaClient = await this.appPool.connect();
@@ -1052,6 +1056,7 @@ export class KitsuneEngine {
     record: Record<string, JsonValue>,
     options?: { recordId?: string },
   ): Promise<string> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
     const schemaName = schemaNameForWorkspace(workspaceId);
     const client = await this.appPool.connect();
     try {

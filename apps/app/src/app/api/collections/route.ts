@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server';
-import { requireWorkspace } from '@/lib/require-workspace';
-import { engine } from '@/lib/engine';
-import { validateCollectionDefinition } from '@kitsuneos/core';
 import type { CollectionDefinition } from '@kitsuneos/core';
+import { validateCollectionDefinition } from '@kitsuneos/core';
+import { NextResponse } from 'next/server';
+import { engine } from '@/lib/engine';
+import { requireWorkspace } from '@/lib/require-workspace';
 
 export async function POST(request: Request) {
   try {
