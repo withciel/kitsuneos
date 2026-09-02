@@ -66,8 +66,18 @@ CREATE TABLE IF NOT EXISTS kitsune.change_sets (
   created_at     timestamptz NOT NULL DEFAULT now(),
   decided_at     timestamptz,
   decided_by     uuid REFERENCES kitsune.principals(id),
-  expires_at     timestamptz NOT NULL DEFAULT now() + interval '30 days'
+  expires_at     timestamptz NOT NULL DEFAULT now() + interval '30 days',
+  -- How often two change sets raced for the same field. Nothing reads this yet;
+  -- it is the evidence for whether a merge queue is worth building, and it
+  -- cannot be reconstructed after the fact.
+  conflict_count    int NOT NULL DEFAULT 0,
+  conflicted_fields text[] NOT NULL DEFAULT '{}'
 );
+
+ALTER TABLE kitsune.change_sets
+  ADD COLUMN IF NOT EXISTS conflict_count int NOT NULL DEFAULT 0;
+ALTER TABLE kitsune.change_sets
+  ADD COLUMN IF NOT EXISTS conflicted_fields text[] NOT NULL DEFAULT '{}';
 
 CREATE TABLE IF NOT EXISTS kitsune.change_ops (
   id             uuid PRIMARY KEY,

@@ -72,6 +72,11 @@ const DEFAULT_CONFIG: DbConfig = {
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const APPLY_LOCK_TIMEOUT_MS = Number(process.env.KITSUNE_APPLY_LOCK_TIMEOUT_MS ?? 5000);
+const APPLY_LOCK_RETRIES = 1;
+/** Postgres raises this when lock_timeout expires. */
+const LOCK_NOT_AVAILABLE = '55P03';
+
 export class KitsuneEngine {
   readonly ownerPool: Pool;
   readonly appPool: Pool;
@@ -757,13 +762,12 @@ export class KitsuneEngine {
         return ca !== 0 ? ca : (a.record_id ?? '').localeCompare(b.record_id ?? '');
       });
 
-      for (const target of lockTargets) {
-        const table = `${quoteIdent(schemaName)}.${quoteIdent(target.table_name)}`;
-        await client.query(
-          `SELECT id FROM ${table} WHERE id = $1 FOR UPDATE`,
-          [target.record_id],
-        );
-      }
+      // Locks are taken row by row in sorted order, so applies cannot deadlock against
+      // each other. They can still queue behind an unrelated long transaction, and
+      // without a timeout that wait is unbounded. Bound it, and retry the batch once
+      // in case the blocker was transient.
+      await client.query(`SET LOCAL lock_timeout = '${APPLY_LOCK_TIMEOUT_MS}ms'`);
+      await this.acquireApplyLocks(client, schemaName, reviewerId, lockTargets);
 
       for (const op of approvedOps) {
         const grant = await loadResolvedGrant(client, changeSet.author_id, op.collection_id);
@@ -1096,6 +1100,50 @@ export class KitsuneEngine {
     );
   }
 
+  private async acquireApplyLocks(
+    client: PoolClient,
+    schemaName: string,
+    principalId: string,
+    targets: Array<{ table_name: string; record_id: string | null }>,
+  ): Promise<void> {
+    for (let attempt = 0; attempt <= APPLY_LOCK_RETRIES; attempt++) {
+      try {
+        for (const target of targets) {
+          const table = `${quoteIdent(schemaName)}.${quoteIdent(target.table_name)}`;
+          await client.query(`SELECT id FROM ${table} WHERE id = $1 FOR UPDATE`, [
+            target.record_id,
+          ]);
+        }
+        return;
+      } catch (error) {
+        const isLockTimeout =
+          typeof error === 'object' &&
+          error !== null &&
+          (error as { code?: string }).code === LOCK_NOT_AVAILABLE;
+        if (!isLockTimeout || attempt === APPLY_LOCK_RETRIES) {
+          if (isLockTimeout) {
+            throw new KitsuneError(
+              'Timed out waiting for a lock on a record in this change set',
+              'blocked',
+            );
+          }
+          throw error;
+        }
+        // Rolling back releases whatever this attempt did acquire, so the retry never
+        // waits while holding a lock. It also discards SET LOCAL, so the session
+        // context has to be re-established.
+        await client.query('ROLLBACK');
+        await client.query('BEGIN');
+        await setSessionContext(client, {
+          schemaName,
+          principalId,
+          includeDeleted: true,
+        });
+        await client.query(`SET LOCAL lock_timeout = '${APPLY_LOCK_TIMEOUT_MS}ms'`);
+      }
+    }
+  }
+
   private async markChangeSetStatus(
     _workspaceId: string,
     reviewerId: string,
@@ -1113,10 +1161,18 @@ export class KitsuneEngine {
     conflicts: string[],
     ops: Array<{ id: string; field_name: string | null }>,
   ): Promise<void> {
+    const distinctConflicts = [...new Set(conflicts)];
     await withOwner(this.ownerPool, async (client) => {
       await client.query(
-        `UPDATE kitsune.change_sets SET status = 'blocked' WHERE id = $1`,
-        [changeSetId],
+        `UPDATE kitsune.change_sets
+            SET status = 'blocked',
+                conflict_count = conflict_count + $2,
+                conflicted_fields = (
+                  SELECT COALESCE(array_agg(DISTINCT f), '{}')
+                    FROM unnest(conflicted_fields || $3::text[]) AS f
+                )
+          WHERE id = $1`,
+        [changeSetId, distinctConflicts.length, distinctConflicts],
       );
       for (const op of ops) {
         if (op.field_name && conflicts.includes(op.field_name)) {
