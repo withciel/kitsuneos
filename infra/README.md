@@ -23,10 +23,11 @@ Stack: `staging` or `prod` in **us-east-1**.
 
 ```bash
 cd infra
-pnpm install
-pulumi stack init staging   # once
+npm install          # Pulumi Node.js runtime deps (required once)
+pulumi stack select kitsuneos   # or: pulumi stack init kitsuneos
 pulumi config set kitsuneos:domain kitsuneos.com
 pulumi config set kitsuneos:appDomain app.kitsuneos.com
+source ../scripts/aws-env.sh    # if you use `aws login`
 pulumi up
 ```
 
@@ -42,13 +43,9 @@ Wire these into App Runner runtime (extend `imageConfiguration.runtimeEnvironmen
 ## Deploy site (after `pulumi up`)
 
 ```bash
-./scripts/deploy-site.sh staging
-```
-
-## Deploy app
-
-```bash
-./scripts/deploy-app.sh staging
+source scripts/aws-env.sh
+./scripts/deploy-site.sh
+./scripts/deploy-app.sh
 ```
 
 ## Backup restore drill

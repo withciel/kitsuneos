@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-STACK="${1:-staging}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=scripts/pulumi-stack.sh
+source "$ROOT/scripts/pulumi-stack.sh"
+STACK="$(resolve_pulumi_stack "$ROOT" "${1:-}")"
 
 cd "$ROOT"
 pnpm --filter @kitsuneos/core build

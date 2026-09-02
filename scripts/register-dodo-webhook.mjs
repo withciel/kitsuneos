@@ -7,15 +7,10 @@ import { execFileSync } from 'node:child_process';
 import DodoPayments from 'dodopayments';
 
 const webhookUrl = process.argv[2];
-const stack = process.argv[3] ?? 'staging';
+const stack = process.argv[3] ?? 'kitsuneos';
 
 if (!webhookUrl) {
   console.error('Usage: register-dodo-webhook.mjs <webhookUrl> [stack]');
-  process.exit(1);
-}
-
-if (stack !== 'staging' && stack !== 'prod') {
-  console.error('stack must be staging or prod');
   process.exit(1);
 }
 

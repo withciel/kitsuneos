@@ -5,6 +5,9 @@ import * as random from '@pulumi/random';
 const config = new pulumi.Config('kitsuneos');
 const domain = config.get('domain') ?? 'kitsuneos.com';
 const appDomain = config.get('appDomain') ?? 'app.kitsuneos.com';
+const deployApp = config.getBoolean('deployApp') ?? false;
+/** AWS CloudFront+S3 for marketing site. Default false — site ships on Cloudflare Pages. */
+const deploySiteCdn = config.getBoolean('deploySiteCdn') ?? false;
 const stack = pulumi.getStack();
 
 const tags = {
@@ -186,8 +189,9 @@ new aws.secretsmanager.SecretVersion('dodo-keys-v', {
   secretId: dodoSecret.id,
   secretString: JSON.stringify({
     DODO_PAYMENTS_API_KEY: 'REPLACE_ME',
-    DODO_PAYMENTS_WEBHOOK_KEY: 'REPLACE_ME',
     DODO_PAYMENTS_ENVIRONMENT: 'test_mode',
+    DODO_PRODUCT_ID: 'REPLACE_ME',
+    BILLING_RECONCILE_SECRET: 'REPLACE_ME',
   }),
 });
 
@@ -243,106 +247,123 @@ new aws.acm.CertificateValidation('app-cert-validated', {
   validationRecordFqdns: [appValidation0.fqdn],
 });
 
-// --- Site: S3 + CloudFront + OAC ---
-const siteBucket = new aws.s3.BucketV2('site-bucket', {
-  bucket: `${stack}-kitsuneos-site`,
-  tags,
-});
+// --- Site: optional S3 + CloudFront + OAC (default off; Cloudflare Pages hosts the site) ---
+const siteBucket = deploySiteCdn
+  ? new aws.s3.BucketV2('site-bucket', {
+    bucket: `${stack}-kitsuneos-site`,
+    tags,
+  })
+  : undefined;
 
-new aws.s3.BucketPublicAccessBlock('site-bucket-block', {
-  bucket: siteBucket.id,
-  blockPublicAcls: true,
-  blockPublicPolicy: true,
-  ignorePublicAcls: true,
-  restrictPublicBuckets: true,
-});
+if (siteBucket) {
+  new aws.s3.BucketPublicAccessBlock('site-bucket-block', {
+    bucket: siteBucket.id,
+    blockPublicAcls: true,
+    blockPublicPolicy: true,
+    ignorePublicAcls: true,
+    restrictPublicBuckets: true,
+  });
+}
 
-const siteOac = new aws.cloudfront.OriginAccessControl('site-oac', {
-  name: `kitsune-site-oac-${stack}`,
-  originAccessControlOriginType: 's3',
-  signingBehavior: 'always',
-  signingProtocol: 'sigv4',
-});
+const siteOac = deploySiteCdn
+  ? new aws.cloudfront.OriginAccessControl('site-oac', {
+    name: `kitsune-site-oac-${stack}`,
+    originAccessControlOriginType: 's3',
+    signingBehavior: 'always',
+    signingProtocol: 'sigv4',
+  })
+  : undefined;
 
-const siteDistribution = new aws.cloudfront.Distribution('site-cdn', {
-  enabled: true,
-  defaultRootObject: 'index.html',
-  aliases: [domain, `www.${domain}`],
-  origins: [
-    {
-      originId: 'siteS3',
-      domainName: siteBucket.bucketRegionalDomainName,
-      originAccessControlId: siteOac.id,
-    },
-  ],
-  defaultCacheBehavior: {
-    targetOriginId: 'siteS3',
-    viewerProtocolPolicy: 'redirect-to-https',
-    allowedMethods: ['GET', 'HEAD', 'OPTIONS'],
-    cachedMethods: ['GET', 'HEAD'],
-    forwardedValues: {
-      queryString: false,
-      cookies: { forward: 'none' },
-    },
-    compress: true,
-  },
-  customErrorResponses: [
-    { errorCode: 404, responseCode: 404, responsePagePath: '/404.html' },
-  ],
-  restrictions: { geoRestriction: { restrictionType: 'none' } },
-  viewerCertificate: {
-    acmCertificateArn: siteCertValidated.certificateArn,
-    sslSupportMethod: 'sni-only',
-    minimumProtocolVersion: 'TLSv1.2_2021',
-  },
-  tags,
-});
+const siteDistribution =
+  deploySiteCdn && siteBucket && siteOac
+    ? new aws.cloudfront.Distribution('site-cdn', {
+      enabled: true,
+      defaultRootObject: 'index.html',
+      aliases: [domain, `www.${domain}`],
+      origins: [
+        {
+          originId: 'siteS3',
+          domainName: siteBucket.bucketRegionalDomainName,
+          originAccessControlId: siteOac.id,
+        },
+      ],
+      defaultCacheBehavior: {
+        targetOriginId: 'siteS3',
+        viewerProtocolPolicy: 'redirect-to-https',
+        allowedMethods: ['GET', 'HEAD', 'OPTIONS'],
+        cachedMethods: ['GET', 'HEAD'],
+        forwardedValues: {
+          queryString: false,
+          cookies: { forward: 'none' },
+        },
+        compress: true,
+      },
+      customErrorResponses: [
+        {
+          errorCode: 404,
+          responseCode: 404,
+          responsePagePath: '/404.html',
+        },
+      ],
+      restrictions: { geoRestriction: { restrictionType: 'none' } },
+      viewerCertificate: {
+        acmCertificateArn: siteCertValidated.certificateArn,
+        sslSupportMethod: 'sni-only',
+        minimumProtocolVersion: 'TLSv1.2_2021',
+      },
+      tags,
+    })
+    : undefined;
 
-new aws.s3.BucketPolicy('site-bucket-policy', {
-  bucket: siteBucket.id,
-  policy: pulumi
-    .all([siteBucket.arn, siteDistribution.arn])
-    .apply(([bucketArn, distArn]) =>
-      JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Effect: 'Allow',
-            Principal: { Service: 'cloudfront.amazonaws.com' },
-            Action: 's3:GetObject',
-            Resource: `${bucketArn}/*`,
-            Condition: { StringEquals: { 'AWS:SourceArn': distArn } },
-          },
-        ],
-      }),
-    ),
-});
+if (siteBucket && siteDistribution) {
+  new aws.s3.BucketPolicy('site-bucket-policy', {
+    bucket: siteBucket.id,
+    policy: pulumi
+      .all([siteBucket.arn, siteDistribution.arn])
+      .apply(([bucketArn, distArn]) =>
+        JSON.stringify({
+          Version: '2012-10-17',
+          Statement: [
+            {
+              Effect: 'Allow',
+              Principal: { Service: 'cloudfront.amazonaws.com' },
+              Action: 's3:GetObject',
+              Resource: `${bucketArn}/*`,
+              Condition: {
+                StringEquals: { 'AWS:SourceArn': distArn },
+              },
+            },
+          ],
+        }),
+      ),
+  });
 
-new aws.route53.Record('site-a', {
-  zoneId: zone.zoneId,
-  name: domain,
-  type: 'A',
-  aliases: [
-    {
-      name: siteDistribution.domainName,
-      zoneId: siteDistribution.hostedZoneId,
-      evaluateTargetHealth: false,
-    },
-  ],
-});
+  new aws.route53.Record('site-a', {
+    zoneId: zone.zoneId,
+    name: domain,
+    type: 'A',
+    aliases: [
+      {
+        name: siteDistribution.domainName,
+        zoneId: siteDistribution.hostedZoneId,
+        evaluateTargetHealth: false,
+      },
+    ],
+  });
 
-new aws.route53.Record('site-www-a', {
-  zoneId: zone.zoneId,
-  name: `www.${domain}`,
-  type: 'A',
-  aliases: [
-    {
-      name: siteDistribution.domainName,
-      zoneId: siteDistribution.hostedZoneId,
-      evaluateTargetHealth: false,
-    },
-  ],
-});
+  new aws.route53.Record('site-www-a', {
+    zoneId: zone.zoneId,
+    name: `www.${domain}`,
+    type: 'A',
+    aliases: [
+      {
+        name: siteDistribution.domainName,
+        zoneId: siteDistribution.hostedZoneId,
+        evaluateTargetHealth: false,
+      },
+    ],
+  });
+}
 
 // --- App: ECR + App Runner ---
 const appRepo = new aws.ecr.Repository('app-repo', {
@@ -401,96 +422,110 @@ new aws.iam.RolePolicyAttachment('apprunner-access-ecr', {
   policyArn: aws.iam.ManagedPolicy.AmazonEC2ContainerRegistryReadOnly,
 });
 
-const appRunnerService = new aws.apprunner.Service('app-service', {
-  serviceName: `kitsuneos-app-${stack}`,
-  sourceConfiguration: {
-    authenticationConfiguration: {
-      accessRoleArn: appRunnerAccessRole.arn,
-    },
-    imageRepository: {
-      imageIdentifier: pulumi.interpolate`${appRepo.repositoryUrl}:latest`,
-      imageRepositoryType: 'ECR',
-      imageConfiguration: {
-        port: '8080',
-        runtimeEnvironmentSecrets: {
-          KITSUNE_OWNER_URL: ownerSecret.arn,
-          KITSUNE_APP_URL: appSecret.arn,
-        },
-        runtimeEnvironmentVariables: {
-          NODE_ENV: 'production',
-          APP_BASE_URL: `https://${appDomain}`,
-          WORKOS_REDIRECT_URI: `https://${appDomain}/callback`,
+const appRunnerService = deployApp
+  ? new aws.apprunner.Service('app-service', {
+    serviceName: `kitsuneos-app-${stack}`,
+    sourceConfiguration: {
+      authenticationConfiguration: {
+        accessRoleArn: appRunnerAccessRole.arn,
+      },
+      imageRepository: {
+        imageIdentifier: pulumi.interpolate`${appRepo.repositoryUrl}:latest`,
+        imageRepositoryType: 'ECR',
+        imageConfiguration: {
+          port: '8080',
+          runtimeEnvironmentSecrets: {
+            KITSUNE_OWNER_URL: ownerSecret.arn,
+            KITSUNE_APP_URL: appSecret.arn,
+            WORKOS_API_KEY: pulumi.interpolate`${workosSecret.arn}:WORKOS_API_KEY::`,
+            WORKOS_CLIENT_ID: pulumi.interpolate`${workosSecret.arn}:WORKOS_CLIENT_ID::`,
+            WORKOS_COOKIE_PASSWORD: pulumi.interpolate`${workosSecret.arn}:WORKOS_COOKIE_PASSWORD::`,
+            DODO_PAYMENTS_API_KEY: pulumi.interpolate`${dodoSecret.arn}:DODO_PAYMENTS_API_KEY::`,
+            DODO_PAYMENTS_ENVIRONMENT: pulumi.interpolate`${dodoSecret.arn}:DODO_PAYMENTS_ENVIRONMENT::`,
+            DODO_PRODUCT_ID: pulumi.interpolate`${dodoSecret.arn}:DODO_PRODUCT_ID::`,
+            BILLING_RECONCILE_SECRET: pulumi.interpolate`${dodoSecret.arn}:BILLING_RECONCILE_SECRET::`,
+            DODO_PAYMENTS_WEBHOOK_KEY: dodoWebhookSecret.arn,
+          },
+          runtimeEnvironmentVariables: {
+            NODE_ENV: 'production',
+            APP_BASE_URL: `https://${appDomain}`,
+            WORKOS_REDIRECT_URI: `https://${appDomain}/callback`,
+          },
         },
       },
+      autoDeploymentsEnabled: false,
     },
-    autoDeploymentsEnabled: false,
-  },
-  instanceConfiguration: {
-    cpu: '1024',
-    memory: '2048',
-    instanceRoleArn: appRunnerRole.arn,
-  },
-  networkConfiguration: {
-    egressConfiguration: {
-      egressType: 'VPC',
-      vpcConnectorArn: vpcConnector.arn,
+    instanceConfiguration: {
+      cpu: '1024',
+      memory: '2048',
+      instanceRoleArn: appRunnerRole.arn,
     },
-  },
-  healthCheckConfiguration: {
-    protocol: 'HTTP',
-    path: '/health',
-    healthyThreshold: 1,
-    unhealthyThreshold: 5,
-    interval: 10,
-    timeout: 5,
-  },
-  tags,
-});
+    networkConfiguration: {
+      egressConfiguration: {
+        egressType: 'VPC',
+        vpcConnectorArn: vpcConnector.arn,
+      },
+    },
+    healthCheckConfiguration: {
+      protocol: 'HTTP',
+      path: '/health',
+      healthyThreshold: 1,
+      unhealthyThreshold: 5,
+      interval: 10,
+      timeout: 5,
+    },
+    tags,
+  })
+  : undefined;
 
-const appRunnerCustomDomain = new aws.apprunner.CustomDomainAssociation(
-  'app-domain',
-  {
-    domainName: appDomain,
-    serviceArn: appRunnerService.arn,
-    enableWwwSubdomain: false,
-  },
-);
+const appRunnerCustomDomain =
+  deployApp && appRunnerService
+    ? new aws.apprunner.CustomDomainAssociation('app-domain', {
+      domainName: appDomain,
+      serviceArn: appRunnerService.arn,
+      enableWwwSubdomain: false,
+    })
+    : undefined;
 
-appRunnerCustomDomain.certificateValidationRecords.apply((records) =>
-  records.map(
-    (record, index) =>
-      new aws.route53.Record(`app-domain-cert-${index}`, {
-        zoneId: zone.zoneId,
-        name: record.name,
-        type: record.type,
-        records: [record.value],
-        ttl: 60,
-        allowOverwrite: true,
-      }),
-  ),
-);
+if (appRunnerCustomDomain) {
+  appRunnerCustomDomain.certificateValidationRecords.apply((records) =>
+    records.map(
+      (record, index) =>
+        new aws.route53.Record(`app-domain-cert-${index}`, {
+          zoneId: zone.zoneId,
+          name: record.name,
+          type: record.type,
+          records: [record.value],
+          ttl: 60,
+          allowOverwrite: true,
+        }),
+    ),
+  );
 
-new aws.route53.Record('app-domain-cname', {
-  zoneId: zone.zoneId,
-  name: appDomain,
-  type: 'CNAME',
-  ttl: 300,
-  records: [appRunnerCustomDomain.dnsTarget],
-});
+  new aws.route53.Record('app-domain-cname', {
+    zoneId: zone.zoneId,
+    name: appDomain,
+    type: 'CNAME',
+    ttl: 300,
+    records: [appRunnerCustomDomain.dnsTarget],
+  });
+}
 
 // --- CloudWatch alarms ---
-new aws.cloudwatch.MetricAlarm('app-5xx', {
-  alarmDescription: 'App Runner 5xx rate',
-  metricName: '5xxStatusResponses',
-  namespace: 'AWS/AppRunner',
-  dimensions: { ServiceName: appRunnerService.serviceName },
-  statistic: 'Sum',
-  period: 300,
-  evaluationPeriods: 2,
-  threshold: 10,
-  comparisonOperator: 'GreaterThanThreshold',
-  tags,
-});
+if (appRunnerService) {
+  new aws.cloudwatch.MetricAlarm('app-5xx', {
+    alarmDescription: 'App Runner 5xx rate',
+    metricName: '5xxStatusResponses',
+    namespace: 'AWS/AppRunner',
+    dimensions: { ServiceName: appRunnerService.serviceName },
+    statistic: 'Sum',
+    period: 300,
+    evaluationPeriods: 2,
+    threshold: 10,
+    comparisonOperator: 'GreaterThanThreshold',
+    tags,
+  });
+}
 
 new aws.cloudwatch.MetricAlarm('rds-connections', {
   alarmDescription: 'RDS connection count high',
@@ -505,8 +540,8 @@ new aws.cloudwatch.MetricAlarm('rds-connections', {
   tags,
 });
 
-export const siteBucketName = siteBucket.id;
-export const siteDistributionId = siteDistribution.id;
+export const siteBucketName = siteBucket?.id ?? '';
+export const siteDistributionId = siteDistribution?.id ?? '';
 export const siteCertValidation = siteCert.domainValidationOptions;
 export const appCertValidation = appCert.domainValidationOptions;
 export const ecrRepositoryUrl = appRepo.repositoryUrl;
@@ -514,9 +549,10 @@ export const dbEndpoint = dbInstance.address;
 export const ownerDbSecretArn = ownerSecret.arn;
 export const appDbSecretArn = appSecret.arn;
 export const vpcConnectorArn = vpcConnector.arn;
-export const appRunnerServiceArn = appRunnerService.arn;
-export const appRunnerServiceUrl = appRunnerService.serviceUrl;
+export const appRunnerServiceArn = appRunnerService?.arn ?? '';
+export const appRunnerServiceUrl = appRunnerService?.serviceUrl ?? '';
 export const dodoWebhookSecretArn = dodoWebhookSecret.arn;
 export const domainName = domain;
 export const appDomainName = appDomain;
-export const appCustomDomain = appRunnerCustomDomain.dnsTarget;
+export const appCustomDomain = appRunnerCustomDomain?.dnsTarget ?? '';
+export const siteHosting = deploySiteCdn ? 'cloudfront' : 'cloudflare-pages';
