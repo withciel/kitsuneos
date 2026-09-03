@@ -1,0 +1,141 @@
+'use client';
+
+import { Bell, Database, Settings, Table2 } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarRail,
+} from '@/components/ui/sidebar';
+
+interface SchemaCollection {
+  name: string;
+  capability: string;
+}
+
+export function AppSidebar() {
+  const pathname = usePathname();
+  const [collections, setCollections] = useState<SchemaCollection[]>([]);
+  const [inboxCount, setInboxCount] = useState(0);
+
+  useEffect(() => {
+    void fetch('/api/schema')
+      .then(async (response) => {
+        if (!response.ok) return;
+        const body = (await response.json()) as {
+          collections?: SchemaCollection[];
+        };
+        setCollections(body.collections ?? []);
+      })
+      .catch(() => undefined);
+
+    void fetch('/api/review')
+      .then(async (response) => {
+        if (!response.ok) return;
+        const body = (await response.json()) as {
+          changeSets?: unknown[];
+        };
+        setInboxCount(body.changeSets?.length ?? 0);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
+        <Link href="/" className="flex items-center gap-2 px-1">
+          <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Database className="size-4" />
+          </div>
+          <span className="text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+            KitsuneOS
+          </span>
+        </Link>
+      </SidebarHeader>
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel>Collections</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {collections.length === 0 ? (
+                <SidebarMenuItem>
+                  <span className="px-2 text-xs text-muted-foreground">
+                    No collections yet
+                  </span>
+                </SidebarMenuItem>
+              ) : (
+                collections.map((collection) => {
+                  const href = `/c/${collection.name}`;
+                  const active =
+                    pathname === href || pathname.startsWith(`${href}/`);
+                  return (
+                    <SidebarMenuItem key={collection.name}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={active}
+                        tooltip={collection.name}
+                      >
+                        <Link href={href}>
+                          <Table2 />
+                          <span>{collection.name}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  );
+                })
+              )}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+      </SidebarContent>
+      <SidebarFooter className="border-t border-sidebar-border">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith('/inbox')}
+              tooltip="Inbox"
+            >
+              <Link href="/inbox">
+                <Bell />
+                <span>Inbox</span>
+                {inboxCount > 0 ? (
+                  <Badge
+                    variant="default"
+                    className="ml-auto h-5 min-w-5 justify-center rounded-full px-1.5 text-[10px]"
+                  >
+                    {inboxCount}
+                  </Badge>
+                ) : null}
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith('/settings')}
+              tooltip="Settings"
+            >
+              <Link href="/settings">
+                <Settings />
+                <span>Settings</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
+  );
+}

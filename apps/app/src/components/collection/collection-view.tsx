@@ -1,0 +1,450 @@
+'use client';
+
+import type { JsonValue } from '@kitsuneos/core';
+import { Columns3, Plus, Search } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
+
+interface FieldMeta {
+  name: string;
+  type: string;
+  writable: boolean;
+}
+
+interface ViewState {
+  hiddenColumns: string[];
+  search: string;
+}
+
+function storageKey(scope: string, collection: string): string {
+  return `kitsune:view:${scope}:${collection}`;
+}
+
+function loadView(scope: string, collection: string): ViewState {
+  if (typeof window === 'undefined') {
+    return { hiddenColumns: [], search: '' };
+  }
+  try {
+    const raw = window.localStorage.getItem(storageKey(scope, collection));
+    if (!raw) return { hiddenColumns: [], search: '' };
+    return JSON.parse(raw) as ViewState;
+  } catch {
+    return { hiddenColumns: [], search: '' };
+  }
+}
+
+function saveView(scope: string, collection: string, state: ViewState): void {
+  window.localStorage.setItem(
+    storageKey(scope, collection),
+    JSON.stringify(state),
+  );
+}
+
+function cellText(value: JsonValue | undefined): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+}
+
+export function CollectionView({ collection }: { collection: string }) {
+  const [fields, setFields] = useState<FieldMeta[]>([]);
+  const [rows, setRows] = useState<Array<Record<string, JsonValue>>>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [viewScope, setViewScope] = useState('anon');
+  const [view, setView] = useState<ViewState>({
+    hiddenColumns: [],
+    search: '',
+  });
+  const [selected, setSelected] = useState<Record<string, JsonValue> | null>(
+    null,
+  );
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [creating, setCreating] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const collectionRef = useRef(collection);
+  collectionRef.current = collection;
+
+  const reload = useCallback(async () => {
+    const target = collection;
+    setLoading(true);
+    setError('');
+    try {
+      const meRes = await fetch('/api/me');
+      if (meRes.ok) {
+        const me = (await meRes.json()) as {
+          userId?: string;
+          workspaceId?: string;
+        };
+        const scope = me.userId ?? me.workspaceId ?? 'anon';
+        if (collectionRef.current === target) {
+          setViewScope(scope);
+          setView(loadView(scope, target));
+        }
+      }
+
+      const schemaRes = await fetch('/api/schema');
+      const schemaBody = (await schemaRes.json()) as {
+        collections?: Array<{ name: string; fields: FieldMeta[] }>;
+        error?: string;
+      };
+      if (!schemaRes.ok) {
+        throw new Error(schemaBody.error ?? 'Failed to load schema');
+      }
+      if (collectionRef.current !== target) return;
+      const meta = schemaBody.collections?.find((c) => c.name === target);
+      if (!meta) {
+        throw new Error(`Collection not found: ${target}`);
+      }
+      setFields(meta.fields);
+
+      const fieldNames = meta.fields.map((f) => f.name);
+      const queryRes = await fetch('/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collection: target,
+          fields: fieldNames,
+          limit: 100,
+        }),
+      });
+      const queryBody = (await queryRes.json()) as {
+        rows?: Array<Record<string, JsonValue>>;
+        error?: string;
+      };
+      if (!queryRes.ok) {
+        throw new Error(queryBody.error ?? 'Query failed');
+      }
+      if (collectionRef.current !== target) return;
+      setRows(queryBody.rows ?? []);
+    } catch (err) {
+      if (collectionRef.current !== target) return;
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      if (collectionRef.current === target) setLoading(false);
+    }
+  }, [collection]);
+
+  useEffect(() => {
+    setSelected(null);
+    setCreating(false);
+    setRows([]);
+    setFields([]);
+    void reload();
+  }, [reload]);
+
+  const visibleFields = useMemo(
+    () => fields.filter((f) => !view.hiddenColumns.includes(f.name)),
+    [fields, view.hiddenColumns],
+  );
+
+  const filteredRows = useMemo(() => {
+    const q = view.search.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((row) =>
+      visibleFields.some((field) =>
+        cellText(row[field.name]).toLowerCase().includes(q),
+      ),
+    );
+  }, [rows, view.search, visibleFields]);
+
+  function updateView(next: ViewState) {
+    setView(next);
+    saveView(viewScope, collection, next);
+  }
+
+  function openRow(row: Record<string, JsonValue>) {
+    setCreating(false);
+    setSelected(row);
+    const next: Record<string, string> = {};
+    for (const field of fields) {
+      next[field.name] = cellText(row[field.name]);
+    }
+    setDraft(next);
+  }
+
+  function openCreate() {
+    setCreating(true);
+    setSelected({});
+    const next: Record<string, string> = {};
+    for (const field of fields) {
+      next[field.name] = '';
+    }
+    setDraft(next);
+  }
+
+  async function saveRecord() {
+    setSaving(true);
+    setError('');
+    try {
+      const payload: Record<string, JsonValue> = {};
+      for (const field of fields) {
+        if (!field.writable) continue;
+        const raw = draft[field.name] ?? '';
+        if (field.type === 'number') {
+          if (raw === '') {
+            payload[field.name] = null;
+          } else {
+            const n = Number(raw);
+            if (!Number.isFinite(n)) {
+              throw new Error(`Invalid number for ${field.name}`);
+            }
+            payload[field.name] = n;
+          }
+        } else if (field.type === 'boolean') {
+          payload[field.name] = raw === 'true';
+        } else {
+          payload[field.name] = raw;
+        }
+      }
+
+      if (creating) {
+        const res = await fetch('/api/records', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ collection, record: payload }),
+        });
+        const body = (await res.json()) as { error?: string };
+        if (!res.ok) throw new Error(body.error ?? 'Create failed');
+      } else {
+        const id = selected?.id;
+        if (typeof id !== 'string') throw new Error('Missing record id');
+        const res = await fetch(`/api/records/${collection}/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fields: payload }),
+        });
+        const body = (await res.json()) as { error?: string };
+        if (!res.ok) throw new Error(body.error ?? 'Update failed');
+      }
+      setSelected(null);
+      setCreating(false);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-1 flex-col">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-4">
+        <div className="mr-auto">
+          <h1 className="text-xl font-semibold tracking-tight">{collection}</h1>
+          <p className="text-xs text-muted-foreground">Table view</p>
+        </div>
+        <div className="relative">
+          <Search className="pointer-events-none absolute top-2.5 left-2.5 size-3.5 text-muted-foreground" />
+          <Input
+            className="h-8 w-48 pl-8"
+            placeholder="Filter loaded rows"
+            value={view.search}
+            onChange={(event) =>
+              updateView({ ...view, search: event.target.value })
+            }
+          />
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm">
+              <Columns3 />
+              Columns
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuLabel>Visible columns</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {fields.map((field) => {
+              const checked = !view.hiddenColumns.includes(field.name);
+              return (
+                <DropdownMenuCheckboxItem
+                  key={field.name}
+                  checked={checked}
+                  onCheckedChange={(value) => {
+                    const hidden = new Set(view.hiddenColumns);
+                    if (value) hidden.delete(field.name);
+                    else hidden.add(field.name);
+                    updateView({
+                      ...view,
+                      hiddenColumns: [...hidden],
+                    });
+                  }}
+                >
+                  {field.name}
+                </DropdownMenuCheckboxItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button size="sm" onClick={openCreate}>
+          <Plus />
+          New
+        </Button>
+      </div>
+
+      {error ? (
+        <p className="border-b border-border px-6 py-2 text-sm text-destructive">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="flex-1 overflow-auto px-6 py-4">
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {visibleFields.map((field) => (
+                  <TableHead key={field.name}>
+                    {field.name}
+                    <span className="ml-1 text-[10px] text-muted-foreground">
+                      {field.type}
+                    </span>
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredRows.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={Math.max(visibleFields.length, 1)}
+                    className="h-24 text-center text-muted-foreground"
+                  >
+                    No rows
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredRows.map((row) => (
+                  <TableRow
+                    key={String(row.id ?? JSON.stringify(row))}
+                    className="cursor-pointer"
+                    onClick={() => openRow(row)}
+                  >
+                    {visibleFields.map((field) => (
+                      <TableCell key={field.name} className="max-w-64 truncate">
+                        {cellText(row[field.name])}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        )}
+      </div>
+
+      <Sheet
+        open={selected !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelected(null);
+            setCreating(false);
+          }
+        }}
+      >
+        <SheetContent className="flex w-full flex-col sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>{creating ? 'New record' : 'Record'}</SheetTitle>
+            {!creating && typeof selected?.id === 'string' ? (
+              <Badge
+                variant="secondary"
+                className="w-fit font-mono text-[10px]"
+              >
+                {selected.id}
+              </Badge>
+            ) : null}
+          </SheetHeader>
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4">
+            {fields.map((field) => (
+              <div key={field.name} className="space-y-1.5">
+                <Label htmlFor={`field-${field.name}`}>
+                  {field.name}
+                  <span className="ml-1 text-muted-foreground">
+                    ({field.type})
+                  </span>
+                </Label>
+                {field.type === 'prose' ? (
+                  <Textarea
+                    id={`field-${field.name}`}
+                    value={draft[field.name] ?? ''}
+                    disabled={!field.writable}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        [field.name]: event.target.value,
+                      }))
+                    }
+                  />
+                ) : (
+                  <Input
+                    id={`field-${field.name}`}
+                    value={draft[field.name] ?? ''}
+                    disabled={!field.writable}
+                    onChange={(event) =>
+                      setDraft((prev) => ({
+                        ...prev,
+                        [field.name]: event.target.value,
+                      }))
+                    }
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+          <SheetFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSelected(null);
+                setCreating(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void saveRecord()} disabled={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+    </div>
+  );
+}

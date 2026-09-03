@@ -48,6 +48,19 @@ source scripts/aws-env.sh
 ./scripts/deploy-app.sh
 ```
 
+## Continuous deployment (GitHub Actions)
+
+Push to `main` runs [`.github/workflows/cd.yml`](../.github/workflows/cd.yml):
+
+| Job | Target | Secrets / vars |
+|-----|--------|----------------|
+| `site` | Cloudflare Pages (`kitsuneos`) | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`; optional var `CLOUDFLARE_PAGES_PROJECT` |
+| `app` | ECR + App Runner via `scripts/deploy-app.sh` | `PULUMI_ACCESS_TOKEN`; either `AWS_ROLE_ARN` (OIDC) or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; optional `DODO_PAYMENTS_API_KEY`, var `AWS_REGION` |
+
+Manual runs: Actions → **CD** → **Run workflow** (toggle site/app).
+
+CI (`.github/workflows/ci.yml`) still verifies every PR/push; CD only deploys `main`.
+
 ## Backup restore drill
 
 1. Create manual snapshot: `aws rds create-db-snapshot --db-instance-identifier <id> --db-snapshot-identifier kitsune-restore-test`

@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
-export default function LegacySchemaRedirect() {
+export default function SettingsIndexPage() {
   redirect('/settings/schema');
 }

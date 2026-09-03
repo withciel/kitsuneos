@@ -7,11 +7,21 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!**/dist", "!**/infra/bin"]
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/infra/bin",
+      "!**/apps/app/src/components/ui/**"
+    ]
   },
   "formatter": {
     "enabled": true,
     "indentStyle": "space"
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
   },
   "linter": {
     "enabled": true,

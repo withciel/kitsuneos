@@ -1,50 +1,37 @@
 import type { Metadata } from 'next';
-import { Fraunces, IBM_Plex_Mono, Outfit } from 'next/font/google';
-import type { CSSProperties, ReactNode } from 'react';
-import '@kitsuneos/ui/styles.css';
+import { IBM_Plex_Mono, Outfit } from 'next/font/google';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import './globals.css';
 
-const display = Fraunces({
+const outfit = Outfit({
   subsets: ['latin'],
-  variable: '--font-fraunces',
-  display: 'swap',
+  variable: '--font-sans',
 });
 
-const sans = Outfit({
-  subsets: ['latin'],
-  variable: '--font-outfit',
-  display: 'swap',
-});
-
-const mono = IBM_Plex_Mono({
+const plexMono = IBM_Plex_Mono({
   subsets: ['latin'],
   weight: ['400', '500'],
-  variable: '--font-ibm-plex-mono',
-  display: 'swap',
+  variable: '--font-mono',
 });
 
 export const metadata: Metadata = {
-  title: 'KitsuneOS Console',
-  description: 'Review agent-proposed changes before they land.',
+  title: 'KitsuneOS',
+  description: 'Agents propose. You approve.',
 };
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="en"
-      className={`${display.variable} ${sans.variable} ${mono.variable}`}
+      className={cn('dark', outfit.variable, plexMono.variable, 'font-sans')}
     >
-      <body
-        style={
-          {
-            '--k-font-display': 'var(--font-fraunces), serif',
-            '--k-font-sans': 'var(--font-outfit), system-ui, sans-serif',
-            '--k-font-mono':
-              'var(--font-ibm-plex-mono), ui-monospace, monospace',
-          } as CSSProperties
-        }
-      >
-        {children}
+      <body>
+        <TooltipProvider delayDuration={200}>{children}</TooltipProvider>
       </body>
     </html>
   );
