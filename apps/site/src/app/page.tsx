@@ -21,15 +21,15 @@ export default function LandingPage() {
           <a href="https://withciel.com" rel="noopener noreferrer">
             Ciel
           </a>
-          . KitsuneOS runs in production as the data layer under Ciel.
+          .
         </p>
         <ul>
           <li>
             <a
               href="https://github.com/withciel/kitsuneos"
-              aria-label="KitsuneOS on GitHub — 60 passing acceptance tests"
+              aria-label="KitsuneOS on GitHub — 87 passing acceptance tests"
             >
-              60 passing acceptance tests
+              87 passing acceptance tests
             </a>
           </li>
           <li>Cross-tenant isolation verified by named Gate 0b tests</li>
@@ -89,9 +89,15 @@ export default function LandingPage() {
       <section id="limitations">
         <h2>Known limitations</h2>
         <ul>
-          <li>Create-only schema in v0.1 — no migrations yet</li>
-          <li>No GraphQL layer</li>
+          <li>
+            Schema evolution is add / drop / index only — no retype or rename
+          </li>
+          <li>No semantic search and no attachments</li>
           <li>Table-count ceiling per workspace</li>
+          <li>
+            Hosted console is the product; <code>pnpm quickstart</code> is
+            eval-only, not a production self-host
+          </li>
         </ul>
       </section>
 

@@ -1,7 +1,7 @@
 # KitsuneOS v1 — Product Requirements Document
 
-**Status:** Draft for review
-**Date:** 1 September 2026
+**Status:** P0 implemented against acceptance tests (2026-09-02). P1 unbuilt.
+**Date:** 2 September 2026
 **Supersedes:** document-first draft (same date)
 **Positioning:** The application database for software that AI agents write to.
 
@@ -69,7 +69,7 @@ G1 is the make-or-break goal and it is deliberately unglamorous. If aggregates a
 
 **No content delivery, rendering, or CDN.** *Why:* that is the headless CMS product, which is one application someone could build on KitsuneOS rather than something KitsuneOS is.
 
-**No self-hosting in v1.** *Why:* support burden before product-market fit. Revisit when a real deal is blocked on it.
+**No production self-hosting in v1.** The product is the hosted app (`apps/app`). `pnpm quickstart` remains an eval preview and is unsupported for production. *Why:* support burden before product-market fit. Revisit when a real deal is blocked on it.
 
 **No migration tooling from other databases.** *Why:* v1 adopters start new projects. Migration matters at a stage we are not at.
 
@@ -130,18 +130,18 @@ Collections are defined by a schema: scalar fields (text, number, boolean, times
 - Then the write is rejected with a referential integrity error, at apply time, before any part of the change set lands
 
 Additional criteria:
-- [ ] Relations enforce referential integrity in the storage layer, not the application
-- [ ] Filter, sort, and paginate on any indexed scalar field
-- [ ] Aggregates (count, sum, avg, min, max) with grouping, across a single relation join
-- [ ] Schema changes are versioned and reversible
+- [x] Relations enforce referential integrity in the storage layer, not the application
+- [x] Filter, sort, and paginate on any indexed scalar field
+- [x] Aggregates (count, sum, avg, min, max) with grouping, across a single relation join
+- [x] Schema changes are versioned and reversible (v1 ops: `addField`, `dropField`, `setIndexed`; no retype or rename)
 
 **R2. Record revisions**
 Every write produces a revision. Revisions record the principal, the change set that produced them, the timestamp, and the prior field values.
 
-- [ ] Any record's state at any past timestamp is retrievable
-- [ ] Revision history is queryable by principal and by record
-- [ ] Deletes are soft by default and appear in history
-- [ ] Revision retention is configurable per collection
+- [x] Any record's state at any past timestamp is retrievable
+- [x] Revision history is queryable by principal and by record
+- [x] Deletes are soft by default and appear in history
+- [ ] Revision retention is configurable per collection (`revision_retention_days` exists; no sweeper yet)
 
 **R3. Change sets**
 A change set is a set of proposed field-level operations across one or more records and collections, authored against specific base revisions, applied atomically.
@@ -152,12 +152,12 @@ A change set is a set of proposed field-level operations across one or more reco
 - And when the changed fields do overlap, the conflicting fields are surfaced and apply is blocked
 
 Additional criteria:
-- [ ] Apply is atomic across all operations and all collections in the set
-- [ ] Operations touching fields outside the author's grants are rejected at creation
-- [ ] Grants are re-checked at apply time, not only at creation
-- [ ] A reviewer can approve a subset of operations and reject the remainder
-- [ ] Rejection comments are readable through the API by the authoring principal
-- [ ] Every applied change set is retrievable as a unit, not only as scattered revisions
+- [x] Apply is atomic across all operations and all collections in the set
+- [x] Operations touching fields outside the author's grants are rejected at creation
+- [x] Grants are re-checked at apply time, not only at creation
+- [x] A reviewer can approve a subset of operations and reject the remainder
+- [x] Rejection comments are readable through the API by the authoring principal
+- [x] Every applied change set is retrievable as a unit, not only as scattered revisions
 
 **R4. Field- and row-scoped grants**
 A grant binds a principal (human or agent identity) to a collection, a capability, a field mask, and an optional row predicate. Capability ladder: `none` < `read` < `propose` < `write` < `admin`.
@@ -169,38 +169,40 @@ A grant binds a principal (human or agent identity) to a collection, a capabilit
 - Then the change set is rejected at creation, naming the field
 
 Additional criteria:
-- [ ] Row predicates are enforced in the database, not the application layer
-- [ ] Field masks apply to reads, writes, aggregates, and search results
-- [ ] Absence of a matching grant denies
-- [ ] Revoking a grant makes affected open change sets unmergeable
+- [x] Row predicates are enforced in the database, not the application layer
+- [x] Field masks apply to reads, writes, and aggregates (search is P1 and unbuilt)
+- [x] Absence of a matching grant denies
+- [x] Revoking a grant makes affected open change sets unmergeable
 
 **R5. MCP server**
 Tools: `describe_schema`, `query`, `read_record`, `propose_change_set`, `read_change_set_feedback`. `describe_schema` returns only the collections, fields, and capabilities the calling identity actually has, so an agent discovers its own permissions without a human writing an integration.
 
-- [ ] Every response is filtered by the calling identity's grants
-- [ ] Each agent identity has a distinct credential
-- [ ] Schema description reflects grants, not the full schema
+- [x] Every response is filtered by the calling identity's grants
+- [x] Each agent identity has a distinct credential
+- [x] Schema description reflects grants, not the full schema
 
 **R6. Query API and generated client**
 Auto-generated GraphQL from the schema, REST for single-record access, and a generated TypeScript client with types derived from collection definitions.
 
-- [ ] Types regenerate on schema change and fail the build on incompatibility
-- [ ] Same enforcement code path as MCP — no second implementation of authorization
+- [x] Types regenerate on schema change and fail the build on incompatibility
+- [x] Same enforcement code path as MCP — no second implementation of authorization
 
 **R7. Audit log**
 Every read, write, denied attempt, grant change, and schema change, by principal.
 
-- [ ] Queryable by principal, collection, and time range
-- [ ] Immutable and separately retained from record history
-- [ ] Denied attempts included
+- [x] Queryable by principal, collection, and time range
+- [x] Immutable and separately retained from record history
+- [x] Denied attempts included
 
 **R8. Console and CLI**
 Console: schema browser, query runner, change-set review queue, grant editor, audit search. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`.
 
-- [ ] Review queue shows field-level diffs
-- [ ] `export` produces the full workspace as portable data plus schema
+- [x] Review queue shows field-level diffs
+- [x] `export` produces the full workspace as portable data plus schema (grant-filtered for non-admins)
 
 ### P1 — Should have
+
+P1 (R9–R13) is still unbuilt. Do not treat search, rollups, automation, webhooks, or attachments as shipped.
 
 **R9. Semantic search over prose fields.** Embeddings on markdown body fields, with grants applied inside the search rather than as a post-filter, and field masks respected in returned excerpts.
 
@@ -258,14 +260,14 @@ Reviewer load is the metric most likely to kill this quietly. If human review be
 
 ## 8. Open Questions
 
-**Blocking — resolve before build**
+**Blocking — resolved for P0 (2026-09-02)**
 
-| Q | Question | Owner |
+| Q | Decision | Evidence |
 |---|---|---|
-| Q1 | Is `write` (direct, unreviewed) available to agent principals at all, or is `propose` the ceiling for non-human identities? Allowing direct writes is more flexible and undercuts the core promise. | Product + Engineering |
-| Q2 | Is the unit of review the change set or the individual operation? R3 says a reviewer can partially approve, which implies operations — confirm before building the data model. | Product |
-| Q3 | Does a row excluded by a predicate return not-found or forbidden? Not-found prevents inference attacks; forbidden makes misconfigured agents debuggable. | Engineering + Security |
-| Q4 | Is an agent a first-class principal, or does it act with delegated authority from a human? Delegation is cleaner for audit and harder to operate. | Engineering |
+| Q1 | Agent principals are capped at `propose` unless a workspace admin sets `adminOverrideAgentWrite`, which is audited. Direct agent writes are a deliberate, visible exception. | Acceptance test 20 |
+| Q2 | The reviewable unit is the operation; the atomic unit is the change set. Reviewers mark ops `approved` or `rejected`; apply processes approved ops in one transaction. Apply is refused while any op remains `proposed`. | Tests 11, console partial-apply; system design §6.3 |
+| Q3 | A row excluded by a predicate returns not-found, not forbidden. | Test 16 |
+| Q4 | Agents are first-class principals (`kind = 'agent'`). `acts_for` exists on `kitsune.principals` and is unused. | Principals table; no delegation API |
 
 **Non-blocking**
 
@@ -276,7 +278,7 @@ Reviewer load is the metric most likely to kill this quietly. If human review be
 | Q7 | Are prose fields one per collection or many? Many complicates search scoping. | Engineering |
 | Q8 | Do we expose raw SQL to developers, or only the generated API? Raw SQL is a large escape hatch through the permission model. | Engineering |
 
-Q8 deserves flagging as a strategic question wearing engineering clothes. Exposing SQL makes us feel like Postgres and bypasses the primitives that justify our existence.
+Q8 deserves flagging as a strategic question wearing engineering clothes. Exposing SQL makes us feel like Postgres and bypasses the primitives that justify our existence. **v1 does not expose raw SQL.** GraphQL, REST GET, MCP, CLI query, and the engine query API all go through one compiler.
 
 ---
 
@@ -311,7 +313,7 @@ Every abstraction over a database eventually meets a query it serves badly.
 
 ## 10. Phasing
 
-**Phase 0 — Weeks 1–2.** Resolve Q1–Q4. Schema and change-set data model design, since R14's constraint makes this expensive to get wrong. Begin A2's interviews in parallel.
+**Phase 0 — Weeks 1–2.** Q1–Q4 are resolved (PRD §8). Schema and change-set data model design, since R14's constraint makes this expensive to get wrong. Begin A2's interviews in parallel.
 
 **Phase 1 — Weeks 3–9.** R1, R2, R3, R4. The core: collections, revisions, change sets, grants. Nothing user-facing yet. Ends with A4's benchmark.
 

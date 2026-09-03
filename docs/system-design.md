@@ -1,7 +1,7 @@
 # KitsuneOS v1 — System Design
 
-**Status:** Draft for review
-**Date:** 1 September 2026
+**Status:** P0 surfaces implemented (2026-09-02). pgvector / object-storage attachments remain P1.
+**Date:** 2 September 2026
 **Companion to:** KitsuneOS v1 PRD
 **Scope:** P0 requirements R1–R8, with architectural accommodation for P2 items R14–R17
 
@@ -89,7 +89,8 @@ The design goal that governs every trade-off below: **be genuinely relational.**
                        │  ┌───────────────────────────┐  │
                        │  │ data plane (ws_<id>.*)     │ │
                        │  │ real generated tables +    │ │
-                       │  │ __rev history + pgvector   │ │
+                       │  │ __rev history              │ │
+                       │  │ (pgvector embeddings: P1)  │ │
                        │  └───────────────────────────┘  │
                        └────────────────┬────────────────┘
                                         │
@@ -142,6 +143,7 @@ CREATE TABLE kitsune.collections (
   name          text NOT NULL,
   table_name    text NOT NULL,
   schema_version int NOT NULL DEFAULT 1,
+  revision_retention_days int,  -- NULL = keep forever; sweeper is P1/Q6
   UNIQUE (workspace_id, name)
 );
 
@@ -172,6 +174,19 @@ CREATE TABLE kitsune.grants (
 );
 CREATE INDEX ON kitsune.grants (principal_id, collection_id)
   WHERE revoked_at IS NULL;
+
+CREATE TABLE kitsune.schema_revisions (
+  id              uuid PRIMARY KEY,
+  collection_id   uuid NOT NULL REFERENCES kitsune.collections(id),
+  version         int NOT NULL,
+  op              text NOT NULL,   -- addField | dropField | setIndexed
+  payload         jsonb NOT NULL,
+  ddl_up          text NOT NULL,
+  ddl_down        text NOT NULL,
+  applied_at      timestamptz NOT NULL DEFAULT now(),
+  reverted_at     timestamptz,
+  UNIQUE (collection_id, version)
+);
 ```
 
 `row_predicate` is a structured JSON expression (field, operator, value), never a SQL string. It is compiled to parameterised SQL by the query compiler. Accepting SQL strings here would be an injection vector directly into the authorization layer.
@@ -358,23 +373,25 @@ Change sets expire after 30 days. Without expiry, a workspace accumulates thousa
 
 ## 7. Query and API Layer
 
-**GraphQL** is generated from the schema: a type per collection, relation fields resolved as nested selections, connection-style pagination, and aggregate fields. Relation resolution uses batched joins rather than per-node queries; N+1 in a generated API is a support burden that never ends.
+There is still exactly one query compiler. GraphQL, REST, MCP, the console query runner, and the CLI all call `KitsuneEngine` methods; none talk to Postgres directly.
 
-**REST** covers single-record CRUD for clients that want it.
+**Engine / MCP pagination** uses `limit` and `offset` on `QueryRequest`.
 
-**MCP** exposes `describe_schema`, `query`, `read_record`, `propose_change_set`, and `read_change_set_feedback`. `describe_schema` returns only what the calling identity can reach, including its own capabilities per field. This is the primitive that lets an agent orient itself without a hand-written integration, and it is worth more than any individual tool.
+**GraphQL** is generated per request from `describeSchema` for that workspace (workspace from session or API key, never from the query body). Yoga serves `POST /api/graphql`. A type per collection; relation fields as nested selections resolved with DataLoader-batched `engine.query` (not per-node SQL); connection pagination (`first` / `after` id cursor — offset is not exposed); `<collection>Aggregate(groupBy, join, aggregates)` maps 1:1 to `engine.query`.
 
-**TypeScript client** is generated from the same schema definition. Types fail the build on incompatible schema change.
+**REST** is `GET /api/records/:collection/:id` (`readRecord` only). Missing and forbidden both return `{ "error": "Not found" }`. Writes of business data still go through change sets.
 
-All four surfaces call the same query compiler. No surface talks to Postgres directly.
+**MCP** exposes `describe_schema`, `query` (including `join`), `read_record`, `propose_change_set`, and `read_change_set_feedback`. `describe_schema` returns only what the calling identity can reach, including its own capabilities per field.
 
-Per PRD Q8: raw SQL is not exposed in v1. It bypasses the compiler, and the compiler is the authorization layer.
+**TypeScript client** is generated from collection definitions (`pnpm codegen`, `--check` in CI). Types fail the build on incompatible schema change. Types come from `kitsune.fields`, not from GraphQL SDL.
+
+Per PRD Q8: raw SQL is not exposed. It would bypass the compiler, and the compiler is the authorization layer.
 
 ---
 
 ## 8. Search
 
-pgvector, in the same database as the data (ADR-004).
+P1 / unbuilt. ADR-004 still holds for when it is built: pgvector in the same database as the data, with grants applied inside the query.
 
 ```sql
 CREATE TABLE ws_abc.opportunities__emb (
@@ -411,6 +428,8 @@ Embeddings are generated asynchronously. Records carry `indexed_at`, and search 
 | Revisions | ~10M, ~2KB snapshot ≈ 20GB |
 | Embedding vectors | ~3M |
 | Peak read QPS | ~500 aggregate |
+
+**Physical tables** at partner scale assume embeddings exist. Until R9 ships, each collection is two tables (base + `__rev`), not three.
 
 Comfortably one Postgres instance with a read replica. **Nothing here is a scale problem.** The hard problems at this stage are correctness — authorization leakage and merge semantics — not throughput, and effort should be allocated accordingly.
 
@@ -537,7 +556,7 @@ Instrument from day one, including metrics nothing consumes yet:
 
 ### ADR-004: pgvector, not a dedicated vector database
 
-**Status:** Accepted · **Deciders:** Engineering
+**Status:** Accepted for P1 · **not implemented in P0** · **Deciders:** Engineering
 
 **Context.** The original sketch specified Pinecone. Semantic search must respect field masks and row predicates.
 

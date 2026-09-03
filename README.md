@@ -1,6 +1,6 @@
 # KitsuneOS
 
-**Developer preview — v0.1.0-preview. Self-hosted only. No auth layer, no security audit. Do not put production data in it.**
+**Developer preview — v0.1.0-preview. The product is the hosted console (`apps/app`). `pnpm quickstart` is an eval path, not a production self-host. Do not put production data in a local preview.**
 
 KitsuneOS is an application database for software that agents write to. Agent writes arrive as
 reviewable change sets instead of landing directly, every record carries an attributed revision
@@ -165,39 +165,58 @@ pnpm history opportunities 0bbb0000-0000-4000-8000-000000000001
 The revision is attributed to the **agent that authored it**, not the human who approved it, and it
 records the change set it arrived through.
 
+CLI beyond the demo path (`KITSUNE_WORKSPACE_ID` / `KITSUNE_PRINCIPAL_ID`, demo ids remain the
+default):
+
+```bash
+kitsuneos init                 # kitsune.schema.json + .env.example
+kitsuneos schema diff | push   # add/drop fields (admin)
+kitsuneos query --collection opportunities
+kitsuneos changesets           # alias of review list
+kitsuneos export               # grant-filtered schema + rows
+```
+
 ---
 
 ## What works
 
-Every claim below is backed by a numbered test in `packages/acceptance/src/suite.test.ts`. Run them
-against your own Postgres with `pnpm acceptance`.
+Every claim below is backed by a test in `packages/acceptance`. Run them against your own Postgres
+with `pnpm acceptance` (87 tests as of this revision).
 
 | Claim | Test |
 |---|---|
-| The runtime connects as a non-superuser with no `BYPASSRLS`, and every generated table has row level security enabled *and* forced | 0 |
-| Defining a collection emits real DDL: real tables, real partial indexes, a real deferrable foreign key | 1 |
-| Foreign keys are deferred to `COMMIT`, so a change set can create a record and reference it in either order | 2, 3 |
-| Every write produces exactly one revision row with the correct `changed_fields` | 4 |
-| A record's state at any past revision can be reconstructed | 5 |
-| Soft-deleted records disappear from queries but remain in history | 6 |
-| Applying a change set bumps `_revision` on every touched record | 7 |
-| Two change sets touching different fields of the same record both apply | 8 |
-| Two change sets touching the same field: the first applies, the second is blocked and names the conflicting field | 9 |
-| Apply is atomic — a failure on the last operation leaves nothing behind | 10 |
-| Partial approval applies exactly the approved operations | 11 |
-| Concurrent applies over overlapping records do not deadlock | 12 |
-| A change set against a deleted record fails at apply and does not resurrect it | 13 |
-| Expired change sets cannot be applied | 14 |
-| A field mask cannot be read around through any code path | 15 |
-| A row predicate returns not-found, not forbidden, for excluded rows | 16 |
-| A change set touching a field outside the author's mask is rejected when it is created | 17 |
-| Revoking the author's grant before apply blocks the apply | 18 |
-| A reviewer with broader permissions cannot launder in permissions the author lacked | 19 |
-| An agent cannot be granted `write` without an explicit admin action, which is audited | 20 |
-| Ten query shapes across seven principal classes match an independently written authorization oracle, exercised through the MCP handlers | 21 |
-| Reads, writes, denials and grant changes all produce audit rows attributable to a principal | 22 |
-| A relation target the author cannot see is byte-identical to one that does not exist | 23 |
-| `describe_schema` shows only the collections and fields the caller is granted; the rest are absent, not marked forbidden | 24 |
+| The runtime connects as a non-superuser with no `BYPASSRLS`, and every generated table has row level security enabled *and* forced | suite 0 |
+| Defining a collection emits real DDL: real tables, real partial indexes, a real deferrable foreign key | suite 1 |
+| Foreign keys are deferred to `COMMIT`, so a change set can create a record and reference it in either order | suite 2, 3 |
+| Every write produces exactly one revision row with the correct `changed_fields` | suite 4 |
+| A record's state at any past revision can be reconstructed | suite 5; `readRecordAt` |
+| Soft-deleted records disappear from queries but remain in history | suite 6 |
+| Applying a change set bumps `_revision` on every touched record | suite 7 |
+| Two change sets touching different fields of the same record both apply | suite 8 |
+| Two change sets touching the same field: the first applies, the second is blocked and names the conflicting field | suite 9 |
+| Apply is atomic — a failure on the last operation leaves nothing behind | suite 10 |
+| Partial approval applies exactly the approved operations | suite 11 |
+| Concurrent applies over overlapping records do not deadlock | suite 12 |
+| A change set against a deleted record fails at apply and does not resurrect it | suite 13 |
+| Expired change sets cannot be applied | suite 14 |
+| A field mask cannot be read around through any code path | suite 15 |
+| A row predicate returns not-found, not forbidden, for excluded rows | suite 16 |
+| A change set touching a field outside the author's mask is rejected when it is created | suite 17 |
+| Revoking the author's grant before apply blocks the apply | suite 18 |
+| A reviewer with broader permissions cannot launder in permissions the author lacked | suite 19 |
+| An agent cannot be granted `write` without an explicit admin action, which is audited | suite 20 |
+| Ten query shapes across seven principal classes match an independently written authorization oracle, exercised through the MCP handlers | suite 21 |
+| Reads, writes, denials and grant changes all produce audit rows attributable to a principal | suite 22 |
+| A relation target the author cannot see is byte-identical to one that does not exist | suite 23 |
+| `describe_schema` shows only the collections and fields the caller is granted; the rest are absent, not marked forbidden | suite 24 |
+| One many-to-one join per query, dual grants/predicates/masks, parent miss is not-found | suite 25–29 |
+| History reconstructs a prior revision, is queryable by principal, and respects field masks | suite 30 |
+| Audit query is admin-only and includes denials | suite 31 |
+| Versioned schema `addField` / `dropField` / revert; retype is rejected | `schema-api.test.ts` |
+| GraphQL and REST GET share the compiler; masked fields and collections are absent | `graphql.test.ts` |
+| Generated TypeScript client drifts fail `pnpm codegen -- --check` | `codegen.test.ts` |
+| CLI `init` / `schema push` / grant-filtered `export` | `cli.test.ts` |
+| Console surfaces: schema mask, audit not-found, partial review apply | `console.test.ts` |
 | The application role can insert audit rows but cannot update or delete them | supplementary |
 | A masked principal still receives record ids, but never a masked field | supplementary |
 | Row level security really bites: a mismatched workspace GUC returns zero rows | supplementary |
@@ -214,24 +233,20 @@ disclosed here rather than hidden: there is no other way to prove atomicity on t
 
 ## What does not work yet
 
-- **There is no authentication.** The MCP server believes `KITSUNE_PRINCIPAL_ID` without question.
-  Anyone who can start the server can act as any principal, including the admin. Permissions are
-  enforced *given* a principal; nothing establishes who the caller actually is. This is the single
-  biggest reason not to expose it to anything.
-- **No hosted service, no signup, no billing, no multi-tenancy guarantees.** Self-hosted only.
-- **No security audit** has been performed by anyone.
-- **No GraphQL, no REST, no generated TypeScript client.** MCP and the CLI are the only surfaces.
+- **The stdio MCP / `pnpm quickstart` path has no authentication.** That server believes
+  `KITSUNE_PRINCIPAL_ID` without question. Anyone who can start it can act as any principal,
+  including the admin. The hosted console authenticates with WorkOS; API keys authenticate GraphQL
+  and REST. Permissions are still enforced *given* a principal.
+- **Local preview is not a production self-host.** No security audit has been performed. Do not put
+  production data in a quickstart database.
 - **No semantic search and no attachments.**
-- **Schema evolution is create-only.** `defineCollection` can create a collection, but there is no
-  supported way to add, rename, retype or drop a field afterwards. Changing your schema today means
-  recreating the collection.
+- **Schema evolution is add / drop / index only.** `addField`, `dropField`, and `setIndexed` are
+  versioned and reversible. There is no supported retype or rename. Changing a field's type still
+  means recreating the collection.
 - **The data model will change before v1, with no migration path.** Expect to drop the database.
 
 ## Known limitations
 
-- **One workspace per database, in practice.** The engine writes each workspace into its own
-  Postgres schema, but the CLI is hardcoded to the demo workspace and nothing has been tested with
-  several live workspaces sharing a database. Treat cross-workspace isolation as unverified.
 - **Table count is the scaling ceiling.** Every collection becomes two real tables (the record table
   and its `__rev` history table) in a real schema. A few hundred collections is fine; tens of
   thousands will run into per-database table limits and degrade `pg_class` lookups. This design
@@ -252,10 +267,10 @@ disclosed here rather than hidden: there is no other way to prove atomicity on t
 - **Apply cost is linear in touched records.** Locks are taken one row at a time in sorted order to
   guarantee acquisition order, which costs a round trip per record. Change sets are expected to be
   small; a thousand-record change set will be slow.
-- **`pnpm review` and `pnpm history` only operate on the demo workspace.** They are a demonstration
-  surface, not an operator tool.
-- **Postgres must be local and trusted.** There is no TLS configuration, connection pooling story, or
-  guidance for a managed Postgres.
+- **REST is read-only.** `GET /api/records/:collection/:id` maps to `readRecord`. Writes still go
+  through change sets (MCP, engine, or the review queue).
+- **Postgres must be local and trusted for the eval preview.** There is no TLS configuration,
+  connection pooling story, or guidance for a managed Postgres on the quickstart path.
 
 Nothing above is fixed by a flag. These are real gaps in a preview.
 
@@ -265,10 +280,15 @@ Nothing above is fixed by a flag. These are real gaps in a preview.
 
 ```
 packages/core        the engine: DDL generation, grant resolution, query compiler,
-                     revisions, change sets, audit log
+                     revisions, change sets, audit log, joins, schema evolution
+packages/graphql     per-request GraphQL schema + Yoga HTTP helper
+packages/codegen     collection → TypeScript client (`pnpm codegen -- --check`)
+packages/client      generated typed helpers
 packages/mcp         five MCP tools over core, plus a stdio server
-packages/cli         quickstart, review and history commands
+packages/cli         quickstart, init, schema, query, review, history, export
+packages/ui          ActionConsent (field-level diffs, per-op review)
 packages/acceptance  the acceptance suite and its authorization oracle
+apps/app             hosted console (WorkOS) — schema, query, review, grants, audit, history
 ```
 
 Every read and every write goes through one query compiler. It resolves the caller's grant, projects
