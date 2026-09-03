@@ -346,12 +346,16 @@ export class KitsuneEngine {
     actorId: string,
     workspaceId: string,
   ): Promise<void> {
-    await withOwner(this.ownerPool, async (client) => {
-      await client.query(
-        `UPDATE kitsune.grants SET revoked_at = now() WHERE id = $1`,
-        [grantId],
+    const result = await withOwner(this.ownerPool, async (client) => {
+      return client.query(
+        `UPDATE kitsune.grants SET revoked_at = now()
+          WHERE id = $1 AND workspace_id = $2 AND revoked_at IS NULL`,
+        [grantId, workspaceId],
       );
     });
+    if (result.rowCount === 0) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
     await writeAudit(this.appPool, {
       workspaceId,
       principalId: actorId,

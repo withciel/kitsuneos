@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { ConsoleNav } from './console-nav';
 
 export default function HomeContent() {
   const [apiKey, setApiKey] = useState<string | null>(null);
@@ -26,6 +27,7 @@ export default function HomeContent() {
 
   return (
     <main className="page">
+      <ConsoleNav />
       <h1>KitsuneOS Console</h1>
       <p>Agents propose. You approve.</p>
       {apiKey ? (
@@ -37,7 +39,17 @@ export default function HomeContent() {
       ) : null}
       {error ? <p role="status">{error}</p> : null}
       <nav>
-        <Link href="/review">Open review queue</Link>
+        <Link href="/schema">Schema</Link>
+        {' · '}
+        <Link href="/query">Query</Link>
+        {' · '}
+        <Link href="/review">Review queue</Link>
+        {' · '}
+        <Link href="/grants">Grants</Link>
+        {' · '}
+        <Link href="/audit">Audit</Link>
+        {' · '}
+        <Link href="/history">History</Link>
         {' · '}
         <Link href="/api/billing/portal">Billing portal</Link>
       </nav>

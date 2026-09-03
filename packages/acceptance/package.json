@@ -8,6 +8,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@kitsuneos/cli": "workspace:*",
     "@kitsuneos/core": "workspace:*",
     "@kitsuneos/codegen": "workspace:*",
     "@kitsuneos/graphql": "workspace:*",

@@ -1,7 +1,12 @@
 'use client';
 
-import { ActionConsent, type ConsentAction } from '@kitsuneos/ui';
+import {
+  ActionConsent,
+  type ConsentAction,
+  type ConsentDecision,
+} from '@kitsuneos/ui';
 import { useCallback, useEffect, useState } from 'react';
+import { ConsoleNav } from '../console-nav';
 
 interface ChangeSetResponse {
   changeSets: Array<{
@@ -16,6 +21,7 @@ interface ChangeSetResponse {
       fieldName: string | null;
       op: string;
       newValue: unknown;
+      before: unknown;
       status: string;
     }>;
   }>;
@@ -55,15 +61,20 @@ export default function ReviewPage() {
 
   const active = changeSets[activeIndex];
 
-  async function handleDecision(
-    action: 'approve' | 'reject' | 'apply',
-  ): Promise<boolean> {
-    if (!active) return false;
+  async function handleSubmit(input: {
+    decisions: ConsentDecision[];
+    apply: boolean;
+  }): Promise<void> {
+    if (!active) return;
     try {
       const response = await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ changeSetId: active.id, action }),
+        body: JSON.stringify({
+          changeSetId: active.id,
+          decisions: input.decisions,
+          apply: input.apply,
+        }),
       });
       const body = (await response.json()) as {
         error?: string;
@@ -71,24 +82,23 @@ export default function ReviewPage() {
       };
       if (!response.ok) {
         setMessage(body.error ?? 'Request failed');
-        return false;
+        return;
       }
       setMessage(
-        action === 'apply'
+        input.apply
           ? `Applied: ${body.status ?? 'done'}`
-          : `${action === 'approve' ? 'Approved' : 'Rejected'} operations.`,
+          : 'Review saved. Apply only after every operation is decided.',
       );
       await loadQueue();
-      return true;
     } catch {
       setMessage('Request failed');
-      return false;
     }
   }
 
   if (loading) {
     return (
       <main className="page">
+        <ConsoleNav />
         <p role="status">Loading review queue…</p>
       </main>
     );
@@ -97,6 +107,7 @@ export default function ReviewPage() {
   if (!active) {
     return (
       <main className="page">
+        <ConsoleNav />
         <h1>Review queue</h1>
         <p>No open change sets. Ask your agent to propose one via MCP.</p>
         {message ? <p role="status">{message}</p> : null}
@@ -110,12 +121,14 @@ export default function ReviewPage() {
     collection: op.collection,
     field: op.fieldName ?? undefined,
     op: op.op,
+    before: op.before,
     after: op.newValue,
     status: op.status,
   }));
 
   return (
     <main className="page">
+      <ConsoleNav />
       <h1>Review queue</h1>
       <p>
         Change set from {active.author}
@@ -136,20 +149,22 @@ export default function ReviewPage() {
         </nav>
       ) : null}
       <ActionConsent
+        key={`${active.id}:${active.operations.map((op) => `${op.id}:${op.status}`).join(',')}`}
         systems={systems}
         actions={actions}
         intent={active.rationale ?? undefined}
         reversible
         scope="write"
-        onApprove={() => {
-          void (async () => {
-            const approved = await handleDecision('approve');
-            if (approved) {
-              await handleDecision('apply');
-            }
-          })();
-        }}
-        onDecline={() => void handleDecision('reject')}
+        onSubmit={(input) => void handleSubmit(input)}
+        onDecline={() =>
+          void handleSubmit({
+            decisions: active.operations.map((op) => ({
+              opId: op.id,
+              status: 'rejected',
+            })),
+            apply: false,
+          })
+        }
       />
       {message ? <p role="status">{message}</p> : null}
     </main>

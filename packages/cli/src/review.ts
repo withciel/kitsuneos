@@ -3,8 +3,8 @@ import {
   KitsuneEngine,
   type ReviewDecision,
 } from '@kitsuneos/core';
-import { DEMO } from './demo.js';
 import { APP_URL, OWNER_URL } from './postgres.js';
+import { resolveCliWorkspace } from './workspace.js';
 
 interface ChangeSetRow {
   id: string;
@@ -42,6 +42,7 @@ function render(value: JsonValue | undefined): string {
 }
 
 async function listChangeSets(engine: KitsuneEngine): Promise<ChangeSetRow[]> {
+  const { workspaceId } = resolveCliWorkspace();
   const result = await engine.ownerPool.query<ChangeSetRow>(
     `SELECT cs.id, cs.title, cs.rationale, cs.status, cs.created_at,
             p.display_name AS author
@@ -49,7 +50,7 @@ async function listChangeSets(engine: KitsuneEngine): Promise<ChangeSetRow[]> {
        JOIN kitsune.principals p ON p.id = cs.author_id
       WHERE cs.workspace_id = $1 AND cs.status = 'open'
       ORDER BY cs.created_at`,
-    [DEMO.workspaceId],
+    [workspaceId],
   );
   return result.rows;
 }
@@ -80,9 +81,10 @@ async function currentValue(
   recordId: string,
   field: string,
 ): Promise<JsonValue | undefined> {
+  const { workspaceId, principalId } = resolveCliWorkspace();
   const record = await engine.readRecord(
-    DEMO.workspaceId,
-    DEMO.ownerId,
+    workspaceId,
+    principalId,
     collection,
     recordId,
     [field],
@@ -154,6 +156,7 @@ export async function review(args: string[]): Promise<void> {
     return;
   }
 
+  const { workspaceId, principalId } = resolveCliWorkspace();
   const engine = new KitsuneEngine({
     config: { ownerUrl: OWNER_URL, appUrl: APP_URL },
   });
@@ -183,11 +186,11 @@ export async function review(args: string[]): Promise<void> {
          FROM kitsune.change_sets cs
          JOIN kitsune.principals p ON p.id = cs.author_id
         WHERE cs.id = $1 AND cs.workspace_id = $2`,
-      [changeSetId, DEMO.workspaceId],
+      [changeSetId, workspaceId],
     );
     const changeSet = changeSets.rows[0];
     if (!changeSet) {
-      console.error(`No change set ${changeSetId} in the demo workspace.`);
+      console.error(`No change set ${changeSetId} in this workspace.`);
       process.exitCode = 1;
       return;
     }
@@ -221,12 +224,9 @@ export async function review(args: string[]): Promise<void> {
     }));
 
     for (const decision of decisions) {
-      await engine.reviewChangeSet(
-        DEMO.workspaceId,
-        DEMO.ownerId,
-        changeSet.id,
-        [decision],
-      );
+      await engine.reviewChangeSet(workspaceId, principalId, changeSet.id, [
+        decision,
+      ]);
     }
     console.log(`${status} ${decisions.length} operation(s)`);
 
@@ -245,8 +245,8 @@ export async function review(args: string[]): Promise<void> {
     }
 
     const result = await engine.applyChangeSet(
-      DEMO.workspaceId,
-      DEMO.ownerId,
+      workspaceId,
+      principalId,
       changeSet.id,
     );
     if (result.status === 'applied') {

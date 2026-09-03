@@ -113,6 +113,9 @@ importers:
 
   packages/acceptance:
     dependencies:
+      '@kitsuneos/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@kitsuneos/codegen':
         specifier: workspace:*
         version: link:../codegen

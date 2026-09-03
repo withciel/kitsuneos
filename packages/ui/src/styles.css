@@ -47,7 +47,35 @@
 }
 
 .k-action-consent__operation {
-  margin-bottom: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.k-action-consent__diff {
+  margin: 0.35rem 0;
+  padding: 0.5rem 0.75rem;
+  background: #1f1d1a;
+  border-radius: var(--k-radius-sm);
+  font-size: 0.8125rem;
+  white-space: pre-wrap;
+}
+
+.k-action-consent__before {
+  color: #e08a8a;
+}
+
+.k-action-consent__after {
+  color: #8bc49a;
+}
+
+.k-action-consent__op-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.k-action-consent__choice--active {
+  outline: 2px solid var(--k-ink);
+  outline-offset: 1px;
 }
 
 .k-action-consent__irreversible {
@@ -78,6 +106,12 @@
 .k-action-consent__decline {
   background: transparent;
   color: var(--k-ink-body);
+}
+
+.k-action-consent__approve:disabled,
+.k-action-consent__decline:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .k-action-consent__approve:focus-visible,

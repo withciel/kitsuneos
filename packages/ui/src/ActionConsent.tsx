@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 export interface ConsentAction {
   id: string;
@@ -10,14 +10,44 @@ export interface ConsentAction {
   status?: string;
 }
 
+export interface ConsentDecision {
+  opId: string;
+  status: 'approved' | 'rejected';
+}
+
 export interface ActionConsentProps {
   systems: string[];
   actions: ConsentAction[];
   intent?: string;
   reversible: boolean;
   scope: string;
-  onApprove: () => void;
+  onSubmit: (input: { decisions: ConsentDecision[]; apply: boolean }) => void;
   onDecline: () => void;
+}
+
+function renderValue(value: unknown): string {
+  if (value === undefined) {
+    return '(empty)';
+  }
+  if (value === null) {
+    return 'null';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  return JSON.stringify(value);
+}
+
+function decisionsFromActions(
+  actions: ConsentAction[],
+): Record<string, ConsentDecision['status']> {
+  const next: Record<string, ConsentDecision['status']> = {};
+  for (const action of actions) {
+    if (action.status === 'approved' || action.status === 'rejected') {
+      next[action.id] = action.status;
+    }
+  }
+  return next;
 }
 
 export function ActionConsent({
@@ -26,11 +56,14 @@ export function ActionConsent({
   intent,
   reversible,
   scope,
-  onApprove,
+  onSubmit,
   onDecline,
 }: ActionConsentProps) {
   const listId = useId();
   const declineRef = useRef<HTMLButtonElement>(null);
+  const [decisions, setDecisions] = useState<
+    Record<string, ConsentDecision['status']>
+  >(() => decisionsFromActions(actions));
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -42,6 +75,15 @@ export function ActionConsent({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onDecline]);
+
+  const allDecided = actions.every((action) => decisions[action.id]);
+
+  function collect(): ConsentDecision[] {
+    return actions.flatMap((action) => {
+      const status = decisions[action.id];
+      return status ? [{ opId: action.id, status }] : [];
+    });
+  }
 
   return (
     <section
@@ -73,6 +115,49 @@ export function ActionConsent({
             </strong>{' '}
             — {action.op}
             {action.status ? ` [${action.status}]` : ''}
+            <pre className="k-action-consent__diff">
+              <span className="k-action-consent__before">
+                - {renderValue(action.before)}
+              </span>
+              {'\n'}
+              <span className="k-action-consent__after">
+                + {renderValue(action.after)}
+              </span>
+            </pre>
+            <div className="k-action-consent__op-actions">
+              <button
+                type="button"
+                className={
+                  decisions[action.id] === 'approved'
+                    ? 'k-action-consent__approve k-action-consent__choice--active'
+                    : 'k-action-consent__approve'
+                }
+                onClick={() =>
+                  setDecisions((current) => ({
+                    ...current,
+                    [action.id]: 'approved',
+                  }))
+                }
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                className={
+                  decisions[action.id] === 'rejected'
+                    ? 'k-action-consent__decline k-action-consent__choice--active'
+                    : 'k-action-consent__decline'
+                }
+                onClick={() =>
+                  setDecisions((current) => ({
+                    ...current,
+                    [action.id]: 'rejected',
+                  }))
+                }
+              >
+                Reject
+              </button>
+            </div>
           </li>
         ))}
       </ol>
@@ -83,14 +168,23 @@ export function ActionConsent({
           className="k-action-consent__decline"
           onClick={onDecline}
         >
-          Decline changes
+          Decline all
         </button>
         <button
           type="button"
           className="k-action-consent__approve"
-          onClick={onApprove}
+          disabled={collect().length === 0}
+          onClick={() => onSubmit({ decisions: collect(), apply: false })}
         >
-          Approve changes
+          Submit review
+        </button>
+        <button
+          type="button"
+          className="k-action-consent__approve"
+          disabled={!allDecided}
+          onClick={() => onSubmit({ decisions: collect(), apply: true })}
+        >
+          Apply decided operations
         </button>
       </div>
     </section>
