@@ -1,0 +1,13 @@
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/.git
+**/.github
+**/coverage
+docker-compose*.yml
+.cursor
+.tmp
+*.log
+**/.env
+**/.env.local

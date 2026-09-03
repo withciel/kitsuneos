@@ -2,6 +2,7 @@
 import { spawn } from 'node:child_process';
 import { migrate } from '../packages/core/dist/index.js';
 import { bootstrapRds } from './bootstrap-rds.mjs';
+import { seedLocalDemo } from './docker-seed-demo.mjs';
 
 function passwordFromUrl(url) {
   return new URL(url).password;
@@ -17,6 +18,7 @@ if (ownerUrl && appUrl) {
 
   await bootstrapRds();
   await migrate({ ownerUrl, appUrl });
+  await seedLocalDemo();
 }
 
 const child = spawn('node', ['apps/app/server.js'], {

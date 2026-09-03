@@ -38,7 +38,19 @@ export async function bootstrapRds() {
       );
     }
 
-    await pool.query(`GRANT kitsune_owner TO CURRENT_USER`);
+    try {
+      await pool.query(`GRANT kitsune_owner TO CURRENT_USER`);
+    } catch (error) {
+      // When admin already is kitsune_owner (local docker-compose / db-init),
+      // self-grant is not allowed. Roles existing is enough.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/permission denied to grant role/i.test(message)) {
+        throw error;
+      }
+      console.log(
+        'RDS bootstrap: skipped self-grant (expected when admin is kitsune_owner)',
+      );
+    }
     console.log('RDS bootstrap complete');
   } finally {
     await pool.end();

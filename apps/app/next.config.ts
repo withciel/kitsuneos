@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   transpilePackages: [
     '@kitsuneos/ui',
     '@kitsuneos/core',
+    '@kitsuneos/graphql',
     '@kitsuneos/server',
     '@kitsuneos/provisioning',
     '@kitsuneos/mcp',
