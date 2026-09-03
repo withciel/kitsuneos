@@ -48,6 +48,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Generated client check
+        run: pnpm codegen -- --check
+
       - name: Acceptance tests
         env:
           KITSUNE_OWNER_URL: postgresql://kitsune_owner:kitsune_owner@localhost:5432/kitsune

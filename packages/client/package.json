@@ -1,5 +1,5 @@
 {
-  "name": "@kitsuneos/server",
+  "name": "@kitsuneos/client",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -13,11 +13,6 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit"
-  },
-  "dependencies": {
-    "@kitsuneos/core": "workspace:*",
-    "@kitsuneos/graphql": "workspace:*",
-    "@kitsuneos/mcp": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

@@ -9,6 +9,8 @@
   },
   "dependencies": {
     "@kitsuneos/core": "workspace:*",
+    "@kitsuneos/codegen": "workspace:*",
+    "@kitsuneos/graphql": "workspace:*",
     "@kitsuneos/mcp": "workspace:*",
     "@kitsuneos/provisioning": "workspace:*",
     "@kitsuneos/server": "workspace:*",

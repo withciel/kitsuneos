@@ -1,5 +1,5 @@
 {
-  "name": "@kitsuneos/server",
+  "name": "@kitsuneos/graphql",
   "version": "0.0.1",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,8 +16,9 @@
   },
   "dependencies": {
     "@kitsuneos/core": "workspace:*",
-    "@kitsuneos/graphql": "workspace:*",
-    "@kitsuneos/mcp": "workspace:*"
+    "dataloader": "^2.2.3",
+    "graphql": "^16.11.0",
+    "graphql-yoga": "^5.15.1"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

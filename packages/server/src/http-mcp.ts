@@ -1,7 +1,14 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createServer } from 'node:http';
 import type { KitsuneEngine } from '@kitsuneos/core';
+import { KitsuneError } from '@kitsuneos/core';
+import {
+  handleGraphqlHttp,
+  handleRestRecordGet,
+  httpAuthError,
+} from '@kitsuneos/graphql';
 import { handleMcpHttpRequest } from './mcp-handlers.js';
+import { resolveCredential } from './resolve-credential.js';
 
 export interface HttpMcpServerOptions {
   port?: number;
@@ -31,11 +38,68 @@ export function createHttpMcpServer(
     try {
       const url = new URL(req.url ?? '/', 'http://localhost');
       const raw = req.method === 'POST' ? await readBody(req) : '';
+      const method = req.method ?? 'GET';
+      const auth = req.headers.authorization;
+
+      if (
+        method === 'POST' &&
+        (url.pathname === '/graphql' || url.pathname === '/api/graphql')
+      ) {
+        try {
+          const credential = await resolveCredential(engine, auth);
+          const result = await handleGraphqlHttp(
+            engine,
+            {
+              workspaceId: credential.workspaceId,
+              principalId: credential.principalId,
+            },
+            raw,
+            `http://localhost${url.pathname}`,
+          );
+          sendJson(res, result.status, result.body);
+          return;
+        } catch (error) {
+          if (error instanceof KitsuneError && error.code === 'forbidden') {
+            const failed = httpAuthError(error);
+            sendJson(res, failed.status, failed.body);
+            return;
+          }
+          throw error;
+        }
+      }
+
+      const recordMatch = url.pathname.match(
+        /^\/api\/records\/([^/]+)\/([^/]+)$/,
+      );
+      if (method === 'GET' && recordMatch?.[1] && recordMatch[2]) {
+        try {
+          const credential = await resolveCredential(engine, auth);
+          const result = await handleRestRecordGet(
+            engine,
+            {
+              workspaceId: credential.workspaceId,
+              principalId: credential.principalId,
+            },
+            decodeURIComponent(recordMatch[1]),
+            decodeURIComponent(recordMatch[2]),
+          );
+          sendJson(res, result.status, result.body);
+          return;
+        } catch (error) {
+          if (error instanceof KitsuneError && error.code === 'forbidden') {
+            const failed = httpAuthError(error);
+            sendJson(res, failed.status, failed.body);
+            return;
+          }
+          throw error;
+        }
+      }
+
       const result = await handleMcpHttpRequest(
         engine,
-        req.method ?? 'GET',
+        method,
         url.pathname,
-        req.headers.authorization,
+        auth,
         raw,
       );
       sendJson(res, result.status, result.body);

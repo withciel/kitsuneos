@@ -382,9 +382,17 @@ export class KitsuneEngine {
         if (!grant || grant.capability === 'none') {
           continue;
         }
-        const fields = await queryRows<{ name: string; type: string }>(
+        const fields = await queryRows<{
+          name: string;
+          type: string;
+          relation_target: string | null;
+        }>(
           client,
-          `SELECT name, type FROM kitsune.fields WHERE collection_id = $1 ORDER BY name`,
+          `SELECT f.name, f.type, target.name AS relation_target
+             FROM kitsune.fields f
+             LEFT JOIN kitsune.collections target ON target.id = f.relation_target
+            WHERE f.collection_id = $1
+            ORDER BY f.name`,
           [collection.id],
         );
         const visibleFields = fields.filter(
@@ -399,6 +407,7 @@ export class KitsuneEngine {
           fields: visibleFields.map((f) => ({
             name: f.name,
             type: f.type,
+            relationTarget: f.relation_target,
             readable: true,
             writable:
               grant.fieldMask === null || grant.fieldMask.includes(f.name)

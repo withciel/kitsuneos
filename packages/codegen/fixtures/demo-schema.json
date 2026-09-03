@@ -1,0 +1,49 @@
+{
+  "collections": [
+    {
+      "name": "accounts",
+      "fields": [
+        { "name": "name", "type": "text", "nullable": false },
+        { "name": "industry", "type": "text" }
+      ]
+    },
+    {
+      "name": "contacts",
+      "fields": [
+        {
+          "name": "account_id",
+          "type": "relation",
+          "relationTarget": "accounts",
+          "nullable": false
+        },
+        { "name": "name", "type": "text", "nullable": false },
+        { "name": "email", "type": "text" }
+      ]
+    },
+    {
+      "name": "opportunities",
+      "fields": [
+        {
+          "name": "account_id",
+          "type": "relation",
+          "relationTarget": "accounts",
+          "nullable": false
+        },
+        { "name": "name", "type": "text", "nullable": false },
+        { "name": "amount", "type": "number" },
+        {
+          "name": "stage",
+          "type": "enum",
+          "nullable": false,
+          "enumValues": [
+            "prospecting",
+            "negotiation",
+            "closed_won",
+            "closed_lost"
+          ]
+        },
+        { "name": "next_step", "type": "prose" }
+      ]
+    }
+  ]
+}
