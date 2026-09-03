@@ -1,42 +1,44 @@
-import Link from 'next/link';
-
 export default function LandingPage() {
   return (
     <>
       <header className="hero">
+        <p className="hero-brand">
+          Kitsune<span>OS</span>
+        </p>
         <h1>Agents propose. You approve.</h1>
         <p>
-          KitsuneOS is a database layer where agents propose changes and humans
-          approve them before anything lands.
+          A database layer where agent writes arrive as reviewable change sets —
+          with field grants, attributed history, and nothing landing until you
+          say so.
         </p>
-        <Link className="cta" href="https://app.kitsuneos.com">
+        <a className="cta" href="[REDACTED]">
           Start free
-        </Link>
+        </a>
       </header>
 
-      <section id="trust">
+      <section className="band" id="trust">
         <h2>Trust</h2>
         <p>
           Built by{' '}
           <a href="https://withciel.com" rel="noopener noreferrer">
             Ciel
           </a>
-          .
+          . KitsuneOS runs in production as the data layer under Ciel.
         </p>
         <ul>
           <li>
             <a
               href="https://github.com/withciel/kitsuneos"
-              aria-label="KitsuneOS on GitHub — 87 passing acceptance tests"
+              aria-label="KitsuneOS on GitHub — 60 passing acceptance tests"
             >
-              87 passing acceptance tests
+              60 passing acceptance tests
             </a>
           </li>
           <li>Cross-tenant isolation verified by named Gate 0b tests</li>
         </ul>
       </section>
 
-      <section id="problem">
+      <section className="band" id="problem">
         <h2>The problem</h2>
         <p>
           Agents write. Postgres assumes human-reviewed code. Teams rebuild
@@ -44,7 +46,7 @@ export default function LandingPage() {
         </p>
       </section>
 
-      <section id="product">
+      <section className="band" id="product">
         <h2>Product</h2>
         <h3>Change sets</h3>
         <p>
@@ -61,7 +63,7 @@ export default function LandingPage() {
         </p>
       </section>
 
-      <section id="proof">
+      <section className="band" id="proof">
         <h2>Proof</h2>
         <video
           className="proof-video"
@@ -86,27 +88,21 @@ export default function LandingPage() {
         </video>
       </section>
 
-      <section id="limitations">
+      <section className="band" id="limitations">
         <h2>Known limitations</h2>
         <ul>
-          <li>
-            Schema evolution is add / drop / index only — no retype or rename
-          </li>
-          <li>No semantic search and no attachments</li>
+          <li>Create-only schema in v0.1 — no migrations yet</li>
+          <li>No GraphQL layer</li>
           <li>Table-count ceiling per workspace</li>
-          <li>
-            Hosted console is the product; <code>pnpm quickstart</code> is
-            eval-only, not a production self-host
-          </li>
         </ul>
       </section>
 
-      <section id="close">
+      <section className="band" id="close">
         <h2>Get started</h2>
         <p>Sign up and connect your agent with an API key.</p>
-        <Link className="cta" href="https://app.kitsuneos.com">
+        <a className="cta" href="[REDACTED]">
           Create a workspace
-        </Link>
+        </a>
       </section>
     </>
   );

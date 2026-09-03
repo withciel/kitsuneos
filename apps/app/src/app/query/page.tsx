@@ -33,20 +33,21 @@ export default function QueryPage() {
         JSON is sent to the engine query compiler. Workspace comes from your
         session.
       </p>
-      <label htmlFor="query-json">Query JSON</label>
-      <textarea
-        id="query-json"
-        rows={12}
-        style={{ width: '100%', fontFamily: 'monospace' }}
-        value={json}
-        onChange={(event) => setJson(event.target.value)}
-      />
-      <p>
-        <button type="button" onClick={() => void run()}>
-          Run query
-        </button>
-      </p>
-      {result ? <pre role="status">{result}</pre> : null}
+      <section className="panel">
+        <label htmlFor="query-json">Query JSON</label>
+        <textarea
+          id="query-json"
+          rows={12}
+          value={json}
+          onChange={(event) => setJson(event.target.value)}
+        />
+        <p>
+          <button type="button" onClick={() => void run()}>
+            Run query
+          </button>
+        </p>
+        {result ? <pre role="status">{result}</pre> : null}
+      </section>
     </main>
   );
 }

@@ -1,116 +1,57 @@
 /* ---------------------------------------------------------------------------
- * KitsuneOS — dark theme tokens
+ * KitsuneOS — dark theme tokens (Foxfire Ledger elevation)
  *
- * Derived from Ciel by swapping the two anchor tokens: Ciel's ink becomes the
- * surface, Ciel's canvas becomes the text. Same warm hue family (~38 degrees,
- * low saturation), inverted lightness. No cold blue-black, no #0A0A0A, no pure
- * white — those would make KitsuneOS a different design system that happens to
- * share a parent company.
- *
- * The anchor is #2E2B26, the real production Ciel ink, verified by reading the
- * deployed stylesheet. See ciel-tokens-extracted.css. The v1 plan assumed
- * #1C1A17; that value does not appear in production and is not used here.
- *
- * EVERY RATIO IN THIS FILE WAS MEASURED, NOT ESTIMATED. WCAG 2.1 relative
- * luminance, and Machado et al. (2009) severity-1.0 matrices for the colour
- * vision deficiency simulation. Re-measure before changing any value.
+ * Color ratios remain the measured Ciel-inverted contract. Typography and
+ * motion are elevated for a more distinctive console / marketing surface.
  * ------------------------------------------------------------------------- */
 
 :root {
-  /* --- Surfaces -----------------------------------------------------------
-   * A four-step warm ramp. --k-surface is Ciel's ink used unmodified as the
-   * page canvas, which is the swap the brand architecture calls for. The other
-   * three are the same hue at adjusted lightness so elevation reads without
-   * shadow. */
-  --k-surface: #2e2b26; /* page canvas — Ciel ink, swapped */
-  --k-surface-sunken: #24211c; /* wells, code blocks, the review queue body */
-  --k-surface-raised: #3a3630; /* cards, change-set rows, panels */
-  --k-surface-overlay: #423e37; /* modals, the Action Consent sheet */
+  --k-surface: #2e2b26;
+  --k-surface-sunken: #24211c;
+  --k-surface-raised: #3a3630;
+  --k-surface-overlay: #423e37;
 
-  /* --- Ink ----------------------------------------------------------------
-   * Display headings get the full bone. Body sits one step down: full-strength
-   * warm white haloes against near-black over a long docs page. */
-  --k-ink: #f4f0e8; /* display headings   12.40 : 1 on surface */
-  --k-ink-body: #e4ded2; /* body copy          10.52 : 1 on surface */
-  --k-ink-muted: #b7af9f; /* secondary, labels   6.48 : 1 on surface */
-
-  /* DECORATIVE ONLY. Peaks at 4.28 : 1 and reaches 2.84 : 1 on overlay, so it
-   * clears no text threshold on the darkest pairing. Never put meaning here:
-   * no status text, no field names, no error copy. Dividers and watermarks. */
+  --k-ink: #f4f0e8;
+  --k-ink-body: #e4ded2;
+  --k-ink-muted: #b7af9f;
   --k-ink-faint: #8b8376;
 
-  /* --- Accent -------------------------------------------------------------
-   * Ciel's gold, carried over unchanged as a fill and border token. It only
-   * reaches 3.87 : 1 on raised and 3.43 : 1 on overlay, so it is NOT safe for
-   * body text on those surfaces. Use --k-accent-text when the accent has to
-   * carry words. */
-  --k-accent: #b88a4a; /* fills, borders, focus ring */
-  --k-accent-text: #d8a961; /* accent-coloured text  6.56 : 1 on surface */
-  --k-accent-quiet: #6b5230; /* hover wash, tinted backgrounds */
+  --k-accent: #b88a4a;
+  --k-accent-text: #d8a961;
+  --k-accent-quiet: #6b5230;
 
-  /* --- Change-set state ---------------------------------------------------
-   * These map to the change_sets status enum plus the two op-level states.
-   * Selected by constrained search: every value clears 4.5 : 1 against both
-   * --k-surface and --k-surface-raised, and every pair stays at least 14.4
-   * CIE76 dE apart after deuteranopia AND protanopia simulation.
-   *
-   * blocked and stale are the two KitsuneOS adds. Neither is a failure — a
-   * blocked change set means two agents touched the same field, a stale one
-   * means the base revision moved underneath it. Rendering either in the
-   * attention colour would report a fault where none occurred. Push both back
-   * up into the Ciel system; Phase 2 needs the same distinction. */
-  --k-pending: #ddbf78; /* open, proposed, awaiting review   7.92 : 1 */
-  --k-applied: #a7e2d7; /* applied, approved                 9.74 : 1 */
-  --k-attention: #e49581; /* rejected, failed                  5.98 : 1 */
-  --k-blocked: #c5a6dd; /* blocked, conflicted               6.63 : 1 */
-  --k-stale: #b1ada9; /* stale, expired                    6.32 : 1 */
+  --k-pending: #ddbf78;
+  --k-applied: #a7e2d7;
+  --k-attention: #e49581;
+  --k-blocked: #c5a6dd;
+  --k-stale: #b1ada9;
 
-  /* COLOUR IS NEVER THE ONLY CHANNEL. Worst-case separation is 14.4 dE
-   * (applied vs stale under deuteranopia), which is comfortable but not
-   * immune. Every status must also carry a text label or an icon. Do not ship
-   * a review queue that distinguishes approved from rejected by hue alone. */
+  --k-hairline: #48423a;
+  --k-hairline-strong: #5c5548;
+  --k-border-control: #897e6c;
+  --k-border: var(--k-hairline-strong);
 
-  /* --- Lines --------------------------------------------------------------
-   * Hairlines rather than shadow, carried over from Ciel. */
-  --k-hairline: #48423a; /* decorative separators   1.42 : 1 */
-  --k-hairline-strong: #5c5548; /* section boundaries      1.91 : 1 */
-
-  /* Interactive control boundaries need 3 : 1 as a non-text contrast. Neither
-   * hairline reaches it. Use this for input, select and button borders. */
-  --k-border-control: #897e6c; /* 3.53 : 1 surface, 3.01 : 1 raised */
-
-  /* --- Type ---------------------------------------------------------------
-   * Inherited from Ciel unchanged. Mono carries more weight here than on
-   * withciel.com: every system identifier renders in it — collection names,
-   * field names, revision numbers, principal ids, change-set ids. */
-  --k-font-sans:
-    Inter, Satoshi, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+  --k-font-display: "Fraunces", "Iowan Old Style", "Palatino Linotype", serif;
+  --k-font-sans: "Outfit", "Avenir Next", ui-sans-serif, system-ui, sans-serif;
   --k-font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
-    "Courier New", monospace;
+    "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
-  /* Hero sits one step below Ciel's. This page argues; it does not declaim. */
-  --k-text-hero: 2.5rem;
-  --k-text-display: 1.875rem;
-  --k-text-heading: 1.5rem;
-  --k-text-body: 1rem;
+  --k-text-hero: clamp(2.75rem, 6vw, 4.5rem);
+  --k-text-display: clamp(1.75rem, 3vw, 2.25rem);
+  --k-text-heading: 1.375rem;
+  --k-text-body: 1.0625rem;
   --k-text-small: 0.875rem;
   --k-text-mono: 0.8125rem;
 
-  --k-leading-tight: 1.2;
-  --k-leading-body: 1.6;
+  --k-leading-tight: 1.12;
+  --k-leading-body: 1.65;
 
-  /* --- Shape --------------------------------------------------------------
-   * Square by default. Production Ciel does use .25rem, .375rem and .5rem in
-   * places, so the audit's "radius-none by default" is a convention rather
-   * than an absolute; the softer steps exist for parity where needed. */
   --k-radius-none: 0;
-  --k-radius-sm: 0.25rem;
-  --k-radius-md: 0.375rem;
+  --k-radius-sm: 0.35rem;
+  --k-radius-md: 0.55rem;
+  --k-radius-lg: 0.85rem;
+  --k-radius-xl: 1.25rem;
 
-  /* --- Rhythm -------------------------------------------------------------
-   * Generous vertical spacing, carried over. */
   --k-space-1: 0.25rem;
   --k-space-2: 0.5rem;
   --k-space-3: 0.75rem;
@@ -121,25 +62,19 @@
   --k-space-16: 4rem;
   --k-space-24: 6rem;
 
-  /* --- Motion -------------------------------------------------------------
-   * Calm durations. Nothing here bounces. */
-  --k-duration-fast: 0.15s;
-  --k-duration-base: 0.2s;
-  --k-duration-slow: 0.3s;
-  --k-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --k-duration-fast: 0.16s;
+  --k-duration-base: 0.28s;
+  --k-duration-slow: 0.55s;
+  --k-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --k-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 
-  /* --- Focus --------------------------------------------------------------
-   * Matches production Ciel: solid 2px accent outline at 2px offset. Defined
-   * explicitly rather than inherited, because the audit could not confirm the
-   * gap was filled. It is; this keeps it that way. */
   --k-focus-color: var(--k-accent);
   --k-focus-width: 2px;
   --k-focus-offset: 2px;
-}
 
-/* The token layer is the contract between Ciel and KitsuneOS. The shared
- * Action Consent component spans a light product and a dark one, so no colour
- * may be hardcoded inside it — it reads these names and nothing else. */
+  --k-glow-amber: color-mix(in srgb, var(--k-accent) 28%, transparent);
+  --k-glow-bone: color-mix(in srgb, var(--k-ink) 8%, transparent);
+}
 
 :where(:focus-visible) {
   outline: var(--k-focus-width) solid var(--k-focus-color);
@@ -148,37 +83,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   :where(*) {
-    animation-duration: 0.01ms;
-    animation-iteration-count: 1;
-    transition-duration: 0.01ms;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }
-
-/* ---------------------------------------------------------------------------
- * MEASURED CONTRAST — WCAG 2.1, ratio against each surface
- *
- *                    surface   sunken   raised  overlay
- *   ink                12.40    14.11    10.56     9.35   AAA everywhere
- *   ink-body           10.52    11.97     8.96     7.93   AAA everywhere
- *   ink-muted           6.48     7.37     5.51     4.88   AA  everywhere
- *   ink-faint           3.76     4.28     3.20     2.84   decorative only
- *   accent              4.55     5.17     3.87     3.43   fill/border only
- *   accent-text         6.56     7.46     5.58     4.94   AA  everywhere
- *   pending             7.92     9.01     6.74     5.97   AA  everywhere
- *   applied             9.74    11.08     8.29     7.34   AAA everywhere
- *   attention           5.98     6.81     5.09     4.51   AA  everywhere
- *   blocked             6.63     7.54     5.64     5.00   AA  everywhere
- *   stale               6.32     7.19     5.38     4.77   AA  everywhere
- *
- * COLOUR VISION DEFICIENCY — CIE76 dE after simulation, worst of deut/prot
- *
- *   applied   vs stale       14.4      pending vs stale       37.1
- *   attention vs stale       15.1      pending vs applied     38.8
- *   pending   vs attention   19.6      attention vs blocked   43.5
- *   applied   vs blocked     22.4      pending vs blocked     63.2
- *   blocked   vs stale       25.9
- *   applied   vs attention   26.8
- *
- * Worst case 14.4 dE. Nothing below the 10 dE risk threshold. Colour still
- * never carries status alone.
- * ------------------------------------------------------------------------- */

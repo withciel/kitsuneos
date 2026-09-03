@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 const LINKS = [
   { href: '/', label: 'Home' },
@@ -11,14 +14,25 @@ const LINKS = [
 ] as const;
 
 export function ConsoleNav() {
+  const pathname = usePathname();
+
   return (
     <nav className="console-nav" aria-label="Console">
-      {LINKS.map((link, index) => (
-        <span key={link.href}>
-          {index > 0 ? ' · ' : null}
-          <Link href={link.href}>{link.label}</Link>
-        </span>
-      ))}
+      {LINKS.map((link) => {
+        const current =
+          link.href === '/'
+            ? pathname === '/'
+            : pathname === link.href || pathname.startsWith(`${link.href}/`);
+        return (
+          <Link
+            key={link.href}
+            href={link.href}
+            aria-current={current ? 'page' : undefined}
+          >
+            {link.label}
+          </Link>
+        );
+      })}
     </nav>
   );
 }

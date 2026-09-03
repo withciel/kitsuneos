@@ -34,15 +34,17 @@ export default function SchemaPage() {
       <h1>Schema</h1>
       {data?.error ? <p role="status">{data.error}</p> : null}
       {data?.collections?.map((collection) => (
-        <section key={collection.name}>
+        <section className="panel" key={collection.name}>
           <h2>
-            {collection.name} <small>({collection.capability})</small>
+            {collection.name} <small>{collection.capability}</small>
           </h2>
           <ul>
             {collection.fields.map((field) => (
               <li key={field.name}>
-                {field.name}: {field.type}
-                {field.writable ? ' (writable)' : ''}
+                <span className="field-meta">
+                  {field.name}: {field.type}
+                  {field.writable ? ' · writable' : ''}
+                </span>
               </li>
             ))}
           </ul>
