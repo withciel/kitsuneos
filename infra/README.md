@@ -54,8 +54,10 @@ Push to `main` runs [`.github/workflows/cd.yml`](../.github/workflows/cd.yml):
 
 | Job | Target | Secrets / vars |
 |-----|--------|----------------|
-| `site` | Cloudflare Pages (`kitsuneos`) | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`; optional var `CLOUDFLARE_PAGES_PROJECT` |
+| `site` | S3 + CloudFront via `scripts/deploy-site.sh` | Same AWS + Pulumi secrets as app (`PULUMI_ACCESS_TOKEN`; `AWS_ROLE_ARN` or access keys); var `AWS_REGION` |
 | `app` | ECR + App Runner via `scripts/deploy-app.sh` | `PULUMI_ACCESS_TOKEN`; either `AWS_ROLE_ARN` (OIDC) or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; optional `DODO_PAYMENTS_API_KEY`, var `AWS_REGION` |
+
+Hosting is **AWS-only** (no Cloudflare Pages). Ensure `kitsuneos:deploySiteCdn=true` (default) and a Route 53 hosted zone for `kitsuneos.com`.
 
 Manual runs: Actions → **CD** → **Run workflow** (toggle site/app).
 

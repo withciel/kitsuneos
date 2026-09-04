@@ -6,8 +6,8 @@ const config = new pulumi.Config('kitsuneos');
 const domain = config.get('domain') ?? 'kitsuneos.com';
 const appDomain = config.get('appDomain') ?? 'app.kitsuneos.com';
 const deployApp = config.getBoolean('deployApp') ?? false;
-/** AWS CloudFront+S3 for marketing site. Default false — site ships on Cloudflare Pages. */
-const deploySiteCdn = config.getBoolean('deploySiteCdn') ?? false;
+/** AWS CloudFront+S3 for marketing site. Default on — hosting is AWS-only. */
+const deploySiteCdn = config.getBoolean('deploySiteCdn') ?? true;
 const stack = pulumi.getStack();
 
 const tags = {
@@ -253,7 +253,7 @@ new aws.acm.CertificateValidation('app-cert-validated', {
   validationRecordFqdns: [appValidation0.fqdn],
 });
 
-// --- Site: optional S3 + CloudFront + OAC (default off; Cloudflare Pages hosts the site) ---
+// --- Site: S3 + CloudFront + OAC (marketing site on AWS; not Cloudflare) ---
 const siteBucket = deploySiteCdn
   ? new aws.s3.BucketV2('site-bucket', {
       bucket: `${stack}-kitsuneos-site`,
@@ -564,4 +564,4 @@ export const dodoWebhookSecretArn = dodoWebhookSecret.arn;
 export const domainName = domain;
 export const appDomainName = appDomain;
 export const appCustomDomain = appRunnerCustomDomain?.dnsTarget ?? '';
-export const siteHosting = deploySiteCdn ? 'cloudfront' : 'cloudflare-pages';
+export const siteHosting = deploySiteCdn ? 'cloudfront' : 'disabled';

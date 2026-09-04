@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy_site:
-        description: Deploy marketing site to Cloudflare Pages
+        description: Deploy marketing site to AWS S3 + CloudFront
         type: boolean
         default: true
       deploy_app:
@@ -24,10 +24,10 @@ permissions:
 
 jobs:
   site:
-    name: Deploy site (Cloudflare Pages)
+    name: Deploy site (AWS S3 + CloudFront)
     if: ${{ github.event_name == 'push' || inputs.deploy_site }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,35 +43,68 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build marketing site
-        run: pnpm --filter @kitsuneos/site build
+      - name: Install Pulumi CLI
+        uses: pulumi/setup-pulumi@v2
+        with:
+          pulumi-version: ^3.0.0
 
-      - name: Require Cloudflare secrets
+      - name: Install infra npm deps
+        run: npm ci
+        working-directory: infra
+
+      - name: Require deploy secrets
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
         run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error::Set repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID"
-            echo "Account ID used by scripts/deploy-site.sh: a240575d5a695c24c6d7e157fc700628"
-            echo "Token needs Pages:Edit + Account:Read"
+          if [ -z "$PULUMI_ACCESS_TOKEN" ]; then
+            echo "::error::Set repository secret PULUMI_ACCESS_TOKEN (Pulumi Cloud)"
+            exit 1
+          fi
+          if [ -z "$AWS_ROLE_ARN" ] && { [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; }; then
+            echo "::error::Set AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY, or AWS_ROLE_ARN for OIDC"
             exit 1
           fi
 
-      - name: Deploy to Cloudflare Pages
+      - name: Resolve AWS auth mode
+        id: aws_auth
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT || 'kitsuneos' }}
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
-          # Pin matches scripts/deploy-site.sh (wrangler@4 major).
-          npx --yes wrangler@4.45.3 pages project create "$CLOUDFLARE_PAGES_PROJECT" \
-            --production-branch=main 2>/dev/null || true
-          npx --yes wrangler@4.45.3 pages deploy apps/site/out \
-            --project-name="$CLOUDFLARE_PAGES_PROJECT" \
-            --branch=main \
-            --commit-hash="$GITHUB_SHA" \
-            --commit-message="cd:${GITHUB_SHA:0:7}"
+          if [ -n "$AWS_ROLE_ARN" ]; then
+            echo "mode=oidc" >> "$GITHUB_OUTPUT"
+          elif [ -n "$AWS_ACCESS_KEY_ID" ] && [ -n "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "mode=keys" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Incomplete AWS credentials"
+            exit 1
+          fi
+
+      - name: Configure AWS (OIDC)
+        if: steps.aws_auth.outputs.mode == 'oidc'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          role-session-name: kitsuneos-cd-site
+
+      - name: Configure AWS (access keys)
+        if: steps.aws_auth.outputs.mode == 'keys'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+      - name: Deploy site to S3 + CloudFront
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+        run: ./scripts/deploy-site.sh kitsuneos
 
   app:
     name: Deploy app (AWS App Runner)
