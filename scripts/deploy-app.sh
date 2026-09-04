@@ -30,18 +30,29 @@ fi
 IMAGE_TAG="${ECR_URL}:$(git -C "$ROOT" rev-parse --short HEAD)"
 # App Runner (Pulumi AWS provider) is x86_64-only in schema; build linux/amd64 even on Apple Silicon.
 DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
-export DOCKER_HOST="${DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
-# Colima/local docker often break on Docker Desktop's osxkeychain credsStore.
-export DOCKER_CONFIG="${DOCKER_CONFIG:-/tmp/docker-colima-cfg}"
-mkdir -p "$DOCKER_CONFIG/cli-plugins"
-if [[ ! -f "$DOCKER_CONFIG/config.json" ]]; then
-  printf '%s\n' '{"auths":{}}' >"$DOCKER_CONFIG/config.json"
+# Local Mac often uses Colima; GitHub Actions has Docker Engine on the default socket.
+if [[ -z "${DOCKER_HOST:-}" ]]; then
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    : # use runner default docker.sock
+  elif [[ -S "${HOME}/.colima/default/docker.sock" ]]; then
+    export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
+  fi
 fi
-# Prefer a real buildx binary (OrbStack symlinks break when OrbStack isn't installed).
-if [[ -x "${HOME}/.docker/cli-plugins/docker-buildx" ]]; then
-  ln -sfn "${HOME}/.docker/cli-plugins/docker-buildx" "$DOCKER_CONFIG/cli-plugins/docker-buildx"
-elif [[ -x /tmp/docker-cli-plugins/docker-buildx ]]; then
-  ln -sfn /tmp/docker-cli-plugins/docker-buildx "$DOCKER_CONFIG/cli-plugins/docker-buildx"
+# Colima/local docker often break on Docker Desktop's osxkeychain credsStore.
+if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+  : # keep runner Docker config
+else
+  export DOCKER_CONFIG="${DOCKER_CONFIG:-/tmp/docker-colima-cfg}"
+  mkdir -p "$DOCKER_CONFIG/cli-plugins"
+  if [[ ! -f "$DOCKER_CONFIG/config.json" ]]; then
+    printf '%s\n' '{"auths":{}}' >"$DOCKER_CONFIG/config.json"
+  fi
+  # Prefer a real buildx binary (OrbStack symlinks break when OrbStack isn't installed).
+  if [[ -x "${HOME}/.docker/cli-plugins/docker-buildx" ]]; then
+    ln -sfn "${HOME}/.docker/cli-plugins/docker-buildx" "$DOCKER_CONFIG/cli-plugins/docker-buildx"
+  elif [[ -x /tmp/docker-cli-plugins/docker-buildx ]]; then
+    ln -sfn /tmp/docker-cli-plugins/docker-buildx "$DOCKER_CONFIG/cli-plugins/docker-buildx"
+  fi
 fi
 export DOCKER_BUILDKIT=1
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${ECR_URL%%/*}"

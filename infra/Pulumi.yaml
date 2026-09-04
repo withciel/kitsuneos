@@ -3,10 +3,12 @@ runtime:
   name: nodejs
   options:
     typescript: true
+    # ESM package.json ("type":"module") cannot load .ts without a loader.
+    nodeargs: "--import tsx"
 description: KitsuneOS AWS infrastructure (site + app + RDS)
 config:
   aws:region: us-east-1
   kitsuneos:domain: kitsuneos.com
   kitsuneos:appDomain: app.kitsuneos.com
   kitsuneos:deployApp: false
-  kitsuneos:deploySiteCdn: false
+  kitsuneos:deploySiteCdn: true

@@ -6,6 +6,11 @@ export PATH="/opt/homebrew/opt/libpq/bin:/opt/homebrew/bin:${PATH:-}"
 export AWS_REGION="${AWS_REGION:-us-east-1}"
 export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-$AWS_REGION}"
 
+# GitHub Actions / OIDC / explicit keys: credentials are already in the environment.
+if aws sts get-caller-identity >/dev/null 2>&1; then
+  return 0 2>/dev/null || exit 0
+fi
+
 refresh_aws_credentials() {
   if ! aws sts get-caller-identity >/dev/null 2>&1; then
     echo "AWS session expired or missing. Run: aws login" >&2
@@ -13,12 +18,5 @@ refresh_aws_credentials() {
   fi
   eval "$(aws configure export-credentials --format env)"
 }
-
-if [[ -n "${AWS_ACCESS_KEY_ID:-}" && -n "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
-  if aws sts get-caller-identity >/dev/null 2>&1; then
-    return 0 2>/dev/null || exit 0
-  fi
-  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
-fi
 
 refresh_aws_credentials

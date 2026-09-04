@@ -133,6 +133,9 @@ importers:
       '@pulumi/random':
         specifier: ^4.18.0
         version: 4.21.1(typescript@5.9.2)
+      tsx:
+        specifier: ^4.20.0
+        version: 4.23.13
     devDependencies:
       '@types/node':
         specifier: ^22.15.0
