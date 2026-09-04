@@ -30,6 +30,17 @@ The app uses `network_mode: service:db` so it can reach Postgres on `127.0.0.1` 
 | `KITSUNE_OWNER_URL` | Owner role connection string (Secrets Manager in prod) |
 | `KITSUNE_APP_URL` | App role connection string |
 
+## Semantic search (pgvector)
+
+| Variable | Description |
+|----------|-------------|
+| `KITSUNE_EMBEDDING_PROVIDER` | `deterministic` (default, CI/local) or `openai` |
+| `OPENAI_API_KEY` | Required when provider is `openai` |
+| `KITSUNE_EMBEDDING_MODEL` | Optional; default `text-embedding-3-small` (1536-d) |
+| `KITSUNE_EMBEDDING_BASE_URL` | Optional OpenAI-compatible base URL |
+
+Without OpenAI keys, search still works via the deterministic embedder (same text → same vector).
+
 ## Dodo Payments
 
 | Variable | Description |

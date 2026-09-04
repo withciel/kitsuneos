@@ -79,6 +79,11 @@ export {
   type Embedder,
   vectorLiteral,
 } from './search/embedder.js';
+export {
+  createDefaultEmbedder,
+  OpenAIEmbedder,
+  type OpenAIEmbedderOptions,
+} from './search/openai-embedder.js';
 export type { RelatedNeighbor, RelatedResult } from './search/related.js';
 export type {
   SearchHit,

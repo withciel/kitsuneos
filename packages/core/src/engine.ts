@@ -45,7 +45,8 @@ import {
   validateCollectionDefinition,
   validateFieldDefinition,
 } from './schema/validate-definition.js';
-import { DeterministicEmbedder, type Embedder } from './search/embedder.js';
+import type { Embedder } from './search/embedder.js';
+import { createDefaultEmbedder } from './search/openai-embedder.js';
 import { listRelatedRecords, type RelatedResult } from './search/related.js';
 import {
   type SearchRequest,
@@ -93,7 +94,10 @@ export interface EngineOptions {
   applyFaultInjection?: ApplyFaultInjection | null;
   appPoolMax?: number;
   ownerPoolMax?: number;
-  /** Defaults to DeterministicEmbedder (no API keys required). */
+  /**
+   * Defaults to createDefaultEmbedder(): DeterministicEmbedder unless
+   * KITSUNE_EMBEDDING_PROVIDER=openai (+ OPENAI_API_KEY).
+   */
   embedder?: Embedder;
   /** When true (default), reindex prose embeddings in-process after writes. */
   embedSync?: boolean;
@@ -159,7 +163,7 @@ export class KitsuneEngine {
     this.ownerPool = pools.ownerPool;
     this.appPool = pools.appPool;
     this.applyFaultInjection = options.applyFaultInjection ?? null;
-    this.embedder = options.embedder ?? new DeterministicEmbedder();
+    this.embedder = options.embedder ?? createDefaultEmbedder();
     this.embedSync = options.embedSync ?? true;
     this.blobStore = options.blobStore ?? createDefaultBlobStore();
   }

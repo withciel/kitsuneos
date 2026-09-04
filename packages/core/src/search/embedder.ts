@@ -50,15 +50,3 @@ export function vectorLiteral(values: number[]): string {
   // pgvector accepts '[1,2,3]'::vector
   return `[${values.map((v) => (Number.isFinite(v) ? v : 0)).join(',')}]`;
 }
-
-export function createDefaultEmbedder(): Embedder {
-  const provider = process.env.KITSUNE_EMBEDDING_PROVIDER ?? 'deterministic';
-  if (provider === 'openai') {
-    // Lazy require avoided — OpenAI path is optional and loaded in openai-embedder.ts
-    // when wired by the caller. Default remains deterministic so CI never needs keys.
-    throw new Error(
-      'OpenAI embedder must be constructed explicitly via OpenAIEmbedder',
-    );
-  }
-  return new DeterministicEmbedder();
-}

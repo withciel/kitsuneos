@@ -58,10 +58,10 @@ Bootstrap: `CREATE EXTENSION IF NOT EXISTS vector` in `scripts/db-init.sql` (sup
 
 ### Embedding provider
 
-Injectable on `KitsuneEngine`:
+Injectable on `KitsuneEngine` (via `createDefaultEmbedder()` when omitted):
 
-- `DeterministicEmbedder` (default in tests / local without keys): stable hash → unit vector dim 1536. Same text → same vector so search is deterministic.
-- `OpenAIEmbedder` when `KITSUNE_EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY` (optional; not required for CI).
+- `DeterministicEmbedder` (default / CI / local without keys): stable hash → unit vector dim 1536. Same text → same vector so search is deterministic.
+- `OpenAIEmbedder` when `KITSUNE_EMBEDDING_PROVIDER=openai` + `OPENAI_API_KEY`. Uses `text-embedding-3-small` at 1536-d (override with `KITSUNE_EMBEDDING_MODEL` / `KITSUNE_EMBEDDING_BASE_URL`). No OpenAI SDK dependency — plain `fetch`.
 
 Chunking v1: one chunk per prose field (no sliding window). Fields of type `prose` only.
 

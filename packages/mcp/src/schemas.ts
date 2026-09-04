@@ -280,7 +280,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'ls',
     description:
-      'List a virtual filesystem path over grant-visible collections and records. Directories are collections and record ids; files are field snapshots (.md for prose, .json otherwise). Read-only — writes still use propose_change_set.',
+      'List a virtual filesystem path over grant-visible collections and records. Directories are collections and record ids; files are field snapshots (.md for prose, .json otherwise). Read-only MCP/CLI projection — not a mounted FUSE filesystem. Writes still use propose_change_set.',
     inputSchema: vfsPathSchema,
   },
   {

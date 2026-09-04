@@ -411,7 +411,7 @@ Search joins the embedding table to the base table so the row predicate and fiel
 
 **Filtered ANN strategy.** HNSW recall degrades under selective filters. The compiler estimates the candidate set size from the predicate: below roughly 10,000 rows it performs an exact scan over the filtered set; above that it uses HNSW with an over-fetch factor and verifies against the predicate, iterating if the result set is short.
 
-Embeddings are generated via an injectable `Embedder` (deterministic hash embedder by default for CI/local; OpenAI optional). Records carry `indexed_at`, and search results indicate when a record's prose has changed since it was last embedded. Stale-but-honest beats blocking writes on an embedding call.
+Embeddings are generated via an injectable `Embedder`. Default is `createDefaultEmbedder()`: deterministic hash for CI/local, or `OpenAIEmbedder` (`text-embedding-3-small`, 1536-d via `fetch`) when `KITSUNE_EMBEDDING_PROVIDER=openai` and `OPENAI_API_KEY` are set. Records carry `indexed_at`, and search results indicate when a record's prose has changed since it was last embedded. Stale-but-honest beats blocking writes on an embedding call.
 
 MCP tool: `search`. Reference-graph neighbors: `engine.listRelated` / MCP `read_related`.
 
