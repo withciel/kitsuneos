@@ -234,6 +234,18 @@ const readRelatedSchema = {
   },
 } as const;
 
+const vfsPathSchema = {
+  type: 'object',
+  required: ['path'],
+  properties: {
+    path: {
+      type: 'string',
+      description:
+        'Virtual path starting with /. Examples: /, /opportunities, /opportunities/<uuid>, /opportunities/<uuid>/next_step.md',
+    },
+  },
+} as const;
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'describe_schema',
@@ -264,6 +276,18 @@ export const TOOL_DEFINITIONS = [
     description:
       'List outgoing and incoming relation neighbors of a record that you are allowed to see. Invisible targets are omitted.',
     inputSchema: readRelatedSchema,
+  },
+  {
+    name: 'ls',
+    description:
+      'List a virtual filesystem path over grant-visible collections and records. Directories are collections and record ids; files are field snapshots (.md for prose, .json otherwise). Read-only — writes still use propose_change_set.',
+    inputSchema: vfsPathSchema,
+  },
+  {
+    name: 'read',
+    description:
+      'Read one virtual file at /<collection>/<recordId>/<field>.md|.json. Only fields in your grant are readable. Does not write.',
+    inputSchema: vfsPathSchema,
   },
   {
     name: 'propose_change_set',

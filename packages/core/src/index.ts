@@ -69,3 +69,12 @@ export type {
   SearchResult,
 } from './search/search.js';
 export * from './types.js';
+export {
+  fieldFileName,
+  parseVfsPath,
+  serializeField,
+  type VfsListEntry,
+  type VfsListResult,
+  type VfsPath,
+  type VfsReadResult,
+} from './vfs/paths.js';

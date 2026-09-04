@@ -65,6 +65,14 @@ import {
   quoteIdent,
   schemaNameForWorkspace,
 } from './types.js';
+import {
+  fieldFileName,
+  parseVfsPath,
+  serializeField,
+  type VfsListEntry,
+  type VfsListResult,
+  type VfsReadResult,
+} from './vfs/paths.js';
 
 export interface ApplyFaultInjection {
   afterOpIndex?: number;
@@ -626,6 +634,145 @@ export class KitsuneEngine {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Read-only virtual filesystem projection of grant-visible records.
+   * Paths: `/`, `/<collection>`, `/<collection>/<recordId>`,
+   * `/<collection>/<recordId>/<field>.md|json`. Writes still go through
+   * propose/directWrite — never raw file overwrite.
+   */
+  async vfsList(
+    workspaceId: string,
+    principalId: string,
+    path: string,
+  ): Promise<VfsListResult> {
+    const parsed = parseVfsPath(path);
+
+    if (parsed.kind === 'field') {
+      throw new KitsuneError(
+        'Cannot list a file path; use vfsRead',
+        'validation',
+      );
+    }
+
+    if (parsed.kind === 'root') {
+      const schema = await this.describeSchema(workspaceId, principalId);
+      return {
+        path: '/',
+        entries: schema.collections.map((c) => ({
+          name: c.name,
+          type: 'dir' as const,
+          path: `/${c.name}`,
+        })),
+      };
+    }
+
+    if (parsed.kind === 'collection') {
+      const rows = await this.query(workspaceId, principalId, {
+        collection: parsed.collection,
+        fields: [],
+        limit: 100,
+      });
+      return {
+        path: `/${parsed.collection}`,
+        entries: rows
+          .filter((row): row is { id: string } => typeof row.id === 'string')
+          .map((row) => ({
+            name: row.id,
+            type: 'dir' as const,
+            path: `/${parsed.collection}/${row.id}`,
+          })),
+      };
+    }
+
+    // record
+    const schema = await this.describeSchema(workspaceId, principalId);
+    const collectionMeta = schema.collections.find(
+      (c) => c.name === parsed.collection,
+    );
+    if (!collectionMeta) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const record = await this.readRecord(
+      workspaceId,
+      principalId,
+      parsed.collection,
+      parsed.recordId,
+    );
+    if (!record) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const entries: VfsListEntry[] = collectionMeta.fields.map((f) => {
+      const name = fieldFileName(f.name, f.type);
+      return {
+        name,
+        type: 'file' as const,
+        path: `/${parsed.collection}/${parsed.recordId}/${name}`,
+      };
+    });
+    return {
+      path: `/${parsed.collection}/${parsed.recordId}`,
+      entries,
+    };
+  }
+
+  async vfsRead(
+    workspaceId: string,
+    principalId: string,
+    path: string,
+  ): Promise<VfsReadResult> {
+    const parsed = parseVfsPath(path);
+    if (parsed.kind !== 'field') {
+      throw new KitsuneError(
+        'vfsRead requires a field file path',
+        'validation',
+      );
+    }
+
+    const schema = await this.describeSchema(workspaceId, principalId);
+    const collectionMeta = schema.collections.find(
+      (c) => c.name === parsed.collection,
+    );
+    if (!collectionMeta) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const fieldMeta = collectionMeta.fields.find(
+      (f) => f.name === parsed.field,
+    );
+    if (!fieldMeta) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    if (parsed.format === 'md' && fieldMeta.type !== 'prose') {
+      throw new KitsuneError(
+        `Field ${parsed.field} is not prose; use .json`,
+        'validation',
+      );
+    }
+    if (parsed.format === 'json' && fieldMeta.type === 'prose') {
+      throw new KitsuneError(
+        `Field ${parsed.field} is prose; use .md`,
+        'validation',
+      );
+    }
+
+    const record = await this.readRecord(
+      workspaceId,
+      principalId,
+      parsed.collection,
+      parsed.recordId,
+      [parsed.field],
+    );
+    if (!record) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+
+    return {
+      path: `/${parsed.collection}/${parsed.recordId}/${fieldFileName(parsed.field, fieldMeta.type)}`,
+      content: serializeField(record[parsed.field], parsed.format),
+      contentType:
+        parsed.format === 'md' ? 'text/markdown' : 'application/json',
+    };
   }
 
   /** Reindex prose embeddings for one record. Safe to call on collections created before R9. */

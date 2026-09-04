@@ -21,6 +21,10 @@ export async function invokeMcpTool(
       return handlers.search(args as never);
     case 'read_related':
       return handlers.read_related(args as never);
+    case 'ls':
+      return handlers.ls(args as never);
+    case 'read':
+      return handlers.read(args as never);
     case 'propose_change_set':
       return handlers.propose_change_set(args as never);
     case 'read_change_set_feedback':

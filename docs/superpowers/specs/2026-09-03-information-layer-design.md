@@ -136,9 +136,7 @@ Record peek section **Related**: list outgoing/incoming as labels linking to `/c
 
 ---
 
-## 3–5. Deferred to follow-up PRs (summaries)
-
-### VFS
+## 3. Virtual filesystem — **this PR**
 
 Read-only paths `/<collection>/<recordId>/<field>.md` (prose) and `.json` (other). MCP/CLI `ls` + `read`. Writes still propose/direct-write. No FUSE in v1.
 
