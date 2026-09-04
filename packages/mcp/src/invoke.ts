@@ -25,6 +25,8 @@ export async function invokeMcpTool(
       return handlers.ls(args as never);
     case 'read':
       return handlers.read(args as never);
+    case 'ingest':
+      return handlers.ingest(args as never);
     case 'propose_change_set':
       return handlers.propose_change_set(args as never);
     case 'read_change_set_feedback':

@@ -25,6 +25,7 @@ import {
   generateWorkspaceSchemaDdl,
 } from './ddl/generator.js';
 import { assertFieldAllowed, loadResolvedGrant } from './grants/resolve.js';
+import type { IngestRequest, IngestResult } from './ingest/types.js';
 import {
   getChangedFieldsSince,
   getRevisionAtTime,
@@ -773,6 +774,184 @@ export class KitsuneEngine {
       contentType:
         parsed.format === 'md' ? 'text/markdown' : 'application/json',
     };
+  }
+
+  /**
+   * Upsert records into a collection. Agents (propose) get change sets;
+   * write/admin principals direct-write. No vendor SDKs — callers parse
+   * CMS/CRM/KB/ticket payloads into records first.
+   */
+  async ingest(
+    workspaceId: string,
+    principalId: string,
+    request: IngestRequest,
+  ): Promise<IngestResult> {
+    if (!request.collection) {
+      throw new KitsuneError('collection is required', 'validation');
+    }
+    if (!request.records?.length) {
+      throw new KitsuneError('records are required', 'validation');
+    }
+
+    const schema = await this.describeSchema(workspaceId, principalId);
+    const collectionMeta = schema.collections.find(
+      (c) => c.name === request.collection,
+    );
+    if (!collectionMeta) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+
+    const capability = collectionMeta.capability;
+    const mode = request.mode ?? 'auto';
+    let useDirect = false;
+    if (mode === 'direct') {
+      useDirect =
+        CAPABILITY_ORDER.indexOf(capability) >=
+        CAPABILITY_ORDER.indexOf('write');
+      if (!useDirect) {
+        throw new KitsuneError('Write capability required', 'forbidden');
+      }
+    } else if (mode === 'propose') {
+      useDirect = false;
+      if (
+        CAPABILITY_ORDER.indexOf(capability) <
+        CAPABILITY_ORDER.indexOf('propose')
+      ) {
+        throw new KitsuneError('Propose capability required', 'forbidden');
+      }
+    } else {
+      useDirect =
+        CAPABILITY_ORDER.indexOf(capability) >=
+        CAPABILITY_ORDER.indexOf('write');
+      if (
+        !useDirect &&
+        CAPABILITY_ORDER.indexOf(capability) <
+          CAPABILITY_ORDER.indexOf('propose')
+      ) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+    }
+
+    const result: IngestResult = {
+      written: [],
+      changeSetIds: [],
+      errors: [],
+    };
+
+    for (let index = 0; index < request.records.length; index++) {
+      const record = request.records[index]!;
+      try {
+        const fieldNames = Object.keys(record.fields);
+        if (fieldNames.length === 0) {
+          throw new KitsuneError('Record has no fields', 'validation');
+        }
+
+        if (useDirect) {
+          if (record.id) {
+            const existing = await this.readRecord(
+              workspaceId,
+              principalId,
+              request.collection,
+              record.id,
+            );
+            if (existing) {
+              // Patch via propose+apply is heavy; use propose for updates when
+              // we lack a direct update API. Prefer change set for updates.
+              const ops: ChangeOpInput[] = fieldNames.map((fieldName) => ({
+                collection: request.collection,
+                recordId: record.id,
+                op: 'update' as const,
+                fieldName,
+                newValue: record.fields[fieldName]!,
+              }));
+              // Humans with write: propose then self-approve/apply (no directUpdate API).
+              const proposed = await this.proposeChangeSet(
+                workspaceId,
+                principalId,
+                {
+                  title: `Ingest update ${request.collection}`,
+                  rationale: 'ingest upsert',
+                  operations: ops,
+                },
+              );
+              if (
+                CAPABILITY_ORDER.indexOf(capability) >=
+                CAPABILITY_ORDER.indexOf('write')
+              ) {
+                await this.reviewChangeSet(
+                  workspaceId,
+                  principalId,
+                  proposed.changeSetId,
+                  proposed.operationIds.map((opId) => ({
+                    opId,
+                    status: 'approved' as const,
+                  })),
+                );
+                await this.applyChangeSet(
+                  workspaceId,
+                  principalId,
+                  proposed.changeSetId,
+                );
+                result.written.push(record.id);
+              } else {
+                result.changeSetIds.push(proposed.changeSetId);
+              }
+            } else {
+              const id = await this.directWrite(
+                workspaceId,
+                principalId,
+                request.collection,
+                record.fields,
+                { recordId: record.id },
+              );
+              result.written.push(id);
+            }
+          } else {
+            const id = await this.directWrite(
+              workspaceId,
+              principalId,
+              request.collection,
+              record.fields,
+            );
+            result.written.push(id);
+          }
+        } else {
+          const recordId = record.id ?? uuidv4();
+          const existing = record.id
+            ? await this.readRecord(
+                workspaceId,
+                principalId,
+                request.collection,
+                record.id,
+              )
+            : null;
+          const ops: ChangeOpInput[] = fieldNames.map((fieldName) => ({
+            collection: request.collection,
+            recordId,
+            op: existing ? ('update' as const) : ('insert' as const),
+            fieldName,
+            newValue: record.fields[fieldName]!,
+          }));
+          const proposed = await this.proposeChangeSet(
+            workspaceId,
+            principalId,
+            {
+              title: `Ingest ${request.collection}`,
+              rationale: 'ingest via propose',
+              operations: ops,
+            },
+          );
+          result.changeSetIds.push(proposed.changeSetId);
+        }
+      } catch (error) {
+        result.errors.push({
+          index,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return result;
   }
 
   /** Reindex prose embeddings for one record. Safe to call on collections created before R9. */

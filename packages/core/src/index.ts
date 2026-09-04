@@ -45,6 +45,13 @@ export {
   projectFields,
   resolveGrantRows,
 } from './grants/resolve.js';
+export type {
+  IngestRecord,
+  IngestRequest,
+  IngestResult,
+  IngestSourceKind,
+  ParsedIngestBatch,
+} from './ingest/types.js';
 export {
   getChangedFieldsSince,
   getRevisionAtTime,

@@ -290,6 +290,35 @@ export const TOOL_DEFINITIONS = [
     inputSchema: vfsPathSchema,
   },
   {
+    name: 'ingest',
+    description:
+      'Import records into a collection. Agents create change sets (propose); write/admin principals direct-write inserts. Pass already-parsed records — use the CLI for markdown/CSV folders.',
+    inputSchema: {
+      type: 'object',
+      required: ['collection', 'records'],
+      properties: {
+        collection: { type: 'string' },
+        mode: {
+          type: 'string',
+          enum: ['auto', 'propose', 'direct'],
+          description:
+            'Default auto picks direct vs propose from your capability.',
+        },
+        records: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['fields'],
+            properties: {
+              id: { type: 'string' },
+              fields: { type: 'object' },
+            },
+          },
+        },
+      },
+    },
+  },
+  {
     name: 'propose_change_set',
     description:
       'Propose a change instead of writing it. Every operation names a single field. The change set enters a review queue and lands only after a human approves it. Proposing a field outside your grant fails immediately with an error naming the field.',

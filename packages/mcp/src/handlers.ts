@@ -71,6 +71,15 @@ export function createMcpHandlers(
       return engine.vfsRead(ctx.workspaceId, ctx.principalId, args.path);
     },
 
+    async ingest(args: {
+      collection: string;
+      records: Array<{ id?: string; fields: Record<string, JsonValue> }>;
+      mode?: 'auto' | 'propose' | 'direct';
+    }) {
+      const ctx = getContext();
+      return engine.ingest(ctx.workspaceId, ctx.principalId, args);
+    },
+
     async propose_change_set(args: ProposeChangeSetInput) {
       const ctx = getContext();
       return engine.proposeChangeSet(ctx.workspaceId, ctx.principalId, args);

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { exportWorkspace } from './export.js';
 import { history } from './history.js';
+import { ingestCommand } from './ingest.js';
 import { init } from './init.js';
 import { queryCommand } from './query.js';
 import { quickstart } from './quickstart.js';
@@ -30,6 +31,9 @@ async function main(): Promise<void> {
     case 'read':
       await readCommand(args);
       return;
+    case 'ingest':
+      await ingestCommand(args);
+      return;
     case 'review':
     case 'changesets':
       await review(args);
@@ -49,6 +53,7 @@ async function main(): Promise<void> {
   kitsuneos query --collection NAME        run an engine query as JSON
   kitsuneos ls [path]                      list virtual filesystem path (grant-filtered)
   kitsuneos read <path> [--json]           read a virtual field file
+  kitsuneos ingest --source … --path …     import markdown/CSV/JSON into a collection
   kitsuneos changesets                     list and review open change sets
   kitsuneos review [change-set-id] [...]   review and apply pending change sets
   kitsuneos history <collection> <id>      show attributed revision history
