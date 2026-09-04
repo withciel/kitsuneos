@@ -199,6 +199,12 @@ const dodoWebhookSecret = new aws.secretsmanager.Secret('dodo-webhook-secret', {
   tags,
 });
 
+// Placeholder until scripts/register-dodo-webhook.mjs writes the real signing secret.
+new aws.secretsmanager.SecretVersion('dodo-webhook-secret-v', {
+  secretId: dodoWebhookSecret.id,
+  secretString: 'pending-dodo-webhook-registration',
+});
+
 // --- ACM certificates (us-east-1) ---
 const siteCert = new aws.acm.Certificate('site-cert', {
   domainName: domain,
@@ -448,8 +454,11 @@ const appRunnerService = deployApp
             },
             runtimeEnvironmentVariables: {
               NODE_ENV: 'production',
+              HOSTNAME: '0.0.0.0',
               APP_BASE_URL: `https://${appDomain}`,
               WORKOS_REDIRECT_URI: `https://${appDomain}/callback`,
+              // authkit-nextjs resolves redirect URI from NEXT_PUBLIC_WORKOS_REDIRECT_URI
+              NEXT_PUBLIC_WORKOS_REDIRECT_URI: `https://${appDomain}/callback`,
             },
           },
         },

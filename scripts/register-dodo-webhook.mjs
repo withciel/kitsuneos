@@ -4,7 +4,19 @@
  * Usage: register-dodo-webhook.mjs <webhookUrl> [pulumiStack]
  */
 import { execFileSync } from 'node:child_process';
-import DodoPayments from 'dodopayments';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+// This script lives at repo root, but `dodopayments` is installed under apps/app.
+// Resolve it relative to apps/app so Node can find the dependency in pnpm setups.
+const requireFromAppsApp = createRequire(
+  fileURLToPath(new URL('../apps/app/package.json', import.meta.url)),
+);
+const DodoPaymentsModule = requireFromAppsApp('dodopayments');
+const DodoPayments =
+  DodoPaymentsModule?.default ??
+  DodoPaymentsModule?.DodoPayments ??
+  DodoPaymentsModule;
 
 const webhookUrl = process.argv[2];
 const stack = process.argv[3] ?? 'kitsuneos';
