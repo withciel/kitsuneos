@@ -4,6 +4,11 @@
  */
 import pg from 'pg';
 
+/** Postgres string literal; CREATE ROLE ... PASSWORD does not accept bind params. */
+function quoteLiteral(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
 export async function bootstrapRds() {
   const adminUrl =
     process.env.KITSUNE_ADMIN_URL ?? process.env.KITSUNE_OWNER_URL ?? '';
@@ -16,15 +21,21 @@ export async function bootstrapRds() {
     );
   }
 
-  const pool = new pg.Pool({ connectionString: adminUrl });
+  const pool = new pg.Pool({
+    connectionString: adminUrl.split('?')[0],
+    // RDS requires TLS; do not put sslmode=require in the URL (pg maps it to verify-full).
+    ssl:
+      adminUrl.includes('localhost') || adminUrl.includes('127.0.0.1')
+        ? undefined
+        : { rejectUnauthorized: false },
+  });
   try {
     const ownerExists = await pool.query(
       `SELECT 1 FROM pg_roles WHERE rolname = 'kitsune_owner'`,
     );
     if (ownerExists.rowCount === 0) {
       await pool.query(
-        `CREATE ROLE kitsune_owner WITH LOGIN PASSWORD $1 CREATEDB`,
-        [ownerPassword],
+        `CREATE ROLE kitsune_owner WITH LOGIN PASSWORD ${quoteLiteral(ownerPassword)} CREATEDB`,
       );
     }
 
@@ -33,8 +44,7 @@ export async function bootstrapRds() {
     );
     if (appExists.rowCount === 0) {
       await pool.query(
-        `CREATE ROLE kitsune_app WITH LOGIN PASSWORD $1 NOSUPERUSER NOBYPASSRLS`,
-        [appPassword],
+        `CREATE ROLE kitsune_app WITH LOGIN PASSWORD ${quoteLiteral(appPassword)} NOSUPERUSER NOBYPASSRLS`,
       );
     }
 

@@ -28,8 +28,30 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 IMAGE_TAG="${ECR_URL}:$(git -C "$ROOT" rev-parse --short HEAD)"
+# App Runner (Pulumi AWS provider) is x86_64-only in schema; build linux/amd64 even on Apple Silicon.
+DOCKER_PLATFORM="${DOCKER_PLATFORM:-linux/amd64}"
+export DOCKER_HOST="${DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+# Colima/local docker often break on Docker Desktop's osxkeychain credsStore.
+export DOCKER_CONFIG="${DOCKER_CONFIG:-/tmp/docker-colima-cfg}"
+mkdir -p "$DOCKER_CONFIG/cli-plugins"
+if [[ ! -f "$DOCKER_CONFIG/config.json" ]]; then
+  printf '%s\n' '{"auths":{}}' >"$DOCKER_CONFIG/config.json"
+fi
+# Prefer a real buildx binary (OrbStack symlinks break when OrbStack isn't installed).
+if [[ -x "${HOME}/.docker/cli-plugins/docker-buildx" ]]; then
+  ln -sfn "${HOME}/.docker/cli-plugins/docker-buildx" "$DOCKER_CONFIG/cli-plugins/docker-buildx"
+elif [[ -x /tmp/docker-cli-plugins/docker-buildx ]]; then
+  ln -sfn /tmp/docker-cli-plugins/docker-buildx "$DOCKER_CONFIG/cli-plugins/docker-buildx"
+fi
+export DOCKER_BUILDKIT=1
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${ECR_URL%%/*}"
-docker build -f "$ROOT/apps/app/Dockerfile" -t "$IMAGE_TAG" -t "${ECR_URL}:latest" "$ROOT"
+# BuildKit: compile Next on host arch, emit TARGETPLATFORM (amd64) runtime for App Runner.
+docker build \
+  --platform "$DOCKER_PLATFORM" \
+  -f "$ROOT/apps/app/Dockerfile" \
+  -t "$IMAGE_TAG" \
+  -t "${ECR_URL}:latest" \
+  "$ROOT"
 docker push "$IMAGE_TAG"
 docker push "${ECR_URL}:latest"
 

@@ -44,6 +44,7 @@ RUN npm init -y >/dev/null \
 FROM base AS runner
 ENV NODE_ENV=production
 ENV PORT=8080
+ENV HOSTNAME=0.0.0.0
 WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 COPY --from=builder /app/apps/app/public ./apps/app/public

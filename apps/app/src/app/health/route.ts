@@ -1,8 +1,6 @@
-import { handleMcpHttpRequest } from '@kitsuneos/server';
 import { NextResponse } from 'next/server';
-import { engine } from '@/lib/engine';
 
+/** Liveness only — keep this free of engine/DB imports so App Runner health checks stay cheap. */
 export async function GET() {
-  const result = await handleMcpHttpRequest(engine, 'GET', '/health', null, '');
-  return NextResponse.json(result.body, { status: result.status });
+  return NextResponse.json({ ok: true });
 }

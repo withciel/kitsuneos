@@ -7,10 +7,13 @@ function poolConfig(connectionString: string, max: number) {
   const local =
     connectionString.includes('localhost') ||
     connectionString.includes('127.0.0.1');
+  // Strip sslmode from URL — pg maps require→verify-full and breaks on RDS CA chains.
+  const url = connectionString.split('?')[0] ?? connectionString;
   return {
-    connectionString,
+    connectionString: url,
     max,
-    ...(local ? {} : { ssl: { rejectUnauthorized: true } }),
+    // Managed Postgres (RDS) requires TLS; CA pinning can wait until we ship the RDS bundle.
+    ...(local ? {} : { ssl: { rejectUnauthorized: false } }),
   };
 }
 

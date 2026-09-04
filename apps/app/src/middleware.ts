@@ -5,7 +5,14 @@ import {
   NextResponse,
 } from 'next/server';
 
-const authkit = authkitMiddleware();
+// authkit-nextjs reads NEXT_PUBLIC_WORKOS_REDIRECT_URI (not WORKOS_REDIRECT_URI).
+// Edge middleware also inlines env at build time, so pass an explicit URI.
+const redirectUri =
+  process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI ||
+  process.env.WORKOS_REDIRECT_URI ||
+  'https://app.kitsuneos.com/callback';
+
+const authkit = authkitMiddleware({ redirectUri });
 
 export default function middleware(
   request: NextRequest,
