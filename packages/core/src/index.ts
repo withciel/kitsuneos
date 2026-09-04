@@ -34,6 +34,7 @@ export {
 export { createPools, setSessionContext } from './db/pool.js';
 export {
   generateCollectionDdl,
+  generateEmbeddingDdl,
   generateWorkspaceSchemaDdl,
 } from './ddl/generator.js';
 export type { ApplyFaultInjection, EngineOptions } from './engine.js';
@@ -55,4 +56,16 @@ export {
   validateCollectionDefinition,
   validateFieldDefinition,
 } from './schema/validate-definition.js';
+export {
+  DeterministicEmbedder,
+  EMBEDDING_DIMENSIONS,
+  type Embedder,
+  vectorLiteral,
+} from './search/embedder.js';
+export type { RelatedNeighbor, RelatedResult } from './search/related.js';
+export type {
+  SearchHit,
+  SearchRequest,
+  SearchResult,
+} from './search/search.js';
 export * from './types.js';

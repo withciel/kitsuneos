@@ -2,6 +2,7 @@
 
 import type { JsonValue } from '@kitsuneos/core';
 import { Columns3, Plus, Search } from 'lucide-react';
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,18 @@ interface FieldMeta {
   name: string;
   type: string;
   writable: boolean;
+}
+
+interface RelatedNeighbor {
+  field: string;
+  collection: string;
+  recordId: string;
+  label: string | null;
+}
+
+interface RelatedResult {
+  outgoing: RelatedNeighbor[];
+  incoming: RelatedNeighbor[];
 }
 
 interface ViewState {
@@ -93,6 +106,8 @@ export function CollectionView({ collection }: { collection: string }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [related, setRelated] = useState<RelatedResult | null>(null);
+  const [relatedLoading, setRelatedLoading] = useState(false);
   const collectionRef = useRef(collection);
   collectionRef.current = collection;
 
@@ -161,8 +176,50 @@ export function CollectionView({ collection }: { collection: string }) {
     setCreating(false);
     setRows([]);
     setFields([]);
+    setRelated(null);
     void reload();
   }, [reload]);
+
+  useEffect(() => {
+    const recordId =
+      !creating && typeof selected?.id === 'string' ? selected.id : '';
+    if (!recordId) {
+      setRelated(null);
+      setRelatedLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setRelatedLoading(true);
+    void fetch('/api/related', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection, recordId }),
+    })
+      .then(async (response) => {
+        const body = (await response.json()) as RelatedResult & {
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!response.ok) {
+          throw new Error(body.error ?? 'Failed to load related');
+        }
+        setRelated({
+          outgoing: body.outgoing ?? [],
+          incoming: body.incoming ?? [],
+        });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setRelated(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRelatedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [collection, creating, selected?.id]);
 
   const visibleFields = useMemo(
     () => fields.filter((f) => !view.hiddenColumns.includes(f.name)),
@@ -428,6 +485,53 @@ export function CollectionView({ collection }: { collection: string }) {
                 )}
               </div>
             ))}
+            {!creating && typeof selected?.id === 'string' ? (
+              <div className="space-y-2 border-t border-border pt-4">
+                <p className="text-xs font-medium text-muted-foreground uppercase">
+                  Related
+                </p>
+                {relatedLoading ? (
+                  <Skeleton className="h-12 w-full" />
+                ) : !related ||
+                  (related.outgoing.length === 0 &&
+                    related.incoming.length === 0) ? (
+                  <p className="text-xs text-muted-foreground">
+                    No related records visible to you.
+                  </p>
+                ) : (
+                  <ul className="space-y-2 text-sm">
+                    {related.outgoing.map((neighbor) => (
+                      <li key={`out-${neighbor.field}-${neighbor.recordId}`}>
+                        <span className="text-muted-foreground">
+                          {neighbor.field} →{' '}
+                        </span>
+                        <Link
+                          href={`/c/${neighbor.collection}`}
+                          className="text-primary underline-offset-4 hover:underline"
+                        >
+                          {neighbor.label ?? neighbor.recordId.slice(0, 8)}
+                        </Link>
+                      </li>
+                    ))}
+                    {related.incoming.map((neighbor) => (
+                      <li
+                        key={`in-${neighbor.collection}-${neighbor.recordId}`}
+                      >
+                        <span className="text-muted-foreground">
+                          ← {neighbor.collection}.{neighbor.field}{' '}
+                        </span>
+                        <Link
+                          href={`/c/${neighbor.collection}`}
+                          className="text-primary underline-offset-4 hover:underline"
+                        >
+                          {neighbor.label ?? neighbor.recordId.slice(0, 8)}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
           </div>
           <SheetFooter>
             <Button

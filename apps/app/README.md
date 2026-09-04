@@ -10,6 +10,8 @@ docker compose up --build
 
 Opens the console at [http://localhost:8080](http://localhost:8080) with Postgres on host port `5433`.
 
+Uses `pgvector/pgvector:pg16` so semantic search (R9) works locally. Fresh volumes are required if you previously ran stock `postgres:16`.
+
 The app uses `network_mode: service:db` so it can reach Postgres on `127.0.0.1` (ports are published on the `db` service). Local demo mode (`KITSUNE_LOCAL_DEMO=1`) skips WorkOS login and seeds a starter CRM workspace. Set real `WORKOS_*` values and clear `KITSUNE_LOCAL_DEMO` for AuthKit.
 
 ## WorkOS (AuthKit)

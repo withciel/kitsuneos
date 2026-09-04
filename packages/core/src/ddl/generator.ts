@@ -144,6 +144,47 @@ export function generateCollectionDdl(
     `GRANT SELECT, INSERT, UPDATE, DELETE ON ${qSchema}.${qRev} TO kitsune_app;`,
   );
 
+  stmts.push(...generateEmbeddingDdl(schemaName, tableName));
+
+  return stmts;
+}
+
+/** Per-collection embedding table (ADR-004 / R9). */
+export function generateEmbeddingDdl(
+  schemaName: string,
+  tableName: string,
+): string[] {
+  const qSchema = quoteIdent(schemaName);
+  const qEmb = quoteIdent(`${tableName}__emb`);
+  const stmts: string[] = [];
+  stmts.push(`CREATE TABLE IF NOT EXISTS ${qSchema}.${qEmb} (
+  record_id   uuid NOT NULL,
+  field_name  text NOT NULL,
+  chunk_idx   int  NOT NULL,
+  content     text NOT NULL,
+  embedding   vector(1536) NOT NULL,
+  indexed_at  timestamptz NOT NULL,
+  PRIMARY KEY (record_id, field_name, chunk_idx)
+);`);
+  stmts.push(
+    `CREATE INDEX IF NOT EXISTS ${quoteIdent(`${tableName}__emb_hnsw_idx`)} ON ${qSchema}.${qEmb} USING hnsw (embedding vector_cosine_ops);`,
+  );
+  stmts.push(`ALTER TABLE ${qSchema}.${qEmb} ENABLE ROW LEVEL SECURITY;`);
+  stmts.push(`ALTER TABLE ${qSchema}.${qEmb} FORCE ROW LEVEL SECURITY;`);
+  stmts.push(`DROP POLICY IF EXISTS kitsune_app_access ON ${qSchema}.${qEmb};`);
+  stmts.push(`CREATE POLICY kitsune_app_access ON ${qSchema}.${qEmb}
+  TO kitsune_app
+  USING (current_setting('kitsune.schema_name', true) = ${policySchemaLiteral(schemaName)});`);
+  stmts.push(
+    `DROP POLICY IF EXISTS kitsune_owner_bypass ON ${qSchema}.${qEmb};`,
+  );
+  stmts.push(`CREATE POLICY kitsune_owner_bypass ON ${qSchema}.${qEmb}
+  TO kitsune_owner
+  USING (true)
+  WITH CHECK (true);`);
+  stmts.push(
+    `GRANT SELECT, INSERT, UPDATE, DELETE ON ${qSchema}.${qEmb} TO kitsune_app;`,
+  );
   return stmts;
 }
 

@@ -1,9 +1,9 @@
 # KitsuneOS v1 — System Design
 
-**Status:** P0 surfaces implemented (2026-09-02). pgvector / object-storage attachments remain P1.
-**Date:** 2 September 2026
+**Status:** P0 surfaces implemented. R9 semantic search (pgvector) + reference graph are implemented; object-storage attachments remain P1.
+**Date:** 3 September 2026
 **Companion to:** KitsuneOS v1 PRD
-**Scope:** P0 requirements R1–R8, with architectural accommodation for P2 items R14–R17
+**Scope:** P0 requirements R1–R8, R9 search + reference graph; architectural accommodation for P2 items R14–R17
 
 ---
 
@@ -391,7 +391,7 @@ Per PRD Q8: raw SQL is not exposed. It would bypass the compiler, and the compil
 
 ## 8. Search
 
-P1 / unbuilt. ADR-004 still holds for when it is built: pgvector in the same database as the data, with grants applied inside the query.
+R9 is implemented: pgvector in the same database as the data, with grants applied inside the query (ADR-004).
 
 ```sql
 CREATE TABLE ws_abc.opportunities__emb (
@@ -411,7 +411,9 @@ Search joins the embedding table to the base table so the row predicate and fiel
 
 **Filtered ANN strategy.** HNSW recall degrades under selective filters. The compiler estimates the candidate set size from the predicate: below roughly 10,000 rows it performs an exact scan over the filtered set; above that it uses HNSW with an over-fetch factor and verifies against the predicate, iterating if the result set is short.
 
-Embeddings are generated asynchronously. Records carry `indexed_at`, and search results indicate when a record's prose has changed since it was last embedded. Stale-but-honest beats blocking writes on an embedding call.
+Embeddings are generated via an injectable `Embedder` (deterministic hash embedder by default for CI/local; OpenAI optional). Records carry `indexed_at`, and search results indicate when a record's prose has changed since it was last embedded. Stale-but-honest beats blocking writes on an embedding call.
+
+MCP tool: `search`. Reference-graph neighbors: `engine.listRelated` / MCP `read_related`.
 
 ---
 
@@ -429,7 +431,7 @@ Embeddings are generated asynchronously. Records carry `indexed_at`, and search 
 | Embedding vectors | ~3M |
 | Peak read QPS | ~500 aggregate |
 
-**Physical tables** at partner scale assume embeddings exist. Until R9 ships, each collection is two tables (base + `__rev`), not three.
+**Physical tables** at partner scale include embeddings. Each collection is three tables (base + `__rev` + `__emb`).
 
 Comfortably one Postgres instance with a read replica. **Nothing here is a scale problem.** The hard problems at this stage are correctness — authorization leakage and merge semantics — not throughput, and effort should be allocated accordingly.
 

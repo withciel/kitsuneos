@@ -20,3 +20,8 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'kitsune')\gexec
 -- ownership so migrations connecting as kitsune_owner can create schemas.
 ALTER DATABASE kitsune OWNER TO kitsune_owner;
 GRANT CONNECT ON DATABASE kitsune TO kitsune_app;
+
+-- pgvector lives in the same Postgres as records (ADR-004). Requires a
+-- pgvector-enabled image (pgvector/pgvector:pg16). Created as superuser.
+\c kitsune
+CREATE EXTENSION IF NOT EXISTS vector;

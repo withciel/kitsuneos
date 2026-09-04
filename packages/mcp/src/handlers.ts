@@ -42,6 +42,25 @@ export function createMcpHandlers(
       );
     },
 
+    async search(args: {
+      query: string;
+      collections?: string[];
+      limit?: number;
+    }) {
+      const ctx = getContext();
+      return engine.search(ctx.workspaceId, ctx.principalId, args);
+    },
+
+    async read_related(args: { collection: string; recordId: string }) {
+      const ctx = getContext();
+      return engine.listRelated(
+        ctx.workspaceId,
+        ctx.principalId,
+        args.collection,
+        args.recordId,
+      );
+    },
+
     async propose_change_set(args: ProposeChangeSetInput) {
       const ctx = getContext();
       return engine.proposeChangeSet(ctx.workspaceId, ctx.principalId, args);

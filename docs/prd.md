@@ -202,9 +202,9 @@ Console: schema browser, query runner, change-set review queue, grant editor, au
 
 ### P1 — Should have
 
-P1 (R9–R13) is still unbuilt. Do not treat search, rollups, automation, webhooks, or attachments as shipped.
+P1 remaining (R10–R13): rollups, automation, webhooks, attachments. **R9 semantic search is implemented** (pgvector; grants inside the query).
 
-**R9. Semantic search over prose fields.** Embeddings on markdown body fields, with grants applied inside the search rather than as a post-filter, and field masks respected in returned excerpts.
+**R9. Semantic search over prose fields.** Embeddings on prose fields via pgvector in the same database, with grants applied inside the search rather than as a post-filter, and field masks respected in returned excerpts.
 
 **R10. Computed and rollup fields.** Derived values maintained by the platform, e.g. account-level pipeline totals.
 

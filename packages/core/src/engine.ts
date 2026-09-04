@@ -20,6 +20,7 @@ import {
   generateAddFieldDdl,
   generateCollectionDdl,
   generateDropFieldDdl,
+  generateEmbeddingDdl,
   generateSetIndexedDdl,
   generateWorkspaceSchemaDdl,
 } from './ddl/generator.js';
@@ -34,6 +35,14 @@ import {
   validateCollectionDefinition,
   validateFieldDefinition,
 } from './schema/validate-definition.js';
+import { DeterministicEmbedder, type Embedder } from './search/embedder.js';
+import { listRelatedRecords, type RelatedResult } from './search/related.js';
+import {
+  type SearchRequest,
+  type SearchResult,
+  searchCollections,
+  upsertRecordEmbeddings,
+} from './search/search.js';
 import type {
   AuditQuery,
   AuditRow,
@@ -66,6 +75,10 @@ export interface EngineOptions {
   applyFaultInjection?: ApplyFaultInjection | null;
   appPoolMax?: number;
   ownerPoolMax?: number;
+  /** Defaults to DeterministicEmbedder (no API keys required). */
+  embedder?: Embedder;
+  /** When true (default), reindex prose embeddings in-process after writes. */
+  embedSync?: boolean;
 }
 
 interface ApplyOp {
@@ -113,6 +126,8 @@ export class KitsuneEngine {
   readonly ownerPool: Pool;
   readonly appPool: Pool;
   applyFaultInjection: ApplyFaultInjection | null = null;
+  readonly embedder: Embedder;
+  readonly embedSync: boolean;
 
   constructor(options: EngineOptions = {}) {
     const config = options.config ?? DEFAULT_CONFIG;
@@ -123,6 +138,8 @@ export class KitsuneEngine {
     this.ownerPool = pools.ownerPool;
     this.appPool = pools.appPool;
     this.applyFaultInjection = options.applyFaultInjection ?? null;
+    this.embedder = options.embedder ?? new DeterministicEmbedder();
+    this.embedSync = options.embedSync ?? true;
   }
 
   async close(): Promise<void> {
@@ -534,6 +551,150 @@ export class KitsuneEngine {
     } finally {
       client.release();
     }
+  }
+
+  async search(
+    workspaceId: string,
+    principalId: string,
+    request: SearchRequest,
+  ): Promise<SearchResult> {
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, { schemaName, principalId });
+      const result = await searchCollections(
+        client,
+        workspaceId,
+        principalId,
+        schemaName,
+        this.embedder,
+        request,
+      );
+      await writeAuditInTxn(client, {
+        workspaceId,
+        principalId,
+        action: 'search',
+        outcome: 'allowed',
+        detail: {
+          collections: request.collections ?? null,
+          hitCount: result.hits.length,
+        },
+      });
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listRelated(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    recordId: string,
+  ): Promise<RelatedResult> {
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, { schemaName, principalId });
+      const result = await listRelatedRecords(
+        client,
+        workspaceId,
+        principalId,
+        schemaName,
+        collection,
+        recordId,
+      );
+      await writeAuditInTxn(client, {
+        workspaceId,
+        principalId,
+        action: 'list_related',
+        recordIds: [recordId],
+        outcome: 'allowed',
+        detail: { collection },
+      });
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Reindex prose embeddings for one record. Safe to call on collections created before R9. */
+  async reindexRecord(
+    workspaceId: string,
+    collection: string,
+    recordId: string,
+  ): Promise<void> {
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    await withOwner(this.ownerPool, async (owner) => {
+      const meta = await getCollectionMeta(owner, workspaceId, collection);
+      for (const stmt of generateEmbeddingDdl(schemaName, meta.tableName)) {
+        await owner.query(stmt);
+      }
+      const proseNames = meta.fieldMeta
+        .filter((f) => f.type === 'prose')
+        .map((f) => f.name);
+      if (proseNames.length === 0) {
+        await upsertRecordEmbeddings(
+          owner,
+          schemaName,
+          meta.tableName,
+          recordId,
+          [],
+          this.embedder,
+        );
+        return;
+      }
+      const cols = proseNames.map((n) => quoteIdent(n)).join(', ');
+      const row = await queryOne<Record<string, unknown>>(
+        owner,
+        `SELECT ${cols} FROM ${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)}
+         WHERE id = $1 AND _deleted_at IS NULL`,
+        [recordId],
+      );
+      const fields: Array<{ name: string; content: string }> = [];
+      if (row) {
+        for (const name of proseNames) {
+          const value = row[name];
+          if (typeof value === 'string' && value.trim()) {
+            fields.push({ name, content: value });
+          }
+        }
+      }
+      await upsertRecordEmbeddings(
+        owner,
+        schemaName,
+        meta.tableName,
+        recordId,
+        fields,
+        this.embedder,
+      );
+    });
+  }
+
+  private async maybeReindexAfterWrite(
+    workspaceId: string,
+    collection: string,
+    recordId: string,
+  ): Promise<void> {
+    if (!this.embedSync) return;
+    const client = await this.appPool.connect();
+    try {
+      const meta = await getCollectionMeta(client, workspaceId, collection);
+      if (!meta.fieldMeta.some((f) => f.type === 'prose')) return;
+    } finally {
+      client.release();
+    }
+    await this.reindexRecord(workspaceId, collection, recordId);
   }
 
   /**
@@ -1143,7 +1304,31 @@ export class KitsuneEngine {
         outcome: 'allowed',
         detail: { changeSetId },
       });
+      const reindexTargets = new Map<string, string>();
+      for (const op of approvedOps) {
+        if (op.record_id && op.collection_name) {
+          reindexTargets.set(
+            `${op.collection_name}:${op.record_id}`,
+            op.collection_name,
+          );
+        }
+      }
       await client.query('COMMIT');
+      for (const [key, collectionName] of reindexTargets) {
+        const recordId = key.slice(collectionName.length + 1);
+        try {
+          await this.maybeReindexAfterWrite(
+            workspaceId,
+            collectionName,
+            recordId,
+          );
+        } catch (reindexError) {
+          console.error(
+            'Embedding reindex failed after applyChangeSet',
+            reindexError,
+          );
+        }
+      }
       return { status: 'applied' };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -1259,12 +1444,21 @@ export class KitsuneEngine {
         outcome: 'allowed',
       });
       await client.query('COMMIT');
-      return recordId;
+      const recordIdOut = recordId;
+      client.release();
+      try {
+        await this.maybeReindexAfterWrite(workspaceId, collection, recordIdOut);
+      } catch (reindexError) {
+        console.error(
+          'Embedding reindex failed after directWrite',
+          reindexError,
+        );
+      }
+      return recordIdOut;
     } catch (error) {
       await client.query('ROLLBACK');
-      throw error;
-    } finally {
       client.release();
+      throw error;
     }
   }
 

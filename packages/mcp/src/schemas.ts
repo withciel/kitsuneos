@@ -202,6 +202,38 @@ const defineCollectionSchema = {
   },
 } as const;
 
+const searchSchema = {
+  type: 'object',
+  required: ['query'],
+  properties: {
+    query: {
+      type: 'string',
+      description: 'Natural-language search over prose fields you can read.',
+    },
+    collections: {
+      type: 'array',
+      items: { type: 'string' },
+      description:
+        'Limit search to these collections. Omit to search every collection your grant allows.',
+    },
+    limit: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 50,
+      description: 'Max hits to return (default 10).',
+    },
+  },
+} as const;
+
+const readRelatedSchema = {
+  type: 'object',
+  required: ['collection', 'recordId'],
+  properties: {
+    collection: { type: 'string' },
+    recordId: { type: 'string', description: 'Record uuid.' },
+  },
+} as const;
+
 export const TOOL_DEFINITIONS = [
   {
     name: 'describe_schema',
@@ -220,6 +252,18 @@ export const TOOL_DEFINITIONS = [
     description:
       'Read one record by id. Returns null when the record does not exist or your grant excludes it, which are deliberately indistinguishable.',
     inputSchema: readRecordSchema,
+  },
+  {
+    name: 'search',
+    description:
+      'Semantic search over prose fields. Grants (field masks and row predicates) are applied inside the query — masked fields never appear in excerpts, and denied collections are omitted entirely.',
+    inputSchema: searchSchema,
+  },
+  {
+    name: 'read_related',
+    description:
+      'List outgoing and incoming relation neighbors of a record that you are allowed to see. Invisible targets are omitted.',
+    inputSchema: readRelatedSchema,
   },
   {
     name: 'propose_change_set',
