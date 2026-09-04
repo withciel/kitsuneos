@@ -66,8 +66,8 @@ docker build \
 docker push "$IMAGE_TAG"
 docker push "${ECR_URL}:latest"
 
-pulumi config set kitsuneos:deployApp true
-pulumi up --yes
+pulumi config set kitsuneos:deployApp true -s "$STACK"
+pulumi up --yes -s "$STACK"
 
 if [[ "${SKIP_LOCAL_MIGRATE:-0}" == "1" ]]; then
   echo "Skipping local migrate; container entrypoint runs bootstrap + migrate"
