@@ -67,6 +67,13 @@ docker push "$IMAGE_TAG"
 docker push "${ECR_URL}:latest"
 
 pulumi config set kitsuneos:deployApp true -s "$STACK"
+# App CD must not fail when the AWS account still cannot create CloudFront
+# distributions (account verification). Keep site CDN only once a dist exists.
+SITE_DIST=$(pulumi stack output siteDistributionId -s "$STACK" 2>/dev/null || true)
+if [[ -z "${SITE_DIST}" ]]; then
+  echo "siteDistributionId empty — setting kitsuneos:deploySiteCdn=false for this app update"
+  pulumi config set kitsuneos:deploySiteCdn false -s "$STACK"
+fi
 pulumi up --yes -s "$STACK"
 
 if [[ "${SKIP_LOCAL_MIGRATE:-0}" == "1" ]]; then

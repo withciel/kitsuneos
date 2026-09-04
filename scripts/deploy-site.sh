@@ -27,7 +27,17 @@ if [[ ! -d node_modules ]]; then
 fi
 
 pulumi config set kitsuneos:deploySiteCdn true -s "$STACK"
-pulumi up --yes -s "$STACK"
+if ! pulumi up --yes -s "$STACK"; then
+  echo "Pulumi up failed while enabling S3 + CloudFront." >&2
+  echo "If the error is CloudFront AccessDenied / account must be verified:" >&2
+  echo "  1. Open https://console.aws.amazon.com/support/home#/" >&2
+  echo "  2. Create a case: Account and billing → Service limit / CloudFront" >&2
+  echo "  3. Ask AWS to verify account ${AWS_ACCOUNT_ID:-244546635833} for CloudFront CreateDistribution" >&2
+  echo "  4. Re-run this script (or CD site job) after AWS confirms." >&2
+  # Roll back the stack flag so app CD is not blocked by a half-enabled site CDN.
+  pulumi config set kitsuneos:deploySiteCdn false -s "$STACK" || true
+  exit 1
+fi
 
 BUCKET=$(pulumi stack output siteBucketName -s "$STACK")
 DIST_ID=$(pulumi stack output siteDistributionId -s "$STACK")
