@@ -1,3 +1,13 @@
+export type { BlobStore } from './attachments/blob-store.js';
+export {
+  createDefaultBlobStore,
+  LocalFilesystemBlobStore,
+  sha256Hex,
+} from './attachments/blob-store.js';
+export type {
+  AttachmentMeta,
+  PutAttachmentInput,
+} from './attachments/types.js';
 export type { ResolvedApiKey } from './auth/api-keys.js';
 export {
   apiKeyDisplayPrefix,

@@ -80,6 +80,36 @@ export function createMcpHandlers(
       return engine.ingest(ctx.workspaceId, ctx.principalId, args);
     },
 
+    async put_attachment(args: {
+      collection: string;
+      recordId: string;
+      fieldName: string;
+      contentType: string;
+      contentBase64: string;
+      fileName?: string;
+    }) {
+      const ctx = getContext();
+      return engine.putAttachment(ctx.workspaceId, ctx.principalId, args);
+    },
+
+    async list_attachments(args: {
+      collection: string;
+      recordId: string;
+      fieldName?: string;
+    }) {
+      const ctx = getContext();
+      return engine.listAttachments(ctx.workspaceId, ctx.principalId, args);
+    },
+
+    async get_attachment(args: { attachmentId: string }) {
+      const ctx = getContext();
+      return engine.getAttachment(
+        ctx.workspaceId,
+        ctx.principalId,
+        args.attachmentId,
+      );
+    },
+
     async propose_change_set(args: ProposeChangeSetInput) {
       const ctx = getContext();
       return engine.proposeChangeSet(ctx.workspaceId, ctx.principalId, args);

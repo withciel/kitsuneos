@@ -319,6 +319,65 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'put_attachment',
+    description:
+      'Upload a binary attachment for a record field. Blobs are content-addressed in object storage; metadata stays in Postgres. Requires write/admin and the field in your grant. Does not store primary records in object storage.',
+    inputSchema: {
+      type: 'object',
+      required: [
+        'collection',
+        'recordId',
+        'fieldName',
+        'contentType',
+        'contentBase64',
+      ],
+      properties: {
+        collection: { type: 'string' },
+        recordId: { type: 'string' },
+        fieldName: {
+          type: 'string',
+          description:
+            'Field this attachment is associated with (grant-checked).',
+        },
+        contentType: { type: 'string' },
+        contentBase64: {
+          type: 'string',
+          description: 'File bytes as base64.',
+        },
+        fileName: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'list_attachments',
+    description:
+      'List attachment metadata for a record. Only attachments whose field is in your grant are returned. Does not include blob bytes.',
+    inputSchema: {
+      type: 'object',
+      required: ['collection', 'recordId'],
+      properties: {
+        collection: { type: 'string' },
+        recordId: { type: 'string' },
+        fieldName: {
+          type: 'string',
+          description: 'Optional filter to one field.',
+        },
+      },
+    },
+  },
+  {
+    name: 'get_attachment',
+    description:
+      'Download an attachment (metadata + base64 bytes) if you can read the parent record and field. Denied/missing are indistinguishable (null).',
+    inputSchema: {
+      type: 'object',
+      required: ['attachmentId'],
+      properties: {
+        attachmentId: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'propose_change_set',
     description:
       'Propose a change instead of writing it. Every operation names a single field. The change set enters a review queue and lands only after a human approves it. Proposing a field outside your grant fails immediately with an error naming the field.',

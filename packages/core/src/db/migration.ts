@@ -218,4 +218,26 @@ CREATE INDEX IF NOT EXISTS audit_log_workspace_principal_at_idx
   ON kitsune.audit_log (workspace_id, principal_id, at DESC);
 CREATE INDEX IF NOT EXISTS audit_log_workspace_collection_at_idx
   ON kitsune.audit_log (workspace_id, collection_id, at DESC);
+
+-- Content-addressed attachment metadata (blobs live in object storage / local dir).
+CREATE TABLE IF NOT EXISTS kitsune.attachments (
+  id             uuid PRIMARY KEY,
+  workspace_id   uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  collection_id  uuid NOT NULL REFERENCES kitsune.collections(id),
+  record_id      uuid NOT NULL,
+  field_name     text NOT NULL,
+  content_hash   text NOT NULL,
+  content_type   text NOT NULL,
+  byte_size      bigint NOT NULL,
+  file_name      text,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  created_by     uuid NOT NULL REFERENCES kitsune.principals(id)
+);
+
+CREATE INDEX IF NOT EXISTS attachments_workspace_record_idx
+  ON kitsune.attachments (workspace_id, collection_id, record_id);
+CREATE UNIQUE INDEX IF NOT EXISTS attachments_dedupe_idx
+  ON kitsune.attachments (workspace_id, collection_id, record_id, field_name, content_hash);
+
+GRANT SELECT, INSERT, UPDATE ON kitsune.attachments TO kitsune_app;
 `;

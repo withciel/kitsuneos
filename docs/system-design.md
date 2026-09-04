@@ -1,6 +1,6 @@
 # KitsuneOS v1 — System Design
 
-**Status:** P0 surfaces implemented. R9 semantic search (pgvector) + reference graph are implemented; object-storage attachments remain P1.
+**Status:** P0 surfaces implemented. R9 semantic search (pgvector), reference graph, VFS, ingest, and R13 attachments (content-addressed blob store) are implemented.
 **Date:** 3 September 2026
 **Companion to:** KitsuneOS v1 PRD
 **Scope:** P0 requirements R1–R8, R9 search + reference graph; architectural accommodation for P2 items R14–R17

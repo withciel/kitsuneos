@@ -202,7 +202,7 @@ Console: schema browser, query runner, change-set review queue, grant editor, au
 
 ### P1 — Should have
 
-P1 remaining (R10–R13): rollups, automation, webhooks, attachments. **R9 semantic search is implemented** (pgvector; grants inside the query).
+P1 remaining (R10–R12): rollups, automation, webhooks. **R9 semantic search** and **R13 attachments** are implemented (pgvector; content-addressed blobs with grant-gated metadata/download).
 
 **R9. Semantic search over prose fields.** Embeddings on prose fields via pgvector in the same database, with grants applied inside the search rather than as a post-filter, and field masks respected in returned excerpts.
 
@@ -212,7 +212,7 @@ P1 remaining (R10–R13): rollups, automation, webhooks, attachments. **R9 seman
 
 **R12. Webhooks and change streams.** Subscribe to applied change sets for downstream sync.
 
-**R13. Attachments.** Binary blobs in object storage, referenced by content hash from a record field.
+**R13. Attachments.** Binary blobs in object storage (local filesystem store by default; S3/R2-compatible store pluggable), referenced by content hash from a record field. Grants apply to metadata listing and download; primary records stay in Postgres.
 
 ### P2 — Future considerations (design for, do not build)
 

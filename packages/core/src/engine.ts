@@ -1,5 +1,14 @@
 import type { Pool, PoolClient } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  type BlobStore,
+  createDefaultBlobStore,
+  sha256Hex,
+} from './attachments/blob-store.js';
+import type {
+  AttachmentMeta,
+  PutAttachmentInput,
+} from './attachments/types.js';
 import { writeAudit, writeAuditInTxn } from './audit/log.js';
 import { assertWriteEntitlement } from './billing/entitlement.js';
 import { compilePredicate } from './compiler/predicate-sql.js';
@@ -88,6 +97,8 @@ export interface EngineOptions {
   embedder?: Embedder;
   /** When true (default), reindex prose embeddings in-process after writes. */
   embedSync?: boolean;
+  /** Content-addressed blob store for attachments (local dir by default). */
+  blobStore?: BlobStore;
 }
 
 interface ApplyOp {
@@ -137,6 +148,7 @@ export class KitsuneEngine {
   applyFaultInjection: ApplyFaultInjection | null = null;
   readonly embedder: Embedder;
   readonly embedSync: boolean;
+  readonly blobStore: BlobStore;
 
   constructor(options: EngineOptions = {}) {
     const config = options.config ?? DEFAULT_CONFIG;
@@ -149,6 +161,7 @@ export class KitsuneEngine {
     this.applyFaultInjection = options.applyFaultInjection ?? null;
     this.embedder = options.embedder ?? new DeterministicEmbedder();
     this.embedSync = options.embedSync ?? true;
+    this.blobStore = options.blobStore ?? createDefaultBlobStore();
   }
 
   async close(): Promise<void> {
@@ -952,6 +965,382 @@ export class KitsuneEngine {
     }
 
     return result;
+  }
+
+  /**
+   * Store a binary blob in object storage and attach metadata to a record field.
+   * Records stay in Postgres; blobs are content-addressed. Requires write/admin
+   * and a field mask that includes `fieldName`.
+   */
+  async putAttachment(
+    workspaceId: string,
+    principalId: string,
+    input: PutAttachmentInput,
+  ): Promise<AttachmentMeta> {
+    if (!input.collection || !input.recordId || !input.fieldName) {
+      throw new KitsuneError(
+        'collection, recordId, and fieldName are required',
+        'validation',
+      );
+    }
+    if (!UUID_PATTERN.test(input.recordId)) {
+      throw new KitsuneError('recordId must be a UUID', 'validation');
+    }
+    if (!input.contentBase64) {
+      throw new KitsuneError('contentBase64 is required', 'validation');
+    }
+    let bytes: Buffer;
+    try {
+      bytes = Buffer.from(input.contentBase64, 'base64');
+    } catch {
+      throw new KitsuneError('contentBase64 is invalid', 'validation');
+    }
+    if (bytes.length === 0) {
+      throw new KitsuneError(
+        'attachment content must be non-empty',
+        'validation',
+      );
+    }
+    const contentType = input.contentType?.trim() || 'application/octet-stream';
+    const contentHash = sha256Hex(bytes);
+
+    const visible = await this.readRecord(
+      workspaceId,
+      principalId,
+      input.collection,
+      input.recordId,
+    );
+    if (!visible) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, { schemaName, principalId });
+      const meta = await getCollectionMeta(
+        client,
+        workspaceId,
+        input.collection,
+      );
+      if (!meta.fields.includes(input.fieldName)) {
+        throw new KitsuneError(
+          `Unknown field: ${input.fieldName}`,
+          'validation',
+        );
+      }
+      const grant = await loadResolvedGrant(client, principalId, meta.id);
+      if (
+        !grant ||
+        CAPABILITY_ORDER.indexOf(grant.capability) <
+          CAPABILITY_ORDER.indexOf('write')
+      ) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      assertFieldAllowed(grant, input.fieldName, 'write');
+
+      // Write blob before metadata so a failed insert never points at missing bytes.
+      await this.blobStore.put(contentHash, bytes);
+
+      const attachmentId = uuidv4();
+      const inserted = await client.query<{
+        id: string;
+        collection_id: string;
+        record_id: string;
+        field_name: string;
+        content_hash: string;
+        content_type: string;
+        byte_size: string;
+        file_name: string | null;
+        created_at: Date;
+      }>(
+        `INSERT INTO kitsune.attachments (
+           id, workspace_id, collection_id, record_id, field_name,
+           content_hash, content_type, byte_size, file_name, created_by
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (workspace_id, collection_id, record_id, field_name, content_hash)
+         DO NOTHING
+         RETURNING id, collection_id, record_id, field_name, content_hash,
+                   content_type, byte_size::text, file_name, created_at`,
+        [
+          attachmentId,
+          workspaceId,
+          meta.id,
+          input.recordId,
+          input.fieldName,
+          contentHash,
+          contentType,
+          bytes.length,
+          input.fileName ?? null,
+          principalId,
+        ],
+      );
+
+      let row = inserted.rows[0];
+      if (!row) {
+        const existing = await client.query<{
+          id: string;
+          collection_id: string;
+          record_id: string;
+          field_name: string;
+          content_hash: string;
+          content_type: string;
+          byte_size: string;
+          file_name: string | null;
+          created_at: Date;
+        }>(
+          `SELECT id, collection_id, record_id, field_name, content_hash,
+                  content_type, byte_size::text, file_name, created_at
+           FROM kitsune.attachments
+           WHERE workspace_id = $1 AND collection_id = $2 AND record_id = $3
+             AND field_name = $4 AND content_hash = $5`,
+          [workspaceId, meta.id, input.recordId, input.fieldName, contentHash],
+        );
+        row = existing.rows[0];
+      }
+      if (!row) {
+        throw new KitsuneError('Attachment insert failed', 'internal');
+      }
+
+      await writeAuditInTxn(client, {
+        workspaceId,
+        principalId,
+        action: 'put_attachment',
+        collectionId: meta.id,
+        recordIds: [input.recordId],
+        fieldNames: [input.fieldName],
+        outcome: 'allowed',
+        detail: { attachmentId: row.id, contentHash },
+      });
+      await client.query('COMMIT');
+      return {
+        id: row.id,
+        collection: input.collection,
+        recordId: row.record_id,
+        fieldName: row.field_name,
+        contentHash: row.content_hash,
+        contentType: row.content_type,
+        byteSize: Number(row.byte_size),
+        fileName: row.file_name,
+        createdAt: row.created_at.toISOString(),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listAttachments(
+    workspaceId: string,
+    principalId: string,
+    input: { collection: string; recordId: string; fieldName?: string },
+  ): Promise<AttachmentMeta[]> {
+    if (!UUID_PATTERN.test(input.recordId)) {
+      throw new KitsuneError('recordId must be a UUID', 'validation');
+    }
+
+    const visible = await this.readRecord(
+      workspaceId,
+      principalId,
+      input.collection,
+      input.recordId,
+    );
+    if (!visible) {
+      return [];
+    }
+
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, { schemaName, principalId });
+      const meta = await getCollectionMeta(
+        client,
+        workspaceId,
+        input.collection,
+      );
+      const grant = await loadResolvedGrant(client, principalId, meta.id);
+      if (
+        !grant ||
+        CAPABILITY_ORDER.indexOf(grant.capability) <
+          CAPABILITY_ORDER.indexOf('read')
+      ) {
+        await client.query('ROLLBACK');
+        return [];
+      }
+
+      const result = await client.query<{
+        id: string;
+        record_id: string;
+        field_name: string;
+        content_hash: string;
+        content_type: string;
+        byte_size: string;
+        file_name: string | null;
+        created_at: Date;
+      }>(
+        `SELECT id, record_id, field_name, content_hash, content_type,
+                byte_size::text, file_name, created_at
+         FROM kitsune.attachments
+         WHERE workspace_id = $1 AND collection_id = $2 AND record_id = $3
+         ORDER BY created_at ASC`,
+        [workspaceId, meta.id, input.recordId],
+      );
+      await client.query('COMMIT');
+
+      return result.rows
+        .filter((row) => {
+          if (input.fieldName && row.field_name !== input.fieldName) {
+            return false;
+          }
+          try {
+            assertFieldAllowed(grant, row.field_name, 'read');
+            return true;
+          } catch {
+            return false;
+          }
+        })
+        .map((row) => ({
+          id: row.id,
+          collection: input.collection,
+          recordId: row.record_id,
+          fieldName: row.field_name,
+          contentHash: row.content_hash,
+          contentType: row.content_type,
+          byteSize: Number(row.byte_size),
+          fileName: row.file_name,
+          createdAt: row.created_at.toISOString(),
+        }));
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Fetch attachment metadata + bytes. Returns null when the attachment is
+   * missing or the caller cannot read the parent record/field (indistinguishable).
+   * Download access is grant-gated here — no unsigned public blob URLs.
+   */
+  async getAttachment(
+    workspaceId: string,
+    principalId: string,
+    attachmentId: string,
+  ): Promise<{ meta: AttachmentMeta; contentBase64: string } | null> {
+    if (!UUID_PATTERN.test(attachmentId)) {
+      throw new KitsuneError('attachmentId must be a UUID', 'validation');
+    }
+
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    let metaRow: {
+      id: string;
+      collection_id: string;
+      record_id: string;
+      field_name: string;
+      content_hash: string;
+      content_type: string;
+      byte_size: string;
+      file_name: string | null;
+      created_at: Date;
+      collection_name: string;
+    } | null = null;
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, { schemaName, principalId });
+      const result = await client.query<{
+        id: string;
+        collection_id: string;
+        record_id: string;
+        field_name: string;
+        content_hash: string;
+        content_type: string;
+        byte_size: string;
+        file_name: string | null;
+        created_at: Date;
+        collection_name: string;
+      }>(
+        `SELECT a.id, a.collection_id, a.record_id, a.field_name, a.content_hash,
+                a.content_type, a.byte_size::text, a.file_name, a.created_at,
+                c.name AS collection_name
+         FROM kitsune.attachments a
+         JOIN kitsune.collections c ON c.id = a.collection_id
+         WHERE a.id = $1 AND a.workspace_id = $2`,
+        [attachmentId, workspaceId],
+      );
+      metaRow = result.rows[0] ?? null;
+      if (!metaRow) {
+        await client.query('COMMIT');
+        return null;
+      }
+
+      const grant = await loadResolvedGrant(
+        client,
+        principalId,
+        metaRow.collection_id,
+      );
+      if (
+        !grant ||
+        CAPABILITY_ORDER.indexOf(grant.capability) <
+          CAPABILITY_ORDER.indexOf('read')
+      ) {
+        await client.query('COMMIT');
+        return null;
+      }
+      try {
+        assertFieldAllowed(grant, metaRow.field_name, 'read');
+      } catch {
+        await client.query('COMMIT');
+        return null;
+      }
+      await writeAuditInTxn(client, {
+        workspaceId,
+        principalId,
+        action: 'get_attachment',
+        collectionId: metaRow.collection_id,
+        recordIds: [metaRow.record_id],
+        fieldNames: [metaRow.field_name],
+        outcome: 'allowed',
+        detail: { attachmentId },
+      });
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    if (!metaRow) return null;
+
+    const visible = await this.readRecord(
+      workspaceId,
+      principalId,
+      metaRow.collection_name,
+      metaRow.record_id,
+    );
+    if (!visible) return null;
+
+    const bytes = await this.blobStore.get(metaRow.content_hash);
+    return {
+      meta: {
+        id: metaRow.id,
+        collection: metaRow.collection_name,
+        recordId: metaRow.record_id,
+        fieldName: metaRow.field_name,
+        contentHash: metaRow.content_hash,
+        contentType: metaRow.content_type,
+        byteSize: Number(metaRow.byte_size),
+        fileName: metaRow.file_name,
+        createdAt: metaRow.created_at.toISOString(),
+      },
+      contentBase64: bytes.toString('base64'),
+    };
   }
 
   /** Reindex prose embeddings for one record. Safe to call on collections created before R9. */

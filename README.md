@@ -239,7 +239,7 @@ disclosed here rather than hidden: there is no other way to prove atomicity on t
   and REST. Permissions are still enforced *given* a principal.
 - **Local preview is not a production self-host.** No security audit has been performed. Do not put
   production data in a quickstart database.
-- **No semantic search and no attachments.**
+- **Semantic search (pgvector) and attachments (content-addressed blob store) are implemented.**
 - **Schema evolution is add / drop / index only.** `addField`, `dropField`, and `setIndexed` are
   versioned and reversible. There is no supported retype or rename. Changing a field's type still
   means recreating the collection.

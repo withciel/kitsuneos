@@ -27,6 +27,12 @@ export async function invokeMcpTool(
       return handlers.read(args as never);
     case 'ingest':
       return handlers.ingest(args as never);
+    case 'put_attachment':
+      return handlers.put_attachment(args as never);
+    case 'list_attachments':
+      return handlers.list_attachments(args as never);
+    case 'get_attachment':
+      return handlers.get_attachment(args as never);
     case 'propose_change_set':
       return handlers.propose_change_set(args as never);
     case 'read_change_set_feedback':

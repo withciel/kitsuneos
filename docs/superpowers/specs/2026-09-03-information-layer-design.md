@@ -146,7 +146,7 @@ Shared `ingest(workspaceId, principalId, { collection, records, mode })` → pro
 
 ### Attachments
 
-Content-addressed blobs in R2/S3; metadata on records; grants on metadata + signed download URLs. Records stay in Postgres.
+Content-addressed blobs via `BlobStore` (local dir by default under `KITSUNE_BLOB_DIR`; S3/R2 can plug the same interface). Metadata in `kitsune.attachments`. Engine: `putAttachment` / `listAttachments` / `getAttachment`. MCP: `put_attachment`, `list_attachments`, `get_attachment`. Field grants gate metadata and download; records stay in Postgres.
 
 ---
 
