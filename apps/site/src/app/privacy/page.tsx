@@ -17,14 +17,13 @@ export default function PrivacyPage() {
       <h2>What we store</h2>
       <ul>
         <li>Account identity via WorkOS (email, WorkOS user id)</li>
+        <li>Workspace content you create and keep in KitsuneOS</li>
         <li>
-          Workspace data you create (collections, records, change sets, audit
-          log)
+          Secret hashes for access credentials (never shown again in full)
         </li>
-        <li>API key hashes (never plaintext after initial display)</li>
         <li>
           Billing status when you subscribe via Dodo Payments (subscription id,
-          status, and plan metadata — not full card numbers)
+          status, and plan details — not full card numbers)
         </li>
       </ul>
 
@@ -40,18 +39,18 @@ export default function PrivacyPage() {
       <p>
         You may request account and workspace deletion by emailing{' '}
         <a href="mailto:support@kitsuneos.com">support@kitsuneos.com</a>. We
-        will confirm by reply before purging data.
+        will confirm by reply before removing data.
       </p>
 
       <h2>Subprocessors</h2>
       <ul>
         <li>WorkOS — authentication</li>
         <li>Dodo Payments — billing</li>
-        <li>Amazon Web Services — hosting (RDS, App Runner, S3, CloudFront)</li>
+        <li>Amazon Web Services — hosting</li>
       </ul>
 
       <p>
-        <Link href="/">Back to home</Link>
+        <Link href="/">← Back home</Link>
       </p>
     </main>
   );

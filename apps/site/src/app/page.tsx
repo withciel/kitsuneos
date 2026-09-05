@@ -1,203 +1,96 @@
-import {
-  acceptanceTestsUrl,
-  gate0bTestsUrl,
-  githubUrl,
-  signInUrl,
-  signUpUrl,
-} from '@/lib/urls';
+import { contactMailto, earlyAccessMailto } from '@/lib/urls';
 
 export default function LandingPage() {
   return (
     <main>
       <section className="hero" aria-labelledby="hero-heading">
-        <p className="eyebrow">Knowledge warehouse · not an operating system</p>
-        <h1 id="hero-heading">
-          The governed store of company knowledge agents write into
-        </h1>
-        <p className="hero-lede">
-          KitsuneOS is a knowledge warehouse for AI-native companies: entities,
-          records, policies, and agent-writable fields live here with grants,
-          change sets, and attributed history — so nothing lands in Postgres or
-          internal systems without human review.
-        </p>
-        <div className="hero-actions">
-          <a className="cta cta-primary" href={signUpUrl}>
-            Start free
-          </a>
-          <a className="cta cta-secondary" href="#proof">
-            Watch demo
-          </a>
-          <a className="text-link" href={signInUrl}>
-            Sign in
-          </a>
+        <div className="hero-copy">
+          <h1 id="hero-heading">Everything your team knows, close at hand.</h1>
+          <p className="hero-lede">
+            Stop hunting for what you already decided. KitsuneOS is where your
+            company’s knowing lives — gathered, remembered, ready.
+          </p>
+          <div className="hero-actions">
+            <a className="cta cta-primary" href={earlyAccessMailto}>
+              Join early access
+            </a>
+            <a className="cta cta-secondary" href={contactMailto}>
+              Contact
+            </a>
+          </div>
         </div>
-      </section>
 
-      <nav className="page-nav" aria-label="On this page">
-        <a href="#audience">Who it&apos;s for</a>
-        <a href="#how">How it works</a>
-        <a href="#trust">Security</a>
-        <a href="#proof">Proof</a>
-        <a href="#pricing">Pricing</a>
-        <a href="#limitations">Limits</a>
-      </nav>
-
-      <section className="band" id="audience">
-        <h2>Who it&apos;s for</h2>
-        <p>
-          Founders, engineering leads, and AI platform owners at companies
-          running agents against real business data — CRM fields, support
-          policies, operational records, and anything else agents should
-          propose, not push straight into production databases.
-        </p>
-        <h3>What lives in the warehouse</h3>
-        <ul>
-          <li>
-            <strong>Entities &amp; records</strong> — relational collections
-            your agents read and propose updates to
-          </li>
-          <li>
-            <strong>Policies &amp; grants</strong> — field masks and row
-            predicates per principal (human or agent)
-          </li>
-          <li>
-            <strong>Change sets</strong> — staged mutations awaiting review
-          </li>
-          <li>
-            <strong>Revision history</strong> — every applied write attributed
-            to the acting principal
-          </li>
-        </ul>
-      </section>
-
-      <section className="band" id="how">
-        <h2>How it works</h2>
-        <ol className="steps">
-          <li>
-            <strong>Propose</strong> — agents (or humans) submit field-level
-            change sets through MCP; grants decide what they can touch
-          </li>
-          <li>
-            <strong>Review</strong> — your team inspects the diff in the inbox;
-            rejected fields never apply
-          </li>
-          <li>
-            <strong>Apply</strong> — approved changes land atomically as a
-            change set
-          </li>
-          <li>
-            <strong>History</strong> — revisions record who acted, including
-            agent principals
-          </li>
-        </ol>
-        <p>
-          Compared with raw Postgres or a RAG dump: permissions live on the
-          data, writes are reviewable by default, and provenance is built in —
-          not bolted on after an incident.
-        </p>
-      </section>
-
-      <section className="band" id="trust">
-        <h2>Security &amp; trust</h2>
-        <p>
-          Built by{' '}
-          <a href="https://withciel.com" rel="noopener noreferrer">
-            Ciel
-          </a>
-          . KitsuneOS powers Ciel&apos;s own agent workflows today; the hosted
-          product is in <a href="/terms/">early access</a> — use it for
-          evaluation and non-production workloads until we announce general
-          availability (see <a href="/terms/">Terms</a>).
-        </p>
-        <ul>
-          <li>
-            Workspaces are isolated; cross-tenant access returns{' '}
-            <em>not found</em>, never a distinguishable forbidden
-          </li>
-          <li>
-            Auth via WorkOS; billing via Dodo Payments; hosted on AWS (RDS, App
-            Runner, S3, CloudFront)
-          </li>
-          <li>
-            <a href={acceptanceTestsUrl}>110+ acceptance tests</a> in the{' '}
-            <a href={githubUrl}>KitsuneOS repository</a>
-          </li>
-          <li>
-            Cross-tenant isolation covered by{' '}
-            <a href={gate0bTestsUrl}>Gate 0b tests</a> in the acceptance suite
-            (named isolation scenarios, including HTTP MCP)
-          </li>
-        </ul>
-      </section>
-
-      <section className="band" id="proof">
-        <h2>Proof</h2>
-        <p>
-          Thirty-second walkthrough: an agent proposes <code>next_step</code>,
-          <code>amount</code> is rejected by grants, a human approves in the
-          inbox, and history shows agent attribution.
-        </p>
-        <div className="proof-frame">
+        <div className="hero-media">
           <video
-            className="proof-video"
-            controls
+            className="hero-video"
+            autoPlay
+            muted
+            loop
+            playsInline
             preload="metadata"
-            poster="/proof-poster.svg"
-            width={960}
-            height={540}
-            aria-label="Demo: agent proposes next_step, amount rejected, human approves, history shows attribution"
+            poster="/kitsune-agents-ad-poster.jpg"
+            width={1280}
+            height={720}
+            aria-label="Product ad: helpers quietly bring knowing home, it gathers in one calm place, stays ready when you need it"
           >
-            <source src="/proof-demo.mp4" type="video/mp4" />
-            <track
-              kind="captions"
-              src="/proof-demo.vtt"
-              srcLang="en"
-              label="English"
-              default
+            <source src="/kitsune-agents-ad.mp4" type="video/mp4" />
+            <img
+              src="/kitsune-agents-ad.gif"
+              alt="Helpers writing into company knowledge — it gathers, stays, ready when you need it"
+              width={1280}
+              height={720}
             />
-            <p>
-              30-second demo: agent proposes <code>next_step</code>,{' '}
-              <code>amount</code> rejected, human approves in the review queue,
-              history shows agent attribution.
-            </p>
           </video>
         </div>
       </section>
 
-      <section className="band" id="pricing">
-        <h2>Pricing &amp; early access</h2>
+      <section className="band" id="scatter">
+        <h2>Knowing used to live everywhere.</h2>
         <p>
-          KitsuneOS is in early access. Create a workspace free while we refine
-          the product; paid subscriptions will apply at general availability.
-          Need a team rollout or have billing questions?{' '}
-          <a href="mailto:support@kitsuneos.com">support@kitsuneos.com</a>.
-        </p>
-        <p>
-          Refunds for paid plans are described on our{' '}
-          <a href="/refund/">Refund policy</a> page.
+          In chats. In docs no one opens. In someone’s head on a Tuesday. Help
+          arrived fast — but the memory of what you decided didn’t.
         </p>
       </section>
 
-      <section className="band" id="limitations">
-        <h2>Known limitations</h2>
-        <p>We ship what exists today — no vapor features.</p>
-        <ul>
-          <li>Create-only schema in v0.1 — no migrations yet</li>
-          <li>No hosted GraphQL API (MCP and REST-style console APIs)</li>
-          <li>Table-count ceiling per workspace</li>
-          <li>No independent security audit yet (see Terms)</li>
-        </ul>
+      <section className="band" id="place">
+        <h2>KitsuneOS is that place.</h2>
+        <p>
+          The knowledge home for companies that work with AI. What your team
+          knows stays close. Easy to find. Still there when the next question
+          comes.
+        </p>
       </section>
 
-      <section className="band band-close" id="close">
-        <h2>Start your warehouse</h2>
+      <section className="band band-triad" id="how" aria-label="How it feels">
+        <div className="triad">
+          <article>
+            <h3>Gather</h3>
+            <p>Quiet helpers bring what they learn back home.</p>
+          </article>
+          <article>
+            <h3>Remember</h3>
+            <p>Decisions stay put — not scattered across tools.</p>
+          </article>
+          <article>
+            <h3>Make room</h3>
+            <p>Space for what matters next, without losing what came before.</p>
+          </article>
+        </div>
+      </section>
+
+      <section className="band band-close" id="join">
+        <h2>Join early access</h2>
         <p>
-          Sign up with WorkOS, provision a workspace, and connect your agent
-          with an API key.
+          We’re opening carefully. Tell us about your team — we’ll make room.
         </p>
-        <a className="cta cta-primary" href={signUpUrl}>
-          Start free
-        </a>
+        <div className="hero-actions">
+          <a className="cta cta-primary" href={earlyAccessMailto}>
+            Join early access
+          </a>
+          <a className="cta cta-secondary" href={contactMailto}>
+            support@kitsuneos.com
+          </a>
+        </div>
       </section>
     </main>
   );

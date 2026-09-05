@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import { SITE_ORIGIN } from './urls';
 
-const defaultTitle = 'KitsuneOS — Knowledge warehouse for AI-native companies';
+const defaultTitle = 'KitsuneOS — Everything your company knows, close at hand';
 const defaultDescription =
-  'The permissioned store of company knowledge and state that agents propose changes into, humans approve, and every write is attributed.';
+  'KitsuneOS is the knowledge home for AI-native companies — where what you know lives, stays close, and is easy to find while your helpers keep working.';
 
 export const siteMetadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),
@@ -23,14 +23,19 @@ export const siteMetadata: Metadata = {
     title: defaultTitle,
     description: defaultDescription,
     images: [
-      { url: '/og-image.png', width: 1200, height: 630, alt: 'KitsuneOS' },
+      {
+        url: '/kitsune-agents-ad-poster.jpg',
+        width: 1280,
+        height: 720,
+        alt: 'KitsuneOS — company knowledge, close at hand',
+      },
     ],
   },
   twitter: {
     card: 'summary_large_image',
     title: defaultTitle,
     description: defaultDescription,
-    images: ['/og-image.png'],
+    images: ['/kitsune-agents-ad-poster.jpg'],
   },
   icons: {
     icon: [{ url: '/favicon.svg', type: 'image/svg+xml' }],

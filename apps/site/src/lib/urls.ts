@@ -25,8 +25,8 @@ export const SITE_ORIGIN = originFromEnv(
 export const signInUrl = `${APP_ORIGIN}/login`;
 export const signUpUrl = `${APP_ORIGIN}/signup`;
 
+export const earlyAccessMailto =
+  'mailto:support@kitsuneos.com?subject=Early%20access';
+export const contactMailto = 'mailto:support@kitsuneos.com';
+export const cielUrl = 'https://withciel.com';
 export const githubUrl = 'https://github.com/withciel/kitsuneos';
-export const acceptanceTestsUrl =
-  'https://github.com/withciel/kitsuneos/tree/main/packages/acceptance';
-export const gate0bTestsUrl =
-  'https://github.com/withciel/kitsuneos/blob/main/packages/acceptance/src/suite.test.ts#L1451';

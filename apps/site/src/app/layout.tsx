@@ -1,8 +1,8 @@
-import { Fraunces, IBM_Plex_Mono, Outfit } from 'next/font/google';
+import { Fraunces, Outfit } from 'next/font/google';
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
 import { siteMetadata } from '@/lib/site-metadata';
-import { signInUrl, signUpUrl } from '@/lib/urls';
+import { contactMailto, earlyAccessMailto, signInUrl } from '@/lib/urls';
 import './globals.css';
 
 const display = Fraunces({
@@ -17,28 +17,16 @@ const sans = Outfit({
   display: 'swap',
 });
 
-const mono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500'],
-  variable: '--font-ibm-plex-mono',
-  display: 'swap',
-});
-
 export const metadata = siteMetadata;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${display.variable} ${sans.variable} ${mono.variable}`}
-    >
+    <html lang="en" className={`${display.variable} ${sans.variable}`}>
       <body
         style={
           {
-            '--k-font-display': 'var(--font-fraunces), serif',
+            '--k-font-display': 'var(--font-fraunces), Georgia, serif',
             '--k-font-sans': 'var(--font-outfit), system-ui, sans-serif',
-            '--k-font-mono':
-              'var(--font-ibm-plex-mono), ui-monospace, monospace',
           } as CSSProperties
         }
       >
@@ -48,26 +36,30 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               Kitsune<span>OS</span>
             </Link>
             <nav className="site-header-nav" aria-label="Primary">
-              <a href="/#how">Product</a>
-              <a href="/#proof">Proof</a>
-              <a href="/#trust">Security</a>
-              <a href="/#pricing">Pricing</a>
+              <a href="/#place">The place</a>
+              <a href="/#how">How it feels</a>
               <a className="site-signin" href={signInUrl}>
                 Sign in
               </a>
-              <a className="site-cta" href={signUpUrl}>
-                Start free
+              <a className="site-cta" href={earlyAccessMailto}>
+                Join early access
               </a>
             </nav>
           </header>
           {children}
           <footer className="site-footer">
+            <p className="site-built">
+              Built by{' '}
+              <a href="https://withciel.com" rel="noopener noreferrer">
+                Ciel
+              </a>
+              .
+            </p>
             <nav aria-label="Legal and support">
               <Link href="/terms/">Terms</Link>
               <Link href="/privacy/">Privacy</Link>
               <Link href="/refund/">Refunds</Link>
-              <a href="https://github.com/withciel/kitsuneos">GitHub</a>
-              <a href="mailto:support@kitsuneos.com">support@kitsuneos.com</a>
+              <a href={contactMailto}>support@kitsuneos.com</a>
             </nav>
           </footer>
         </div>

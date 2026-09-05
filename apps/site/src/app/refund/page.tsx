@@ -15,8 +15,7 @@ export default function RefundPage() {
       <p>Last updated: September 2026</p>
       <p>
         Paid subscriptions may be refunded within 14 days of purchase if you
-        have not materially used write access (for example: submitting change
-        sets, applying approved changes, or modifying schema). Contact{' '}
+        have not materially used the product. Contact{' '}
         <a href="mailto:support@kitsuneos.com">support@kitsuneos.com</a> with
         your workspace email.
       </p>
@@ -25,7 +24,7 @@ export default function RefundPage() {
         charges; access continues through the paid period.
       </p>
       <p>
-        <Link href="/">Back to home</Link>
+        <Link href="/">← Back home</Link>
       </p>
     </main>
   );
