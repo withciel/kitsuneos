@@ -143,7 +143,7 @@ CREATE TABLE kitsune.collections (
   name          text NOT NULL,
   table_name    text NOT NULL,
   schema_version int NOT NULL DEFAULT 1,
-  revision_retention_days int,  -- NULL = keep forever; sweeper is P1/Q6
+  revision_retention_days int,  -- NULL = keep forever; admin sweeper deletes expired __rev rows
   UNIQUE (workspace_id, name)
 );
 

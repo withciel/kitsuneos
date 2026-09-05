@@ -160,7 +160,7 @@ Every write produces a revision. Revisions record the principal, the change set 
 - [x] Any record's state at any past timestamp is retrievable
 - [x] Revision history is queryable by principal and by record
 - [x] Deletes are soft by default and appear in history
-- [ ] Revision retention is configurable per collection (`revision_retention_days` exists; no sweeper yet)
+- [x] Revision retention is configurable per collection (`revision_retention_days` + admin sweeper)
 
 **R3. Change sets**
 A change set is a set of proposed field-level operations across one or more records and collections, authored against specific base revisions, applied atomically.
