@@ -1,9 +1,9 @@
 # KitsuneOS v1 — Product Requirements Document
 
-**Status:** P0 implemented against acceptance tests (2026-09-02). P1 unbuilt.
-**Date:** 2 September 2026
-**Supersedes:** document-first draft (same date)
-**Positioning:** The application database for software that AI agents write to.
+**Status:** P0 implemented against acceptance tests (2026-09-02). Human console IA shipped (2026-09-03). P1 unbuilt.
+**Date:** 3 September 2026
+**Supersedes:** agent-primary draft (2 September 2026)
+**Positioning:** The application database humans and agents share.
 
 ---
 
@@ -13,35 +13,41 @@ Written without user research. No interviews, no usage data, no design partners 
 
 Numbers in Section 7 are predictions made so we can be wrong in public, not commitments. Section 9 ranks the assumptions by how much damage a wrong answer does and names the cheapest test for each. A1 and A2 should be tested during the build, not after it.
 
-This matters more than usual here, because the relational framing moves us from competing with a git repo to competing with Postgres, Supabase, and Convex. That is a much stronger competitive set and a much less forgiving buyer.
+This matters more than usual here, because the relational framing moves us from competing with a git repo to competing with Postgres, Supabase, Convex, and human workspace tools (Notion, Airtable). That is a much stronger competitive set and a much less forgiving buyer.
 
 ---
 
 ## 1. Problem Statement
 
-Developers are starting to build applications where an AI agent is a writer, not just a reader. The database underneath was designed on the assumption that writes come from application code that a human reviewed before deploying.
+Teams are putting AI agents next to the same records humans already operate: accounts, opportunities, tickets, content. The database underneath was designed on the assumption that writes come from application code a human reviewed before deploying. Humans then get a separate admin tool, a spreadsheet, or a CRM that does not share grants or history with the agent.
 
-That assumption breaks in three specific places.
+That assumption breaks in four specific places.
 
-**Permissions live in the app, not the data.** Postgres row-level security can scope rows, but field-level control and the policy language around it get reimplemented in every application. When the writer is an agent rather than a code path, every application has to solve agent authorization from scratch, and each one solves it differently and incompletely.
+**Permissions live in the app, not the data.** Postgres row-level security can scope rows, but field-level control and the policy language around it get reimplemented in every application. When the writer is an agent rather than a code path, every application has to solve agent authorization from scratch, and each one solves it differently and incompletely. Humans and agents then cannot share one grant table.
 
 **Writes are immediate and unreviewable.** There is no native concept of a proposed change. Teams that want an agent's work reviewed before it lands build a bespoke staging table, a status column, and an approval UI — the same three things, badly, in every product.
 
 **History is an afterthought.** Audit tables are bolted on when compliance asks. "What did this record look like before the agent touched it, and which agent touched it" is a question most schemas cannot answer without forensic work.
 
-The workaround is that every team building an agent-facing application reimplements the same staging, permission, and provenance layer over Postgres. That layer is roughly the same every time, it is security-critical, and nobody owns it as a product.
+**Humans are an afterthought on agent backends.** Tools built for agents hide the data behind a developer console (schema browser, query runner, review queue). Operators still live in Notion, Airtable, or a CRM that is a different system of record. The agent and the human never share a workspace.
 
-**Cost of not solving it.** Teams either give agents direct write access to production data, which is the incident nobody wants to write up, or they keep agents read-only and lose most of the value. The middle path exists but costs weeks per application.
+The workaround is that every team building an agent-facing application reimplements the same staging, permission, provenance, and human-editing layer over Postgres. That layer is roughly the same every time, it is security-critical, and nobody owns it as a product.
+
+**Cost of not solving it.** Teams either give agents direct write access to production data, which is the incident nobody wants to write up, or they keep agents read-only and lose most of the value. Humans keep a second copy of the data. The middle path exists but costs weeks per application.
 
 ---
 
 ## 2. Target Users
 
-**Primary — the application developer building agent-facing software.** Small team or solo, building a product where agents read and write business records. Chooses their backend at project start and will not migrate later. Currently reaches for Supabase, Convex, or plain Postgres. This is the adopter and the buyer.
+Two equal primaries. Both operate the same workspace, through different surfaces, under the same grants.
+
+**Primary — the human operator.** Uses the hosted console (`apps/app`) as a workspace: collections in a sidebar, table views, record create/edit, Inbox for change requests, Settings for schema and grants. May be a founder, operator, or reviewer on a small team. This person *is* a v1 user of KitsuneOS; they are not hidden behind a customer application.
+
+**Primary — the developer / agent operator.** Small team or solo connecting agents via MCP, GraphQL, REST, or the CLI. Chooses a backend at project start. Currently reaches for Supabase, Convex, or plain Postgres. Grants agents field- and row-scoped access; reviews proposals in the same console the human operator uses.
 
 **Secondary — the platform engineer at a 50–500 person company** standardising internal agent tooling across several applications. Cares about audit and blast radius more than developer velocity. This user arrives later but pays more.
 
-**Not a v1 user — the end user of applications built on KitsuneOS.** They never see us. Their experience is mediated entirely by the application developer, which means our UI surface in v1 is a schema browser and a review queue, not an end-user product.
+**Not a v1 user — the end user of a third-party application a customer built on KitsuneOS.** If a customer ships their own product on our APIs, their users never need to see our console. That is a customer choice, not our positioning. Our hosted console is the human product for teams that operate KitsuneOS itself.
 
 ---
 
@@ -54,8 +60,11 @@ The workaround is that every team building an agent-facing application reimpleme
 | G3 | Permissions are a property of the data, not the application | Workspaces using field-level or row-predicate grants | ≥ 60% of active workspaces by day 30 |
 | G4 | History answers provenance questions without forensics | Revision queries served; % of workspaces that have run one | ≥ 40% have queried history by day 60 |
 | G5 | The platform is credible enough to build on | Design partners with an application in production | 10 within 120 days of beta |
+| G6 | Humans operate the same workspace as agents, in the console | Active workspaces with ≥ 1 human console write *and* ≥ 1 agent-authored change set | ≥ 50% of active workspaces by day 30 |
 
 G1 is the make-or-break goal and it is deliberately unglamorous. If aggregates and relations are not genuinely good, a developer discovers it in week one and leaves, and none of the interesting primitives ever get exercised.
+
+G6 does not require every human write to go through Inbox. Humans with `write` or `admin` may create and update records in the collection table (direct write). Agents remain capped at `propose` unless an admin overrides (Q1). The point of G6 is shared occupancy of one system of record, not identical write paths.
 
 ---
 
@@ -63,58 +72,68 @@ G1 is the make-or-break goal and it is deliberately unglamorous. If aggregates a
 
 **Not a general-purpose OLAP or analytics warehouse.** No columnar storage, no large scans, no BI workload. *Why:* it is a different engine and a different buyer, and chasing it compromises the transactional path we need.
 
-**Not a hosted end-user application.** The CRM we build is a reference implementation (Section 5), not a product we sell. *Why:* see the tripwire below.
+**Not a vertical CRM (or any other packaged line-of-business app).** Starter collections (accounts, contacts, opportunities) exist so the hosted console is usable on day one. They are a demo workspace, not a product we sell. *Why:* see the tripwire below.
 
-**No WYSIWYG or non-technical authoring surface.** The v1 human surfaces are a schema browser, a query console, and a change-set review queue. *Why:* our user is a developer; an editor targets an audience we do not serve yet.
+**The hosted console is the human product.** Collections as a sidebar, table views, record peek create/update, Inbox for change requests, Settings for schema/grants/workspace. v1 is table view only — no board, calendar, gallery, or list database views. *Why:* humans and agents are equal users of the same workspace; a schema-only admin panel would leave operators in another tool.
 
 **No content delivery, rendering, or CDN.** *Why:* that is the headless CMS product, which is one application someone could build on KitsuneOS rather than something KitsuneOS is.
 
-**No production self-hosting in v1.** The product is the hosted app (`apps/app`). `pnpm quickstart` remains an eval preview and is unsupported for production. *Why:* support burden before product-market fit. Revisit when a real deal is blocked on it.
+**No production self-hosting in v1.** The product is the hosted app (`apps/app`). `pnpm quickstart` and `docker compose` remain eval previews and are unsupported for production. *Why:* support burden before product-market fit. Revisit when a real deal is blocked on it.
 
 **No migration tooling from other databases.** *Why:* v1 adopters start new projects. Migration matters at a stage we are not at.
 
-### The reference application, and when to stop
+### Starter workspace, and when to stop
 
-We build a small CRM to prove the platform: accounts, contacts, opportunities, activity notes, with an agent that drafts opportunity updates from meeting notes and proposes them for review. It exercises every primitive that matters — relations, aggregates over money, prose fields, field-level permissions, and agent-authored change sets.
+We seed a small CRM-shaped workspace to prove the platform: accounts, contacts, opportunities, with an agent that drafts opportunity updates from meeting notes and proposes them for review. It exercises every primitive that matters — relations, aggregates over money, prose fields, field-level permissions, human table edits, and agent-authored change sets.
 
-**Tripwire.** The moment a prospect asks to buy the CRM, or an engineer spends a sprint on CRM features that do not exercise a platform primitive, we stop. Every infrastructure company that built a platform and a flagship application did one of them badly. The CRM's job is to be believable, then to be boring.
+**Tripwire.** Starter collections in the console are expected. The moment we spend a sprint on CRM-only features that do not exercise a platform primitive (pipeline forecasts, email sequences, a sales methodology), or we package those collections as a separate product to sell, we stop. Every infrastructure company that built a platform and a flagship application did one of them badly. The starter workspace's job is to be believable, then to be boring.
 
 ---
 
 ## 5. User Stories
 
+### Human operator
+
+1. As an operator, I want collections listed in a sidebar so that I work with records, not with tool pages named Schema and Query.
+2. As an operator, I want a table view of a collection I can search and hide columns on so that I can scan and edit the same data an agent proposes against.
+3. As an operator with `write` or `admin`, I want to create and update a record from a peek panel so that routine human edits do not require a change-set queue.
+4. As an operator, I want Inbox to list open change requests with field-level diffs so that I can approve or reject agent work without leaving the workspace.
+5. As an operator, I want Settings to add a field or create a collection so that the schema lives next to the data, not in a separate admin app.
+
 ### Application developer
 
-1. As a developer, I want to define collections with typed fields and relations so that my data model has real referential integrity rather than untyped documents.
-2. As a developer, I want aggregate queries across relations so that "pipeline by stage this quarter" is one query, not application code.
-3. As a developer, I want an auto-generated typed client so that my application code does not hand-roll queries against a schema it cannot verify.
-4. As a developer, I want to grant an agent write access to three fields on one collection so that I do not build an authorization layer myself.
-5. As a developer, I want agent writes to arrive as reviewable change sets by default so that I do not build a staging table and an approval screen.
-6. As a developer, I want a transaction spanning several collections to apply atomically so that a partially-applied change set cannot corrupt state.
+6. As a developer, I want to define collections with typed fields and relations so that my data model has real referential integrity rather than untyped documents.
+7. As a developer, I want aggregate queries across relations so that "pipeline by stage this quarter" is one query, not application code.
+8. As a developer, I want an auto-generated typed client so that my application code does not hand-roll queries against a schema it cannot verify.
+9. As a developer, I want to grant an agent write access to three fields on one collection so that I do not build an authorization layer myself.
+10. As a developer, I want agent writes to arrive as reviewable change sets by default so that I do not build a staging table and an approval screen.
+11. As a developer, I want a transaction spanning several collections to apply atomically so that a partially-applied change set cannot corrupt state.
 
 ### Platform engineer
 
-7. As a platform engineer, I want every write attributed to a principal and retained in history so that I can answer what an agent changed during an incident.
-8. As a platform engineer, I want to revoke an agent's grant and have open change sets it authored become unmergeable so that revocation is not bypassed by in-flight work.
-9. As a platform engineer, I want denied access attempts logged so that a misconfigured agent is visible before it is a finding.
+12. As a platform engineer, I want every write attributed to a principal and retained in history so that I can answer what an agent changed during an incident.
+13. As a platform engineer, I want to revoke an agent's grant and have open change sets it authored become unmergeable so that revocation is not bypassed by in-flight work.
+14. As a platform engineer, I want denied access attempts logged so that a misconfigured agent is visible before it is a finding.
 
 ### Reviewer
 
-10. As a reviewer, I want to see a field-level diff of a proposed change so that I can approve without reading the whole record.
-11. As a reviewer, I want to approve part of a change set and reject the rest so that one bad field does not discard good work.
-12. As a reviewer, I want to leave a comment the authoring agent can read so that the next attempt is better.
+The reviewer is the human operator on the Inbox path, not a different product.
+
+15. As a reviewer, I want to see a field-level diff of a proposed change so that I can approve without reading the whole record.
+16. As a reviewer, I want to approve part of a change set and reject the rest so that one bad field does not discard good work.
+17. As a reviewer, I want to leave a comment the authoring agent can read so that the next attempt is better.
 
 ### Agent operator
 
-13. As an agent operator, I want the agent to discover the schema and its own permissions over MCP so that I do not write a bespoke integration per collection.
-14. As an agent operator, I want semantic search over prose fields that respects the agent's grants so that retrieval cannot leak fields the agent may not read.
-15. As an agent operator, I want a change set to carry the record revisions it was authored against so that stale work is detected rather than silently overwriting newer data.
+18. As an agent operator, I want the agent to discover the schema and its own permissions over MCP so that I do not write a bespoke integration per collection.
+19. As an agent operator, I want semantic search over prose fields that respects the agent's grants so that retrieval cannot leak fields the agent may not read.
+20. As an agent operator, I want a change set to carry the record revisions it was authored against so that stale work is detected rather than silently overwriting newer data.
 
 ### Edge and failure cases
 
-16. As a developer, I want a change set referencing a deleted record to fail loudly at apply time rather than resurrect it.
-17. As a developer, I want two agents editing different fields of the same record to both apply without conflict.
-18. As a developer, I want a schema change that would invalidate open change sets to warn me before it is applied.
+21. As a developer, I want a change set referencing a deleted record to fail loudly at apply time rather than resurrect it.
+22. As a developer, I want two agents editing different fields of the same record to both apply without conflict.
+23. As a developer, I want a schema change that would invalidate open change sets to warn me before it is applied.
 
 ---
 
@@ -182,10 +201,11 @@ Tools: `describe_schema`, `query`, `read_record`, `propose_change_set`, `read_ch
 - [x] Schema description reflects grants, not the full schema
 
 **R6. Query API and generated client**
-Auto-generated GraphQL from the schema, REST for single-record access, and a generated TypeScript client with types derived from collection definitions.
+Auto-generated GraphQL from the schema, REST for record access, and a generated TypeScript client with types derived from collection definitions.
 
 - [x] Types regenerate on schema change and fail the build on incompatibility
 - [x] Same enforcement code path as MCP — no second implementation of authorization
+- [x] Console record create uses `POST /api/records` (`directWrite`); field updates use `PATCH` (propose → review → apply, gated to `write`/`admin`)
 
 **R7. Audit log**
 Every read, write, denied attempt, grant change, and schema change, by principal.
@@ -195,10 +215,15 @@ Every read, write, denied attempt, grant change, and schema change, by principal
 - [x] Denied attempts included
 
 **R8. Console and CLI**
-Console: schema browser, query runner, change-set review queue, grant editor, audit search. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`.
+The hosted console is a human workspace, not a set of developer tool pages. Sidebar lists collections; opening a collection shows a table view. Inbox is the change-request surface. Settings owns schema, grants, and workspace metadata. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`. Query, audit, and history remain engine/API surfaces even when they are not top-level nav.
 
-- [x] Review queue shows field-level diffs
+- [x] Collection table views (`/c/[collection]`) with column visibility and local search
+- [x] Record peek: create (`directWrite`) and update (auto-applied change set for `write`/`admin`)
+- [x] Inbox lists open change sets; detail shows field-level diffs, partial approve/reject, apply
+- [x] Settings: schema editor, grants, workspace
 - [x] `export` produces the full workspace as portable data plus schema (grant-filtered for non-admins)
+
+Do not claim Playwright coverage. Engine-backed `console.test.ts` still covers schema mask, audit not-found, and partial review apply.
 
 ### P1 — Should have
 
@@ -233,7 +258,9 @@ P1 remaining (R10–R12): rollups, automation, webhooks. **R9 semantic search** 
 | Metric | Definition | Success | Stretch |
 |---|---|---|---|
 | Model depth | % of active workspaces with ≥ 3 collections and ≥ 1 relation | ≥ 70% | ≥ 85% |
+| Time to first human write | Median hours from signup to first console create/update by a human principal | < 1h | < 15m |
 | Time to first agent write | Median hours from signup to first agent-authored change set | < 4h | < 1h |
+| Shared occupancy | % of active workspaces with both a human console write and an agent change set | ≥ 50% | ≥ 70% |
 | Change-set volume | Agent-authored change sets per active workspace per week | ≥ 20 | ≥ 100 |
 | Apply rate | Applied ÷ (applied + rejected) | 40–85% | 55–75% |
 | Grant sophistication | % of workspaces using a field mask or row predicate | ≥ 60% | ≥ 80% |
@@ -248,7 +275,7 @@ Field-conflict rate is the metric that tells us whether R14 is urgent. If it cli
 
 | Metric | Definition | Success |
 |---|---|---|
-| Production applications | Design-partner apps serving real users at day 120 | ≥ 6 |
+| Production applications | Design-partner apps *or* teams operating the hosted console on real records at day 120 | ≥ 6 |
 | Developer retention | Workspaces with writes in week 12 that also had them in week 1 | ≥ 50% |
 | Reviewer load | Change sets reviewed per human reviewer per week | < 25 |
 | Leakage incidents | Confirmed reads of fields or rows outside a grant | 0 |
@@ -278,7 +305,7 @@ Reviewer load is the metric most likely to kill this quietly. If human review be
 | Q7 | Are prose fields one per collection or many? Many complicates search scoping. | Engineering |
 | Q8 | Do we expose raw SQL to developers, or only the generated API? Raw SQL is a large escape hatch through the permission model. | Engineering |
 
-Q8 deserves flagging as a strategic question wearing engineering clothes. Exposing SQL makes us feel like Postgres and bypasses the primitives that justify our existence. **v1 does not expose raw SQL.** GraphQL, REST GET, MCP, CLI query, and the engine query API all go through one compiler.
+Q8 deserves flagging as a strategic question wearing engineering clothes. Exposing SQL makes us feel like Postgres and bypasses the primitives that justify our existence. **v1 does not expose raw SQL.** GraphQL, REST, MCP, CLI query, the console, and the engine query API all go through one compiler.
 
 ---
 
@@ -289,7 +316,7 @@ Ordered by damage if wrong.
 **A1 — Developers will adopt a new database for a new project.**
 The hardest assumption in the document. Database adoption is slow, conservative, and lock-in-averse, and the incumbents are excellent and free.
 *If wrong:* nothing else matters.
-*Cheapest test:* put the reference CRM and a schema-to-running-app path in front of ten developers building agent applications. Measure whether they get to a first agent write in under an hour without help. Do this in week three, not after beta.
+*Cheapest test:* put the hosted console (starter collections) and a schema-to-running-app path in front of ten people who would otherwise use Notion/Airtable plus an agent. Measure whether a human edits a row and an agent proposes a change set in under an hour without help.
 
 **A2 — Reviewable writes are the reason to switch, not a feature they would skip.**
 *If wrong:* we are a worse Supabase with extra concepts.
@@ -298,12 +325,12 @@ The hardest assumption in the document. Database adoption is slow, conservative,
 **A3 — Field-level conflict resolution is materially better than record-level for agent workloads.**
 This is our main technical differentiator over both git-style and row-locking approaches.
 *If wrong:* R14 stays a research problem and the concurrency story collapses.
-*Cheapest test:* instrument field-conflict rate from day one and simulate three concurrent agents against the reference CRM before beta.
+*Cheapest test:* instrument field-conflict rate from day one and simulate three concurrent agents against the starter workspace before beta.
 
 **A4 — Relational query performance will be good enough that nobody notices we are not raw Postgres.**
 Every abstraction over a database eventually meets a query it serves badly.
 *If wrong:* developers hit the wall in week one and leave, and G1 fails.
-*Cheapest test:* benchmark the ten most common query shapes from the reference CRM against hand-written SQL. Publish the gap internally. Anything worse than 2x needs a fix before beta.
+*Cheapest test:* benchmark the ten most common query shapes from the starter workspace against hand-written SQL. Publish the gap internally. Anything worse than 2x needs a fix before beta.
 
 **A5 — Permissions-as-data is worth the modelling burden it imposes on developers.**
 *If wrong:* developers grant `admin` to everything and our differentiator is unused.
@@ -317,7 +344,9 @@ Every abstraction over a database eventually meets a query it serves badly.
 
 **Phase 1 — Weeks 3–9.** R1, R2, R3, R4. The core: collections, revisions, change sets, grants. Nothing user-facing yet. Ends with A4's benchmark.
 
-**Phase 2 — Weeks 10–14.** R5, R6, R7, R8. MCP, generated API and client, audit, console. Reference CRM built on the public API only, never on internal shortcuts — if the CRM needs a private path, that is a missing product requirement.
+**Phase 2 — Weeks 10–14.** R5, R6, R7, R8. MCP, generated API and client, audit, hosted console as a human workspace (collections, Inbox, Settings). Starter CRM collections live in that console on the public API only — if they need a private path, that is a missing product requirement.
+
+**Phase 2b — 2026-09-03.** Console IA: collection tables, record peek, Inbox, Settings. Humans and agents are equal primary users of the same workspace.
 
 **Phase 3 — Weeks 15–20.** R9, R10, R11 as pulled by design partners. Beta.
 
