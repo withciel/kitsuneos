@@ -27,6 +27,16 @@ CREATE TABLE IF NOT EXISTS kitsune.principals (
   disabled_at   timestamptz
 );
 
+-- R16: stable external identity so the same subject can be resolved across workspaces.
+ALTER TABLE kitsune.principals
+  ADD COLUMN IF NOT EXISTS external_issuer text;
+ALTER TABLE kitsune.principals
+  ADD COLUMN IF NOT EXISTS external_subject text;
+DROP INDEX IF EXISTS kitsune.principals_external_identity_idx;
+CREATE UNIQUE INDEX IF NOT EXISTS principals_workspace_external_identity_idx
+  ON kitsune.principals (workspace_id, external_issuer, external_subject)
+  WHERE external_subject IS NOT NULL AND disabled_at IS NULL;
+
 CREATE TABLE IF NOT EXISTS kitsune.collections (
   id            uuid PRIMARY KEY,
   workspace_id  uuid NOT NULL REFERENCES kitsune.workspaces(id),

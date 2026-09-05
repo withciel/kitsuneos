@@ -380,18 +380,29 @@ export class KitsuneEngine {
         id: string;
         kind: 'human' | 'agent' | 'service';
         display_name: string;
+        external_issuer: string | null;
+        external_subject: string | null;
       }>(
         client,
-        `SELECT id, kind, display_name FROM kitsune.principals
+        `SELECT id, kind, display_name, external_issuer, external_subject
+           FROM kitsune.principals
           WHERE workspace_id = $1 AND disabled_at IS NULL`,
         [sourceWorkspaceId],
       );
       for (const principal of principals) {
         const newId = uuidv4();
         await client.query(
-          `INSERT INTO kitsune.principals (id, workspace_id, kind, display_name)
-           VALUES ($1, $2, $3, $4)`,
-          [newId, branchWorkspaceId, principal.kind, principal.display_name],
+          `INSERT INTO kitsune.principals
+             (id, workspace_id, kind, display_name, external_issuer, external_subject)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            newId,
+            branchWorkspaceId,
+            principal.kind,
+            principal.display_name,
+            principal.external_issuer,
+            principal.external_subject,
+          ],
         );
         principalIdMap.set(principal.id, newId);
       }
@@ -524,17 +535,151 @@ export class KitsuneEngine {
     workspaceId: string,
     kind: 'human' | 'agent' | 'service',
     displayName: string,
-    options?: { principalId?: string },
+    options?: {
+      principalId?: string;
+      externalIssuer?: string;
+      externalSubject?: string;
+    },
   ): Promise<string> {
     const id = options?.principalId ?? uuidv4();
+    const externalIssuer = options?.externalIssuer?.trim() || null;
+    const externalSubject = options?.externalSubject?.trim() || null;
+    if ((externalIssuer == null) !== (externalSubject == null)) {
+      throw new KitsuneError(
+        'externalIssuer and externalSubject must be set together',
+        'validation',
+      );
+    }
     await withOwner(this.ownerPool, async (client) => {
       await client.query(
-        `INSERT INTO kitsune.principals (id, workspace_id, kind, display_name)
-         VALUES ($1, $2, $3, $4)`,
-        [id, workspaceId, kind, displayName],
+        `INSERT INTO kitsune.principals
+           (id, workspace_id, kind, display_name, external_issuer, external_subject)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, workspaceId, kind, displayName, externalIssuer, externalSubject],
       );
     });
     return id;
+  }
+
+  /**
+   * Link a principal to a stable external subject (R16).
+   * The same (issuer, subject) may appear in many workspaces; within one
+   * workspace it must remain unique among active principals.
+   */
+  async linkPrincipalIdentity(
+    workspaceId: string,
+    actorId: string,
+    input: {
+      principalId: string;
+      externalIssuer: string;
+      externalSubject: string;
+    },
+  ): Promise<void> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, actorId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const issuer = input.externalIssuer.trim();
+    const subject = input.externalSubject.trim();
+    if (!issuer || !subject) {
+      throw new KitsuneError(
+        'externalIssuer and externalSubject are required',
+        'validation',
+      );
+    }
+
+    await withOwner(this.ownerPool, async (client) => {
+      const principal = await queryOne<{ id: string }>(
+        client,
+        `SELECT id FROM kitsune.principals
+          WHERE id = $1 AND workspace_id = $2 AND disabled_at IS NULL`,
+        [input.principalId, workspaceId],
+      );
+      if (!principal) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      try {
+        await client.query(
+          `UPDATE kitsune.principals
+              SET external_issuer = $1,
+                  external_subject = $2
+            WHERE id = $3 AND workspace_id = $4`,
+          [issuer, subject, input.principalId, workspaceId],
+        );
+      } catch (error) {
+        const code =
+          error && typeof error === 'object' && 'code' in error
+            ? String((error as { code: unknown }).code)
+            : '';
+        if (code === '23505') {
+          throw new KitsuneError(
+            'External identity already linked in this workspace',
+            'conflict',
+          );
+        }
+        throw error;
+      }
+    });
+
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId: actorId,
+      action: 'principal.identity_link',
+      outcome: 'allowed',
+      detail: {
+        principalId: input.principalId,
+        externalIssuer: issuer,
+        externalSubject: subject,
+      },
+    });
+  }
+
+  /**
+   * Resolve an external subject to workspace-local principals (R16).
+   * Control-plane identity lookup only — does not federate data-plane reads.
+   */
+  async resolvePrincipalsByExternalSubject(
+    externalIssuer: string,
+    externalSubject: string,
+  ): Promise<
+    Array<{
+      principalId: string;
+      workspaceId: string;
+      kind: 'human' | 'agent' | 'service';
+      displayName: string;
+    }>
+  > {
+    const issuer = externalIssuer.trim();
+    const subject = externalSubject.trim();
+    if (!issuer || !subject) {
+      throw new KitsuneError(
+        'externalIssuer and externalSubject are required',
+        'validation',
+      );
+    }
+    return withOwner(this.ownerPool, async (client) => {
+      const rows = await queryRows<{
+        id: string;
+        workspace_id: string;
+        kind: 'human' | 'agent' | 'service';
+        display_name: string;
+      }>(
+        client,
+        `SELECT id, workspace_id, kind, display_name
+           FROM kitsune.principals
+          WHERE external_issuer = $1
+            AND external_subject = $2
+            AND disabled_at IS NULL
+          ORDER BY workspace_id ASC, display_name ASC`,
+        [issuer, subject],
+      );
+      return rows.map((row) => ({
+        principalId: row.id,
+        workspaceId: row.workspace_id,
+        kind: row.kind,
+        displayName: row.display_name,
+      }));
+    });
   }
 
   async defineCollection(

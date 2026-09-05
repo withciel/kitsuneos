@@ -1,6 +1,6 @@
 # KitsuneOS v1 — Product Requirements Document
 
-**Status:** P0 implemented against acceptance tests (2026-09-02). Human console IA shipped (2026-09-03). P1 (R9–R13) implemented. P2 R14 merge queue and R15 schema branching implemented; R16–R17 next.
+**Status:** P0 implemented against acceptance tests (2026-09-02). Human console IA shipped (2026-09-03). P1 (R9–R13) implemented. P2 (R14–R17) implemented: merge queue, schema branching, federation identity foundations, and self-host readiness defaults.
 **Date:** 3 September 2026
 **Supersedes:** agent-primary draft (2 September 2026)
 **Positioning:** The application database humans and agents share.
@@ -245,15 +245,15 @@ P1 complete for R9–R13. **R12 webhooks** implemented (HMAC-signed `change_set.
 
 ### P2 — Should ship next
 
-**R14 merge queue and R15 branching implemented.** R16–R17 remain design-for / build next.
+**P2 (R14–R17) implemented.**
 
 **R14. Agent-tempo merge queue.** Ordered application of many concurrent change sets with automatic resolution where field sets are disjoint. *Architectural implication:* change sets must be field-level and carry per-operation base revisions from day one. If we build record-level diffs, this is a rewrite. **Implemented:** `enqueueMerge` / `processMergeQueue` (engine + MCP) drain reviewed change sets FIFO; disjoint fields apply, overlapping fields block that set and the queue continues.
 
 **R15. Branching.** Fork a workspace's data for a staging environment or a long-running agent task. *Architectural implication:* keep tenancy at the schema level so a branch is a schema copy, not a cross-cutting migration. **Implemented:** `createBranch` / `listBranches` (engine + MCP) copy collections, fields, grants, principals, and data-plane rows into a new workspace schema under a parent; open change sets are not copied; mutations stay isolated until an explicit merge path lands.
 
-**R16. Cross-workspace federation.** *Architectural implication:* principals must be identifiable outside a single workspace.
+**R16. Cross-workspace federation.** *Architectural implication:* principals must be identifiable outside a single workspace. **Implemented (foundations):** `external_issuer` / `external_subject` on principals; `linkPrincipalIdentity` / `resolvePrincipalsByExternalSubject` (engine + MCP); WorkOS subjects stamped at provision; identities copied on branch. Control-plane identity only — no federated data-plane queries yet.
 
-**R17. Self-hosting.** *Architectural implication:* avoid dependencies on managed-service features that have no open equivalent.
+**R17. Self-hosting.** *Architectural implication:* avoid dependencies on managed-service features that have no open equivalent. **Implemented (readiness):** local filesystem blob store and deterministic embedder remain defaults; quickstart ensures `pgvector`; hosted auth/billing are optional plugins; eval self-host checklist documented. Production self-host remains unsupported in v1.
 
 ---
 

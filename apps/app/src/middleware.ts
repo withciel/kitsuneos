@@ -7,15 +7,19 @@ import {
 
 // authkit-nextjs reads NEXT_PUBLIC_WORKOS_REDIRECT_URI (not WORKOS_REDIRECT_URI).
 // Edge middleware also inlines env at build time, so pass an explicit URI.
-const redirectUri =
+// Hosted: require an explicit redirect URI (no hardcoded production host fallback).
+// Local demo: authkit is not invoked; a localhost placeholder satisfies construction.
+const configuredRedirectUri =
   process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI ||
-  process.env.WORKOS_REDIRECT_URI ||
-  `${originFromAppHost()}/callback`;
+  process.env.WORKOS_REDIRECT_URI;
 
-function originFromAppHost(): string {
-  const host = process.env.NEXT_PUBLIC_APP_HOST ?? 'app.kitsuneos.com';
-  return `https://${host}`;
+if (!configuredRedirectUri && process.env.KITSUNE_LOCAL_DEMO !== '1') {
+  throw new Error(
+    'Set NEXT_PUBLIC_WORKOS_REDIRECT_URI (or WORKOS_REDIRECT_URI) for hosted auth, or KITSUNE_LOCAL_DEMO=1 for local eval',
+  );
 }
+
+const redirectUri = configuredRedirectUri ?? 'http://localhost:3000/callback';
 
 const authkit = authkitMiddleware({
   redirectUri,

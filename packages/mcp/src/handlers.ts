@@ -173,6 +173,33 @@ export function createMcpHandlers(
       return engine.listBranches(ctx.workspaceId, ctx.principalId);
     },
 
+    async link_principal_identity(args: {
+      principalId: string;
+      externalIssuer: string;
+      externalSubject: string;
+    }) {
+      const ctx = getContext();
+      await engine.linkPrincipalIdentity(
+        ctx.workspaceId,
+        ctx.principalId,
+        args,
+      );
+      return { ok: true };
+    },
+
+    async resolve_principal_identity(args: {
+      externalIssuer: string;
+      externalSubject: string;
+    }) {
+      const ctx = getContext();
+      // Admin gate: listBranches throws not_found for non-admins.
+      await engine.listBranches(ctx.workspaceId, ctx.principalId);
+      return engine.resolvePrincipalsByExternalSubject(
+        args.externalIssuer,
+        args.externalSubject,
+      );
+    },
+
     async propose_change_set(args: ProposeChangeSetInput) {
       const ctx = getContext();
       return engine.proposeChangeSet(ctx.workspaceId, ctx.principalId, args);

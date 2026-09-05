@@ -24,7 +24,7 @@ export async function POST() {
     }
 
     const { user } = await withAuth();
-    const returnUrl = `${process.env.APP_BASE_URL ?? 'https://app.kitsuneos.com'}/?checkout=success`;
+    const returnUrl = `${process.env.APP_BASE_URL ?? 'http://localhost:3000'}/?checkout=success`;
     const session = await client.checkoutSessions.create({
       product_cart: [{ product_id: productId, quantity: 1 }],
       customer: {

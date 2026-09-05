@@ -61,6 +61,10 @@ export async function provisionUserWorkspace(
       workspaceId,
       'human',
       input.email,
+      {
+        externalIssuer: 'workos',
+        externalSubject: input.workosId,
+      },
     );
     created.push('principal');
 

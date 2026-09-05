@@ -1,6 +1,6 @@
 # KitsuneOS v1 — System Design
 
-**Status:** P0 surfaces implemented. Human console IA shipped. P1 complete (R9–R13). P2 R14 agent-tempo merge queue and R15 schema branching implemented; R16–R17 remain architectural accommodations.
+**Status:** P0 surfaces implemented. Human console IA shipped. P1 complete (R9–R13). P2 (R14–R17) implemented: merge queue, schema branching, federation identity foundations, and self-host readiness defaults.
 **Date:** 3 September 2026
 **Companion to:** KitsuneOS v1 PRD
 **Scope:** P0 requirements R1–R8; P1 R9–R13 (search, rollups, automation, webhooks, attachments) plus reference graph/VFS/ingest; architectural accommodation for P2 items R14–R17
@@ -50,7 +50,7 @@ The design goal that governs every trade-off below: **be genuinely relational.**
 ### Constraints
 
 - Small team, roughly 20 weeks to beta
-- Managed Postgres and object storage only; no bespoke storage engine
+- Postgres (+ pgvector) and pluggable object storage; local filesystem blobs by default; managed cloud storage optional behind BlobStore
 - Single region for v1
 - Team is strongest in TypeScript and Postgres, which should shape technology choices rather than ambition
 
@@ -615,6 +615,10 @@ Instrument from day one, including metrics nothing consumes yet:
 **Around 500 workspaces.** Begin the move to database-per-workspace before table count becomes acute (ADR-002). Doing this early also makes R15 branching close to free.
 
 **When field-conflict rate exceeds 10%.** R14's merge queue is implemented (`enqueueMerge` / `processMergeQueue`). Monitor conflict rate; if it stays high, invest in better rebase UX rather than rewriting the op model.
+
+**When the same human or agent appears in multiple workspaces.** R16 federation identity foundations are implemented (`linkPrincipalIdentity` / `resolvePrincipalsByExternalSubject`). Identity is global; data-plane queries remain workspace-local until a later federation query surface lands.
+
+**When evaluating self-host.** R17 readiness keeps open defaults (local blobs, deterministic embeddings, docker Postgres + pgvector). Hosted WorkOS/Dodo/OpenAI stay optional. Production self-host is still unsupported in v1.
 
 **When long-running agent tasks need isolation.** R15 schema branching is implemented (`createBranch` / `listBranches`): a branch is a new workspace schema with copied principals, grants, collections, and rows. Prefer branches for staging and long tasks; keep merge-back explicit rather than implicit.
 
