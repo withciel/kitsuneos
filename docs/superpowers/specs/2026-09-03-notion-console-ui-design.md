@@ -1,7 +1,7 @@
 # KitsuneOS Console — Notion-like Workspace UI
 
 **Date:** 2026-09-03  
-**Status:** Approved for planning  
+**Status:** Shipped for IA (sidebar / table / peek / inbox). **Partially superseded (2026-09-05)** for product ontology: peek-as-primary record surface → full **pages** + PR-shaped multi-page change requests. See `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`. Sidebar + table + settings IA from this doc still apply.  
 **Scope:** `apps/app` console + shared `packages/ui` (shadcn monorepo). Landing (`apps/site`) is out of scope.
 
 ## Problem

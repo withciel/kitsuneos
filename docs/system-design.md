@@ -487,7 +487,9 @@ Instrument from day one, including metrics nothing consumes yet:
 
 **Context.** The original concept stored knowledge as markdown files with frontmatter in object storage. The product then changed: applications, including a CRM, are built *on* KitsuneOS. CRM data is relational and transactional — opportunities have amounts, stages, and foreign keys — and the first queries a developer writes are aggregates and joins.
 
-**Decision.** Records are typed rows. A prose markdown field is an optional column on a record, semantically indexed. Documents are a special case of records, not the other way round.
+**Decision.** Records are typed rows. A prose markdown field is an optional column on a record, semantically indexed. Documents are a special case of records *in storage*, not the other way round.
+
+**Presentation amendment (2026-09-05).** The hosted console and human-facing product language treat each record as a **page** (title, body, properties) that may live in a collection/database — Notion’s page ontology, not “CRM row with optional markdown.” Change requests are reviewed as multi-page PRs. This does **not** reopen document-first object storage; see `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`.
 
 **Options considered.**
 

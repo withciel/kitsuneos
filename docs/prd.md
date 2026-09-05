@@ -94,11 +94,13 @@ We seed a small CRM-shaped workspace to prove the platform: accounts, contacts, 
 
 ### Human operator
 
-1. As an operator, I want collections listed in a sidebar so that I work with records, not with tool pages named Schema and Query.
-2. As an operator, I want a table view of a collection I can search and hide columns on so that I can scan and edit the same data an agent proposes against.
-3. As an operator with `write` or `admin`, I want to create and update a record from a peek panel so that routine human edits do not require a change-set queue.
-4. As an operator, I want Inbox to list open change requests with field-level diffs so that I can approve or reject agent work without leaving the workspace.
-5. As an operator, I want Settings to add a field or create a collection so that the schema lives next to the data, not in a separate admin app.
+1. As an operator, I want databases (collections) listed in a sidebar so that I work with pages, not with tool screens named Schema and Query.
+2. As an operator, I want a table view of a database I can search and hide columns on so that I can scan pages and open any row as a full page.
+3. As an operator with `write` or `admin`, I want to create and update a page (full page surface; quick-edit optional) so that routine human edits do not require a change-request queue.
+4. As an operator, I want Inbox to list open change requests as PR-style reviews — including proposals that touch multiple pages across databases — so that I can approve or reject agent work without leaving the workspace.
+5. As an operator, I want Settings to add a property or create a database so that the schema lives next to the data, not in a separate admin app.
+
+> **UX direction (2026-09-05):** Pages + change requests — see `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md` and plan `docs/superpowers/plans/2026-09-05-pages-and-change-requests.md`. Engine terms remain record / collection / change set.
 
 ### Application developer
 
@@ -215,11 +217,13 @@ Every read, write, denied attempt, grant change, and schema change, by principal
 - [x] Denied attempts included
 
 **R8. Console and CLI**
-The hosted console is a human workspace, not a set of developer tool pages. Sidebar lists collections; opening a collection shows a table view. Inbox is the change-request surface. Settings owns schema, grants, and workspace metadata. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`. Query, audit, and history remain engine/API surfaces even when they are not top-level nav.
+The hosted console is a human workspace, not a set of developer tool pages. Sidebar lists databases (collections); opening one shows a table of pages. Opening a row lands on a full **page** (`/p/[pageId]` — planned; peek is secondary). Inbox is the **change-request** (PR) surface and must support proposals that touch multiple pages across databases. Settings owns schema, grants, and workspace metadata. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`. Query, audit, and history remain engine/API surfaces even when they are not top-level nav. Direction: `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`.
 
 - [x] Collection table views (`/c/[collection]`) with column visibility and local search
-- [x] Record peek: create (`directWrite`) and update (auto-applied change set for `write`/`admin`)
+- [x] Record peek: create (`directWrite`) and update (auto-applied change set for `write`/`admin`) *(peek remains; full page route is the next UX slice)*
+- [ ] Full page route `/p/[pageId]` as primary open surface (title, body, properties)
 - [x] Inbox lists open change sets; detail shows field-level diffs, partial approve/reject, apply
+- [ ] Inbox detail groups diffs by page for multi-page / multi-collection change requests
 - [x] Settings: schema editor, grants, workspace
 - [x] `export` produces the full workspace as portable data plus schema (grant-filtered for non-admins)
 
