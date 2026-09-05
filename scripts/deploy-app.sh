@@ -84,9 +84,64 @@ else
   }
 fi
 
+wait_for_apprunner_status() {
+  local arn="$1"
+  local want="$2"
+  local timeout_s="${3:-900}"
+  local started
+  started="$(date +%s)"
+  while true; do
+    local status
+    status="$(
+      aws apprunner describe-service \
+        --service-arn "$arn" \
+        --region "$REGION" \
+        --query 'Service.Status' \
+        --output text 2>/dev/null || echo UNKNOWN
+    )"
+    echo "App Runner status: ${status} (want ${want})"
+    if [[ "$status" == "$want" ]]; then
+      return 0
+    fi
+    # CREATE_FAILED / DELETE_* are not recoverable by waiting.
+    case "$status" in
+      CREATE_FAILED|DELETE_FAILED|DELETED)
+        echo "App Runner is in terminal status ${status}; cannot deploy" >&2
+        return 1
+        ;;
+    esac
+    if (( "$(date +%s)" - started >= timeout_s )); then
+      echo "Timed out after ${timeout_s}s waiting for App Runner ${want} (last: ${status})" >&2
+      return 1
+    fi
+    sleep 15
+  done
+}
+
+start_apprunner_deployment() {
+  local arn="$1"
+  local attempts="${2:-8}"
+  local i
+  for ((i = 1; i <= attempts; i++)); do
+    wait_for_apprunner_status "$arn" RUNNING 900
+    if aws apprunner start-deployment \
+      --service-arn "$arn" \
+      --region "$REGION"; then
+      echo "Started App Runner deployment"
+      # Block until this deployment settles so the next CD run does not race.
+      wait_for_apprunner_status "$arn" RUNNING 1200
+      return 0
+    fi
+    echo "start-deployment attempt ${i}/${attempts} failed; retrying…" >&2
+    sleep 20
+  done
+  echo "Failed to start App Runner deployment after ${attempts} attempts" >&2
+  return 1
+}
+
 SERVICE_ARN=$(pulumi stack output appRunnerServiceArn -s "$STACK" 2>/dev/null || true)
 if [[ -n "$SERVICE_ARN" ]]; then
-  aws apprunner start-deployment --service-arn "$SERVICE_ARN" --region "$REGION"
+  start_apprunner_deployment "$SERVICE_ARN"
 fi
 
 WEBHOOK_URL="https://${APP_DOMAIN}/api/billing/webhook"
