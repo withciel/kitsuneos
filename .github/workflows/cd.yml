@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy_site:
-        description: Deploy marketing site to AWS S3 + CloudFront
+        description: Deploy marketing site to AWS S3 (website; CloudFront optional via SITE_CDN)
         type: boolean
         default: true
       deploy_app:
@@ -24,7 +24,7 @@ permissions:
 
 jobs:
   site:
-    name: Deploy site (AWS S3 + CloudFront)
+    name: Deploy site (AWS S3)
     if: ${{ github.event_name == 'push' || inputs.deploy_site }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -100,10 +100,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
-      - name: Deploy site to S3 + CloudFront
+      - name: Deploy site to S3
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
           AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          # Keep CloudFront off until AWS verifies CreateDistribution.
+          SITE_CDN: "0"
         run: ./scripts/deploy-site.sh kitsuneos
 
   app:

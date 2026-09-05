@@ -8,7 +8,7 @@ Stack: `staging` or `prod` in **us-east-1**.
 - RDS Postgres 16 (private, backups + PITR via `backupRetentionPeriod`)
 - Secrets Manager: owner and app database URLs (generated credentials)
 - ACM certificates: `kitsuneos.com` + `app.kitsuneos.com` (both us-east-1)
-- S3 + CloudFront + OAC for static site
+- S3 website hosting for the marketing site (CloudFront optional once AWS verifies the account)
 - ECR repository for `apps/app` container
 - App Runner VPC connector
 - CloudWatch alarms (5xx, RDS connections)
@@ -54,10 +54,10 @@ Push to `main` runs [`.github/workflows/cd.yml`](../.github/workflows/cd.yml):
 
 | Job | Target | Secrets / vars |
 |-----|--------|----------------|
-| `site` | S3 + CloudFront via `scripts/deploy-site.sh` | Same AWS + Pulumi secrets as app (`PULUMI_ACCESS_TOKEN`; `AWS_ROLE_ARN` or access keys); var `AWS_REGION` |
+| `site` | S3 website via `scripts/deploy-site.sh` (set `SITE_CDN=1` for CloudFront) | Same AWS + Pulumi secrets as app (`PULUMI_ACCESS_TOKEN`; `AWS_ROLE_ARN` or access keys); var `AWS_REGION` |
 | `app` | ECR + App Runner via `scripts/deploy-app.sh` | `PULUMI_ACCESS_TOKEN`; either `AWS_ROLE_ARN` (OIDC) or `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY`; optional `DODO_PAYMENTS_API_KEY`, var `AWS_REGION` |
 
-Hosting is **AWS-only** (no Cloudflare Pages). Ensure `kitsuneos:deploySiteCdn=true` (default) and a Route 53 hosted zone for `kitsuneos.com`.
+Hosting is **AWS-only** (no Cloudflare Pages). Default is S3 website (`kitsuneos:deploySite=true`, `kitsuneos:deploySiteCdn=false`) so CD works while CloudFront CreateDistribution is blocked pending AWS account verification. After AWS verifies CloudFront, set `SITE_CDN=1` (or `kitsuneos:deploySiteCdn=true`) and ensure a Route 53 hosted zone for `kitsuneos.com`.
 
 Manual runs: Actions → **CD** → **Run workflow** (toggle site/app).
 

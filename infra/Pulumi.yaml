@@ -11,4 +11,5 @@ config:
   kitsuneos:domain: kitsuneos.com
   kitsuneos:appDomain: app.kitsuneos.com
   kitsuneos:deployApp: false
-  kitsuneos:deploySiteCdn: true
+  kitsuneos:deploySite: true
+  kitsuneos:deploySiteCdn: false
