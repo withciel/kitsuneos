@@ -1,6 +1,6 @@
 # KitsuneOS v1 — Product Requirements Document
 
-**Status:** P0 implemented against acceptance tests (2026-09-02). Human console IA shipped (2026-09-03). P1 (R9–R13) implemented.
+**Status:** P0 implemented against acceptance tests (2026-09-02). Human console IA shipped (2026-09-03). P1 (R9–R13) implemented. P2 R14 merge queue implemented; R15–R17 next.
 **Date:** 3 September 2026
 **Supersedes:** agent-primary draft (2 September 2026)
 **Positioning:** The application database humans and agents share.
@@ -243,9 +243,11 @@ P1 complete for R9–R13. **R12 webhooks** implemented (HMAC-signed `change_set.
 
 **R13. Attachments.** Binary blobs in object storage (local filesystem store by default; S3/R2-compatible store pluggable), referenced by content hash from a record field. Grants apply to metadata listing and download; primary records stay in Postgres.
 
-### P2 — Future considerations (design for, do not build)
+### P2 — Should ship next
 
-**R14. Agent-tempo merge queue.** Ordered application of many concurrent change sets with automatic resolution where field sets are disjoint. *Architectural implication:* change sets must be field-level and carry per-operation base revisions from day one. If we build record-level diffs, this is a rewrite. **This is the single most important P2 constraint in the document.**
+**R14 merge queue implemented.** R15–R17 remain design-for / build next.
+
+**R14. Agent-tempo merge queue.** Ordered application of many concurrent change sets with automatic resolution where field sets are disjoint. *Architectural implication:* change sets must be field-level and carry per-operation base revisions from day one. If we build record-level diffs, this is a rewrite. **Implemented:** `enqueueMerge` / `processMergeQueue` (engine + MCP) drain reviewed change sets FIFO; disjoint fields apply, overlapping fields block that set and the queue continues.
 
 **R15. Branching.** Fork a workspace's data for a staging environment or a long-running agent task. *Architectural implication:* keep tenancy at the schema level so a branch is a schema copy, not a cross-cutting migration.
 

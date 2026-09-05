@@ -419,6 +419,46 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'enqueue_merge',
+    description:
+      'Enqueue a fully reviewed change set onto the agent-tempo merge queue (R14). Disjoint field sets apply automatically when the queue drains; overlapping fields block that set and the queue continues.',
+    inputSchema: {
+      type: 'object',
+      required: ['changeSetId'],
+      properties: {
+        changeSetId: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'list_merge_queue',
+    description:
+      'List merge-queue entries for this workspace (newest pending first by enqueue order).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        statuses: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['pending', 'processing', 'applied', 'blocked', 'cancelled'],
+          },
+        },
+      },
+    },
+  },
+  {
+    name: 'process_merge_queue',
+    description:
+      'Drain up to `limit` pending merge-queue entries in enqueue order. Blocked change sets are skipped so later disjoint sets still apply.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number' },
+      },
+    },
+  },
+  {
     name: 'propose_change_set',
     description:
       'Propose a change instead of writing it. Every operation names a single field. The change set enters a review queue and lands only after a human approves it. Proposing a field outside your grant fails immediately with an error naming the field.',

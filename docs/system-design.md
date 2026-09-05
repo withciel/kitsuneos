@@ -1,6 +1,6 @@
 # KitsuneOS v1 — System Design
 
-**Status:** P0 surfaces implemented. Human console IA shipped. P1 complete: R9 semantic search (pgvector), R10 rollups, R11 automation policies, R12 outbound webhooks, R13 attachments (content-addressed blob store); plus reference graph, VFS, and ingest.
+**Status:** P0 surfaces implemented. Human console IA shipped. P1 complete (R9–R13). P2 R14 agent-tempo merge queue implemented; R15–R17 remain architectural accommodations.
 **Date:** 3 September 2026
 **Companion to:** KitsuneOS v1 PRD
 **Scope:** P0 requirements R1–R8; P1 R9–R13 (search, rollups, automation, webhooks, attachments) plus reference graph/VFS/ingest; architectural accommodation for P2 items R14–R17
@@ -614,7 +614,7 @@ Instrument from day one, including metrics nothing consumes yet:
 
 **Around 500 workspaces.** Begin the move to database-per-workspace before table count becomes acute (ADR-002). Doing this early also makes R15 branching close to free.
 
-**When field-conflict rate exceeds 10%.** R14's merge queue leaves P2. The data model already supports it; this is a scheduling decision, not an architectural one.
+**When field-conflict rate exceeds 10%.** R14's merge queue is implemented (`enqueueMerge` / `processMergeQueue`). Monitor conflict rate; if it stays high, invest in better rebase UX rather than rewriting the op model.
 
 **When reviewer load exceeds 25 per person per week.** Human review has become the bottleneck and R11's automation policies become urgent. The product has moved work rather than removed it.
 

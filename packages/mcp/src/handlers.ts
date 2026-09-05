@@ -134,6 +134,33 @@ export function createMcpHandlers(
       return { ok: true };
     },
 
+    async enqueue_merge(args: { changeSetId: string }) {
+      const ctx = getContext();
+      return engine.enqueueMerge(
+        ctx.workspaceId,
+        ctx.principalId,
+        args.changeSetId,
+      );
+    },
+
+    async list_merge_queue(args: {
+      statuses?: Array<
+        'pending' | 'processing' | 'applied' | 'blocked' | 'cancelled'
+      >;
+    }) {
+      const ctx = getContext();
+      return engine.listMergeQueue(ctx.workspaceId, ctx.principalId, {
+        statuses: args.statuses,
+      });
+    },
+
+    async process_merge_queue(args: { limit?: number }) {
+      const ctx = getContext();
+      return engine.processMergeQueue(ctx.workspaceId, ctx.principalId, {
+        limit: args.limit,
+      });
+    },
+
     async propose_change_set(args: ProposeChangeSetInput) {
       const ctx = getContext();
       return engine.proposeChangeSet(ctx.workspaceId, ctx.principalId, args);

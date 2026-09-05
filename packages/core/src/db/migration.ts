@@ -271,6 +271,26 @@ CREATE INDEX IF NOT EXISTS webhook_deliveries_endpoint_idx
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.webhook_endpoints TO kitsune_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.webhook_deliveries TO kitsune_app;
 
+CREATE TABLE IF NOT EXISTS kitsune.merge_queue (
+  id              uuid PRIMARY KEY,
+  workspace_id    uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  change_set_id   uuid NOT NULL REFERENCES kitsune.change_sets(id),
+  enqueued_by     uuid NOT NULL REFERENCES kitsune.principals(id),
+  status          text NOT NULL CHECK (
+                    status IN ('pending','processing','applied','blocked','cancelled')
+                  ),
+  enqueued_at     timestamptz NOT NULL DEFAULT now(),
+  processed_at    timestamptz,
+  last_error      text
+);
+CREATE INDEX IF NOT EXISTS merge_queue_workspace_pending_idx
+  ON kitsune.merge_queue (workspace_id, status, enqueued_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS merge_queue_active_change_set_idx
+  ON kitsune.merge_queue (change_set_id)
+  WHERE status IN ('pending', 'processing');
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.merge_queue TO kitsune_app;
+
 
 CREATE TABLE IF NOT EXISTS kitsune.attachments (
   id             uuid PRIMARY KEY,

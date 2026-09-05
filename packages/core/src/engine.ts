@@ -45,6 +45,14 @@ import {
 import { assertFieldAllowed, loadResolvedGrant } from './grants/resolve.js';
 import type { IngestRequest, IngestResult } from './ingest/types.js';
 import {
+  claimNextMergeQueueEntry,
+  completeMergeQueueEntry,
+  insertMergeQueueEntry,
+  listMergeQueueEntries,
+  type MergeQueueEntry,
+  type MergeQueueStatus,
+} from './merge/queue.js';
+import {
   type SweepRevisionsResult,
   sweepExpiredRevisions,
 } from './revisions/sweep.js';
@@ -3524,6 +3532,234 @@ export class KitsuneEngine {
       outcome: 'allowed',
       detail: { endpointId },
     });
+  }
+
+  /**
+   * Enqueue a fully reviewed change set for ordered apply (R14).
+   * Disjoint field sets apply automatically as the queue drains; overlapping
+   * fields leave the set blocked and the queue continues.
+   */
+  async enqueueMerge(
+    workspaceId: string,
+    principalId: string,
+    changeSetId: string,
+  ): Promise<{ queueId: string }> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
+
+    const metaClient = await this.appPool.connect();
+    let ops: Array<{
+      status: string;
+      collection_name: string;
+      field_name: string | null;
+      op: string;
+    }>;
+    try {
+      const changeSet = await queryOne<{
+        status: string;
+        expires_at: Date;
+      }>(
+        metaClient,
+        `SELECT status, expires_at FROM kitsune.change_sets
+          WHERE id = $1 AND workspace_id = $2`,
+        [changeSetId, workspaceId],
+      );
+      if (!changeSet) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      if (
+        changeSet.status === 'expired' ||
+        new Date(changeSet.expires_at) < new Date()
+      ) {
+        throw new KitsuneError('Change set expired', 'expired');
+      }
+      if (changeSet.status === 'applied' || changeSet.status === 'rejected') {
+        throw new KitsuneError(
+          `Change set status is ${changeSet.status}`,
+          'validation',
+        );
+      }
+      if (changeSet.status !== 'open' && changeSet.status !== 'blocked') {
+        throw new KitsuneError(
+          `Change set status is ${changeSet.status}`,
+          'validation',
+        );
+      }
+
+      ops = await queryRows<{
+        status: string;
+        collection_name: string;
+        field_name: string | null;
+        op: string;
+      }>(
+        metaClient,
+        `SELECT o.status, c.name AS collection_name, o.field_name, o.op
+           FROM kitsune.change_ops o
+           JOIN kitsune.collections c ON c.id = o.collection_id
+          WHERE o.change_set_id = $1`,
+        [changeSetId],
+      );
+      if (ops.length === 0) {
+        throw new KitsuneError('Change set has no operations', 'validation');
+      }
+      if (ops.some((o) => o.status === 'proposed')) {
+        throw new KitsuneError(
+          'All operations must be approved or rejected before enqueue',
+          'validation',
+        );
+      }
+      if (!ops.some((o) => o.status === 'approved')) {
+        throw new KitsuneError(
+          'Change set has no approved operations',
+          'validation',
+        );
+      }
+
+      await this.assertMinApprovalsSatisfied(
+        metaClient,
+        workspaceId,
+        changeSetId,
+        ops.map((o) => ({
+          collectionName: o.collection_name,
+          fieldName: o.field_name,
+          op: o.op,
+        })),
+      );
+    } finally {
+      metaClient.release();
+    }
+
+    const queueId = uuidv4();
+    await withOwner(this.ownerPool, async (client) => {
+      await insertMergeQueueEntry(client, {
+        id: queueId,
+        workspaceId,
+        changeSetId,
+        enqueuedBy: principalId,
+      });
+    });
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'merge.enqueue',
+      outcome: 'allowed',
+      detail: { queueId, changeSetId },
+    });
+    return { queueId };
+  }
+
+  async listMergeQueue(
+    workspaceId: string,
+    principalId: string,
+    options?: { statuses?: MergeQueueStatus[] },
+  ): Promise<MergeQueueEntry[]> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
+    // Any entitled principal may inspect the queue (reviewers need visibility).
+    void principalId;
+    return withOwner(this.ownerPool, async (client) =>
+      listMergeQueueEntries(client, workspaceId, options?.statuses),
+    );
+  }
+
+  /**
+   * Drain pending merge-queue entries in enqueue order. Blocked change sets
+   * (field conflicts) are marked blocked on the queue entry and skipped so
+   * later disjoint sets still apply.
+   */
+  async processMergeQueue(
+    workspaceId: string,
+    principalId: string,
+    options?: { limit?: number },
+  ): Promise<
+    Array<{
+      queueId: string;
+      changeSetId: string;
+      status: 'applied' | 'blocked';
+      conflicts?: string[];
+    }>
+  > {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
+    const limit = Math.min(Math.max(options?.limit ?? 10, 1), 100);
+    const results: Array<{
+      queueId: string;
+      changeSetId: string;
+      status: 'applied' | 'blocked';
+      conflicts?: string[];
+    }> = [];
+
+    for (let i = 0; i < limit; i++) {
+      const claimed = await withOwner(this.ownerPool, async (client) =>
+        claimNextMergeQueueEntry(client, workspaceId),
+      );
+      if (!claimed) {
+        break;
+      }
+
+      try {
+        const applied = await this.applyChangeSet(
+          workspaceId,
+          principalId,
+          claimed.changeSetId,
+        );
+        if (applied.status === 'applied') {
+          await withOwner(this.ownerPool, async (client) => {
+            await completeMergeQueueEntry(client, claimed.id, 'applied');
+          });
+          results.push({
+            queueId: claimed.id,
+            changeSetId: claimed.changeSetId,
+            status: 'applied',
+          });
+        } else {
+          await withOwner(this.ownerPool, async (client) => {
+            await completeMergeQueueEntry(
+              client,
+              claimed.id,
+              'blocked',
+              applied.conflicts?.join(',') ?? 'blocked',
+            );
+          });
+          results.push({
+            queueId: claimed.id,
+            changeSetId: claimed.changeSetId,
+            status: 'blocked',
+            conflicts: applied.conflicts,
+          });
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'merge processing failed';
+        const code = error instanceof KitsuneError ? error.code : 'internal';
+        await withOwner(this.ownerPool, async (client) => {
+          await completeMergeQueueEntry(
+            client,
+            claimed.id,
+            code === 'blocked' || code === 'validation' || code === 'expired'
+              ? 'blocked'
+              : 'blocked',
+            message,
+          );
+        });
+        results.push({
+          queueId: claimed.id,
+          changeSetId: claimed.changeSetId,
+          status: 'blocked',
+          conflicts: [message],
+        });
+      }
+    }
+
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'merge.process',
+      outcome: 'allowed',
+      detail: {
+        processed: results.length,
+        applied: results.filter((r) => r.status === 'applied').length,
+        blocked: results.filter((r) => r.status === 'blocked').length,
+      },
+    });
+    return results;
   }
 
   private async requireCollectionAdmin(
