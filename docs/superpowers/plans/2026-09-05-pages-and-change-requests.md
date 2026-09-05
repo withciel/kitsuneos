@@ -72,10 +72,10 @@
 
 **Decision for v1 URLs:** `/p/[pageId]?c=[collection]` to avoid a workspace-wide UUID search. Table and relations always supply `c`. Optional follow-up: redirector API that resolves collection.
 
-- [ ] **Step 1:** Add `pickBodyField` / `pickTitleField` helpers with unit tests (first prose field named `body`, else first `prose`; title via existing label prefs)
-- [ ] **Step 2:** Build read-only `PageView` — title, property list, body markdown/plaintext, link back to `/c/[collection]`
-- [ ] **Step 3:** Wire `/p/[pageId]` page under `(workspace)` layout
-- [ ] **Step 4:** Commit
+- [x] **Step 1:** Add `pickBodyField` / `pickTitleField` helpers with unit tests (first prose field named `body`, else first `prose`; title via existing label prefs)
+- [x] **Step 2:** Build read-only `PageView` — title, property list, body markdown/plaintext, link back to `/c/[collection]`
+- [x] **Step 3:** Wire `/p/[pageId]` page under `(workspace)` layout
+- [x] **Step 4:** Commit
 
 ---
 
@@ -86,11 +86,11 @@
 - Modify: `apps/app/src/components/collection/collection-view.tsx`
 - Reuse: existing record PATCH/POST / change-set auto-apply paths the peek uses today
 
-- [ ] **Step 1:** Port peek field editors onto the page property rail + body editor (same API calls as Sheet)
-- [ ] **Step 2:** Table row primary click → `router.push(/p/[id]?c=...)`; keep “Quick edit” that opens Sheet only from an explicit control (or remove Sheet if redundant)
-- [ ] **Step 3:** New page/create flow: either stay as table “New” → create then navigate to `/p/...`, or create on page route — pick one and document in commit
-- [ ] **Step 4:** Replace user-visible “Record” strings in collection + page surfaces with “Page”
-- [ ] **Step 5:** Run `pnpm lint` / typecheck / relevant tests; commit
+- [x] **Step 1:** Port peek field editors onto the page property rail + body editor (same API calls as Sheet)
+- [x] **Step 2:** Table row primary click → `router.push(/p/[id]?c=...)`; keep “Quick edit” that opens Sheet only from an explicit control (or remove Sheet if redundant)
+- [x] **Step 3:** New page/create flow: either stay as table “New” → create then navigate to `/p/...`, or create on page route — pick one and document in commit
+- [x] **Step 4:** Replace user-visible “Record” strings in collection + page surfaces with “Page”
+- [x] **Step 5:** Run `pnpm lint` / typecheck / relevant tests; commit
 
 ---
 

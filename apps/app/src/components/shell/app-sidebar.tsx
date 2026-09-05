@@ -78,15 +78,15 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Collections</SidebarGroupLabel>
+          <SidebarGroupLabel>Databases</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {collections.length === 0 ? (
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild tooltip="Create a collection">
+                  <SidebarMenuButton asChild tooltip="Create a database">
                     <Link href="/settings/schema">
                       <Table2 />
-                      <span>Create a collection</span>
+                      <span>Create a database</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
