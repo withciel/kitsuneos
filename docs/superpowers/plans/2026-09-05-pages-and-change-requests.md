@@ -101,9 +101,9 @@
 - Modify: sidebar labels if they say “change set”
 - Modify: `apps/app/src/components/shell/*` as needed
 
-- [ ] **Step 1:** Rename empty states / headings to **Change requests** (keep API field names)
-- [ ] **Step 2:** List row subtitle: `N pages across M databases` (derive unique recordIds + collections from ops payload already fetched)
-- [ ] **Step 3:** Commit
+- [x] **Step 1:** Rename empty states / headings to **Change requests** (keep API field names)
+- [x] **Step 2:** List row subtitle: `N pages across M databases` (derive unique recordIds + collections from ops payload already fetched)
+- [x] **Step 3:** Commit
 
 ---
 
@@ -118,11 +118,11 @@
 - Consumes: existing review API ops (`collection`, `recordId`, `field`, old/new, status)
 - Produces: `groupOpsByPage(ops) → Array<{ collection, recordId, title?, ops: Op[] }>`
 
-- [ ] **Step 1:** Write failing unit test for `groupOpsByPage` (multi-collection fixture)
-- [ ] **Step 2:** Implement helper; render PR-style file list + per-page hunks
-- [ ] **Step 3:** Each page header links to `/p/[recordId]?c=[collection]`
-- [ ] **Step 4:** Keep per-op approve/reject controls; group visually under pages
-- [ ] **Step 5:** Apply/Merge button copy; run tests; commit
+- [x] **Step 1:** Write failing unit test for `groupOpsByPage` (multi-collection fixture)
+- [x] **Step 2:** Implement helper; render PR-style file list + per-page hunks
+- [x] **Step 3:** Each page header links to `/p/[recordId]?c=[collection]`
+- [x] **Step 4:** Keep per-op approve/reject controls; group visually under pages
+- [x] **Step 5:** Apply/Merge button copy; run tests; commit
 
 ---
 

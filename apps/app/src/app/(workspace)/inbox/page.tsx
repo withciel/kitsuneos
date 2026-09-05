@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { summarizePagesTouched } from '@/lib/group-ops-by-page';
 
 interface ChangeSetSummary {
   id: string;
@@ -20,7 +21,7 @@ interface ChangeSetSummary {
   status: string;
   createdAt: string;
   author: string;
-  operations: Array<{ collection: string }>;
+  operations: Array<{ collection: string; recordId?: string | null }>;
 }
 
 export default function InboxPage() {
@@ -48,9 +49,11 @@ export default function InboxPage() {
   return (
     <div className="flex flex-1 flex-col">
       <div className="border-b border-border px-6 py-4">
-        <h1 className="text-xl font-semibold tracking-tight">Inbox</h1>
+        <h1 className="text-xl font-semibold tracking-tight">
+          Change requests
+        </h1>
         <p className="text-xs text-muted-foreground">
-          Open change requests awaiting review
+          Open proposals awaiting review — like pull requests across pages
         </p>
       </div>
       <div className="flex-1 overflow-auto px-6 py-4">
@@ -63,8 +66,8 @@ export default function InboxPage() {
           </div>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No open change sets. Writes from propose-capability users and agents
-            land here for review.
+            No open change requests. Writes from propose-capability users and
+            agents land here for review.
           </p>
         ) : (
           <Table>
@@ -72,13 +75,14 @@ export default function InboxPage() {
               <TableRow>
                 <TableHead>Title</TableHead>
                 <TableHead>Author</TableHead>
-                <TableHead>Collections</TableHead>
+                <TableHead>Scope</TableHead>
                 <TableHead>Opened</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {items.map((item) => {
-                const collections = [
+                const scope = summarizePagesTouched(item.operations);
+                const databases = [
                   ...new Set(item.operations.map((op) => op.collection)),
                 ];
                 return (
@@ -88,18 +92,17 @@ export default function InboxPage() {
                         href={`/inbox/${item.id}`}
                         className="font-medium text-foreground hover:text-primary"
                       >
-                        {item.title ?? 'Untitled change set'}
+                        {item.title ?? 'Untitled change request'}
                       </Link>
-                      {item.rationale ? (
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {item.rationale}
-                        </p>
-                      ) : null}
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {scope.label}
+                        {item.rationale ? ` · ${item.rationale}` : ''}
+                      </p>
                     </TableCell>
                     <TableCell className="text-sm">{item.author}</TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
-                        {collections.map((name) => (
+                        {databases.map((name) => (
                           <Badge key={name} variant="secondary">
                             {name}
                           </Badge>

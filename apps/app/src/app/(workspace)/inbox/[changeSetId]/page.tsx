@@ -1,23 +1,15 @@
 'use client';
 
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
-import { Badge } from '@/components/ui/badge';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ChangeRequestDiff,
+  type DiffOperation,
+} from '@/components/inbox/change-request-diff';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
-
-interface OperationSummary {
-  id: string;
-  collection: string;
-  recordId: string | null;
-  op: string;
-  fieldName: string | null;
-  newValue: unknown;
-  before: unknown | null;
-  status: string;
-  seq: number;
-}
+import { groupOpsByPage, summarizePagesTouched } from '@/lib/group-ops-by-page';
 
 interface ChangeSetSummary {
   id: string;
@@ -26,14 +18,7 @@ interface ChangeSetSummary {
   status: string;
   createdAt: string;
   author: string;
-  operations: OperationSummary[];
-}
-
-function renderValue(value: unknown): string {
-  if (value === undefined) return '(empty)';
-  if (value === null) return 'null';
-  if (typeof value === 'string') return value;
-  return JSON.stringify(value);
+  operations: DiffOperation[];
 }
 
 export default function InboxDetailPage() {
@@ -60,7 +45,7 @@ export default function InboxDetailPage() {
       (cs) => cs.id === params.changeSetId,
     );
     if (!found) {
-      setError('Change set not found or already closed');
+      setError('Change request not found or already closed');
       return;
     }
     setItem(found);
@@ -76,6 +61,19 @@ export default function InboxDetailPage() {
   useEffect(() => {
     void load().catch(() => setError('Failed to load'));
   }, [load]);
+
+  const pageGroups = useMemo(
+    () => (item ? groupOpsByPage(item.operations) : []),
+    [item],
+  );
+
+  const scope = useMemo(
+    () =>
+      item
+        ? summarizePagesTouched(item.operations)
+        : { label: '', pageCount: 0, databaseCount: 0 },
+    [item],
+  );
 
   async function submit(apply: boolean) {
     if (!item) return;
@@ -127,17 +125,18 @@ export default function InboxDetailPage() {
             className="hover:text-foreground"
             onClick={() => router.push('/inbox')}
           >
-            Inbox
+            Change requests
           </button>
           {' / '}
-          Change request
+          Review
         </p>
         <h1 className="mt-1 text-xl font-semibold tracking-tight">
-          {item?.title ?? 'Change set'}
+          {item?.title ?? 'Change request'}
         </h1>
         {item ? (
           <p className="mt-1 text-xs text-muted-foreground">
             {item.author} · {new Date(item.createdAt).toLocaleString()}
+            {scope.label ? ` · ${scope.label}` : ''}
           </p>
         ) : null}
       </div>
@@ -147,60 +146,15 @@ export default function InboxDetailPage() {
           <p className="text-sm text-muted-foreground">{item.rationale}</p>
         ) : null}
         <Separator />
-        <ul className="space-y-3">
-          {item?.operations.map((op) => (
-            <li
-              key={op.id}
-              className="rounded-md border border-border bg-card p-3"
-            >
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">{op.collection}</Badge>
-                <Badge variant="outline">{op.op}</Badge>
-                {op.fieldName ? (
-                  <span className="font-mono text-xs">{op.fieldName}</span>
-                ) : null}
-              </div>
-              <div className="grid gap-2 text-xs sm:grid-cols-2">
-                <div>
-                  <p className="mb-1 text-muted-foreground">Before</p>
-                  <pre className="overflow-auto rounded bg-muted/50 p-2 font-mono">
-                    {renderValue(op.before)}
-                  </pre>
-                </div>
-                <div>
-                  <p className="mb-1 text-muted-foreground">After</p>
-                  <pre className="overflow-auto rounded bg-muted/50 p-2 font-mono">
-                    {renderValue(op.newValue)}
-                  </pre>
-                </div>
-              </div>
-              <div className="mt-3 flex gap-2">
-                <Button
-                  size="sm"
-                  variant={
-                    decisions[op.id] === 'approved' ? 'default' : 'outline'
-                  }
-                  onClick={() =>
-                    setDecisions((prev) => ({ ...prev, [op.id]: 'approved' }))
-                  }
-                >
-                  Approve
-                </Button>
-                <Button
-                  size="sm"
-                  variant={
-                    decisions[op.id] === 'rejected' ? 'destructive' : 'outline'
-                  }
-                  onClick={() =>
-                    setDecisions((prev) => ({ ...prev, [op.id]: 'rejected' }))
-                  }
-                >
-                  Reject
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        {item ? (
+          <ChangeRequestDiff
+            groups={pageGroups}
+            decisions={decisions}
+            onDecide={(opId, status) =>
+              setDecisions((prev) => ({ ...prev, [opId]: status }))
+            }
+          />
+        ) : null}
       </div>
       <div className="flex gap-2 border-t border-border px-6 py-3">
         <Button
@@ -211,7 +165,7 @@ export default function InboxDetailPage() {
           Save decisions
         </Button>
         <Button disabled={busy || !item} onClick={() => void submit(true)}>
-          Submit & apply
+          Apply / Merge
         </Button>
       </div>
     </div>
