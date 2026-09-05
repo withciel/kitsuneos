@@ -10,6 +10,15 @@ import type {
   PutAttachmentInput,
 } from './attachments/types.js';
 import { writeAudit, writeAuditInTxn } from './audit/log.js';
+import {
+  type AutoApplyPolicyConfig,
+  assertAutoApplyConfig,
+  assertMinApprovalsConfig,
+  listEnabledPolicies,
+  type MinApprovalsPolicyConfig,
+  matchesAutoApply,
+  matchesMinApprovalsScope,
+} from './automation/policies.js';
 import { assertWriteEntitlement } from './billing/entitlement.js';
 import { compilePredicate } from './compiler/predicate-sql.js';
 import {
@@ -36,11 +45,23 @@ import {
 import { assertFieldAllowed, loadResolvedGrant } from './grants/resolve.js';
 import type { IngestRequest, IngestResult } from './ingest/types.js';
 import {
+  type SweepRevisionsResult,
+  sweepExpiredRevisions,
+} from './revisions/sweep.js';
+import {
   getChangedFieldsSince,
   getRevisionAtTime,
   getRevisionSnapshot,
   writeRevision,
 } from './revisions/write.js';
+import {
+  assertRollupDefinition,
+  loadRollupBindingsForSource,
+  loadRollupFieldNames,
+  markParent,
+  readSourceForeignKeys,
+  recomputeRollupParents,
+} from './rollups/recompute.js';
 import {
   validateCollectionDefinition,
   validateFieldDefinition,
@@ -68,6 +89,7 @@ import type {
   ResolvedGrant,
   ReviewDecision,
   RevisionSummary,
+  RollupDefinition,
   SchemaChangeInput,
 } from './types.js';
 import {
@@ -84,6 +106,13 @@ import {
   type VfsListResult,
   type VfsReadResult,
 } from './vfs/paths.js';
+import {
+  deleteWebhookEndpoint,
+  dispatchChangeSetApplied,
+  generateWebhookSecret,
+  insertWebhookEndpoint,
+  listWebhookEndpoints,
+} from './webhooks/dispatch.js';
 
 export interface ApplyFaultInjection {
   afterOpIndex?: number;
@@ -1480,6 +1509,17 @@ export class KitsuneEngine {
     input: ProposeChangeSetInput,
   ): Promise<{ changeSetId: string; operationIds: string[] }> {
     await assertWriteEntitlement(this.ownerPool, workspaceId);
+    if (
+      input.confidence !== undefined &&
+      (typeof input.confidence !== 'number' ||
+        input.confidence < 0 ||
+        input.confidence > 1)
+    ) {
+      throw new KitsuneError(
+        'confidence must be between 0 and 1',
+        'validation',
+      );
+    }
     const schemaName = schemaNameForWorkspace(workspaceId);
     const changeSetId = uuidv4();
     const operationIds: string[] = [];
@@ -1522,6 +1562,17 @@ export class KitsuneEngine {
             throw new KitsuneError('Not found', 'not_found');
           }
         } else if (op.fieldName) {
+          const rollupFields = await loadRollupFieldNames(
+            client,
+            workspaceId,
+            op.collection,
+          );
+          if (rollupFields.has(op.fieldName)) {
+            throw new KitsuneError(
+              `Field ${op.fieldName} is a rollup and cannot be proposed`,
+              'validation',
+            );
+          }
           assertFieldAllowed(grant, op.fieldName, 'propose');
         }
 
@@ -1550,14 +1601,16 @@ export class KitsuneEngine {
       }
 
       await client.query(
-        `INSERT INTO kitsune.change_sets (id, workspace_id, author_id, status, title, rationale)
-         VALUES ($1, $2, $3, 'open', $4, $5)`,
+        `INSERT INTO kitsune.change_sets
+          (id, workspace_id, author_id, status, title, rationale, confidence)
+         VALUES ($1, $2, $3, 'open', $4, $5, $6)`,
         [
           changeSetId,
           workspaceId,
           authorId,
           input.title ?? null,
           input.rationale ?? null,
+          input.confidence ?? null,
         ],
       );
 
@@ -1615,6 +1668,13 @@ export class KitsuneEngine {
       });
 
       await client.query('COMMIT');
+      await this.maybeAutoApplyChangeSet(
+        workspaceId,
+        authorId,
+        changeSetId,
+        operationIds,
+        input.confidence ?? null,
+      );
       return { changeSetId, operationIds };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -1662,6 +1722,22 @@ export class KitsuneEngine {
         `UPDATE kitsune.change_sets SET decided_by = $1 WHERE id = $2`,
         [reviewerId, changeSetId],
       );
+      const allApproved = decisions.every((d) => d.status === 'approved');
+      if (allApproved && decisions.length > 0) {
+        await client.query(
+          `UPDATE kitsune.change_sets
+              SET approval_principal_ids = (
+                SELECT ARRAY(
+                  SELECT DISTINCT x
+                    FROM unnest(
+                      coalesce(approval_principal_ids, '{}'::uuid[]) || $1::uuid
+                    ) AS x
+                )
+              )
+            WHERE id = $2`,
+          [reviewerId, changeSetId],
+        );
+      }
       await writeAuditInTxn(client, {
         workspaceId,
         principalId: reviewerId,
@@ -1736,6 +1812,17 @@ export class KitsuneEngine {
           'validation',
         );
       }
+
+      await this.assertMinApprovalsSatisfied(
+        metaClient,
+        workspaceId,
+        changeSetId,
+        ops.map((o) => ({
+          collectionName: o.collection_name,
+          fieldName: o.field_name,
+          op: o.op,
+        })),
+      );
     } finally {
       metaClient.release();
     }
@@ -1783,6 +1870,40 @@ export class KitsuneEngine {
         `SET LOCAL lock_timeout = '${applyLockTimeoutLiteral()}'`,
       );
       await this.acquireApplyLocks(client, schemaName, reviewerId, lockTargets);
+
+      const rollupParentIds = new Map<string, Set<string>>();
+      const rollupBindingsBySource = new Map<
+        string,
+        Awaited<ReturnType<typeof loadRollupBindingsForSource>>
+      >();
+      for (const op of approvedOps) {
+        if (!op.record_id || !op.collection_name) continue;
+        let bindings = rollupBindingsBySource.get(op.collection_name);
+        if (!bindings) {
+          bindings = await loadRollupBindingsForSource(
+            client,
+            workspaceId,
+            op.collection_name,
+          );
+          rollupBindingsBySource.set(op.collection_name, bindings);
+        }
+        if (bindings.length === 0) continue;
+        const fkFields = [...new Set(bindings.map((b) => b.foreignKeyField))];
+        const fks = await readSourceForeignKeys(
+          client,
+          schemaName,
+          op.table_name,
+          op.record_id,
+          fkFields,
+        );
+        for (const binding of bindings) {
+          markParent(
+            rollupParentIds,
+            binding.parentCollection,
+            fks[binding.foreignKeyField],
+          );
+        }
+      }
 
       for (const op of approvedOps) {
         const grant = await loadResolvedGrant(
@@ -2032,6 +2153,39 @@ export class KitsuneEngine {
           );
         }
       }
+
+      for (const op of approvedOps) {
+        if (!op.record_id || !op.collection_name) continue;
+        const bindings = rollupBindingsBySource.get(op.collection_name) ?? [];
+        if (bindings.length === 0) continue;
+        const fkFields = [...new Set(bindings.map((b) => b.foreignKeyField))];
+        const fks = await readSourceForeignKeys(
+          client,
+          schemaName,
+          op.table_name,
+          op.record_id,
+          fkFields,
+        );
+        for (const binding of bindings) {
+          markParent(
+            rollupParentIds,
+            binding.parentCollection,
+            fks[binding.foreignKeyField],
+          );
+        }
+      }
+      const allBindings = [...rollupBindingsBySource.values()].flat();
+      if (allBindings.length > 0 && rollupParentIds.size > 0) {
+        await recomputeRollupParents(
+          client,
+          schemaName,
+          reviewerId,
+          changeSetId,
+          allBindings,
+          rollupParentIds,
+        );
+      }
+
       await client.query('COMMIT');
       for (const [key, collectionName] of reindexTargets) {
         const recordId = key.slice(collectionName.length + 1);
@@ -2047,6 +2201,25 @@ export class KitsuneEngine {
             reindexError,
           );
         }
+      }
+      try {
+        await dispatchChangeSetApplied(this.ownerPool, {
+          workspaceId,
+          changeSetId,
+          authorId: changeSet.author_id,
+          appliedBy: reviewerId,
+          operations: approvedOps.map((o) => ({
+            collection: o.collection_name,
+            recordId: o.record_id,
+            op: o.op,
+            fieldName: o.field_name,
+          })),
+        });
+      } catch (webhookError) {
+        console.error(
+          'Webhook dispatch failed after applyChangeSet',
+          webhookError,
+        );
       }
       return { status: 'applied' };
     } catch (error) {
@@ -2125,7 +2298,18 @@ export class KitsuneEngine {
       ) {
         throw new KitsuneError('Not found', 'not_found');
       }
+      const rollupFields = await loadRollupFieldNames(
+        client,
+        workspaceId,
+        collection,
+      );
       for (const field of Object.keys(record)) {
+        if (rollupFields.has(field)) {
+          throw new KitsuneError(
+            `Field ${field} is a rollup and cannot be written`,
+            'validation',
+          );
+        }
         assertFieldAllowed(grant, field, 'write');
       }
       const recordId = options?.recordId ?? uuidv4();
@@ -2162,6 +2346,15 @@ export class KitsuneEngine {
         fieldNames: Object.keys(record),
         outcome: 'allowed',
       });
+      await this.refreshRollupsAfterSourceChange(
+        client,
+        workspaceId,
+        schemaName,
+        principalId,
+        null,
+        collection,
+        [recordId],
+      );
       await client.query('COMMIT');
       const recordIdOut = recordId;
       client.release();
@@ -2609,6 +2802,68 @@ export class KitsuneEngine {
     }
   }
 
+  /**
+   * Set per-collection revision retention. `null` keeps history forever.
+   * Admin-only (same gate as audit).
+   */
+  async setRevisionRetentionDays(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    days: number | null,
+  ): Promise<void> {
+    if (days !== null && (!Number.isInteger(days) || days < 1)) {
+      throw new KitsuneError(
+        'revision_retention_days must be a positive integer or null',
+        'validation',
+      );
+    }
+    await this.requireCollectionAdmin(workspaceId, principalId, collection);
+    const updated = await this.ownerPool.query(
+      `UPDATE kitsune.collections
+          SET revision_retention_days = $1
+        WHERE workspace_id = $2 AND name = $3`,
+      [days, workspaceId, collection],
+    );
+    if ((updated.rowCount ?? 0) === 0) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'schema.revision_retention',
+      fieldNames: [collection],
+      outcome: 'allowed',
+      reason: days === null ? 'retention=forever' : `retention_days=${days}`,
+    });
+  }
+
+  /**
+   * Delete expired `__rev` rows per collection retention. Admin-only.
+   */
+  async sweepRevisions(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<SweepRevisionsResult> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const result = await withOwner(this.ownerPool, async (client) =>
+      sweepExpiredRevisions(client, workspaceId, schemaName),
+    );
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'revisions.sweep',
+      fieldNames: result.collections.map((c) => c.collection),
+      outcome: 'allowed',
+      reason: `deleted=${result.deleted}`,
+    });
+    return result;
+  }
+
   async listRevisionsByPrincipal(
     workspaceId: string,
     callerId: string,
@@ -2818,6 +3073,457 @@ export class KitsuneEngine {
       [workspaceId, principalId],
     );
     return row.rows.length > 0;
+  }
+
+  /**
+   * Configure or clear a rollup on an existing number field. Admin-only.
+   * Rollup fields are platform-maintained and reject direct/proposed writes.
+   */
+  async setFieldRollup(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    field: string,
+    rollup: RollupDefinition | null,
+  ): Promise<void> {
+    await this.requireCollectionAdmin(workspaceId, principalId, collection);
+    if (rollup) {
+      assertRollupDefinition(rollup);
+    }
+
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    await withOwner(this.ownerPool, async (client) => {
+      const parent = await getCollectionMeta(client, workspaceId, collection);
+      const fieldMeta = parent.fieldMeta.find((f) => f.name === field);
+      if (!fieldMeta) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      if (fieldMeta.type !== 'number') {
+        throw new KitsuneError(
+          'Rollup fields must have type number',
+          'validation',
+        );
+      }
+
+      if (rollup) {
+        const source = await getCollectionMeta(
+          client,
+          workspaceId,
+          rollup.sourceCollection,
+        );
+        if (!source.fields.includes(rollup.foreignKeyField)) {
+          throw new KitsuneError(
+            `Source field ${rollup.foreignKeyField} not found`,
+            'validation',
+          );
+        }
+        if (
+          rollup.aggregate !== 'count' &&
+          rollup.valueField &&
+          !source.fields.includes(rollup.valueField)
+        ) {
+          throw new KitsuneError(
+            `Source value field ${rollup.valueField} not found`,
+            'validation',
+          );
+        }
+      }
+
+      const updated = await client.query(
+        `UPDATE kitsune.fields
+            SET rollup = $1::jsonb
+          WHERE collection_id = $2 AND name = $3`,
+        [rollup ? JSON.stringify(rollup) : null, parent.id, field],
+      );
+      if ((updated.rowCount ?? 0) === 0) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+
+      await writeAuditInTxn(client, {
+        workspaceId,
+        principalId,
+        action: 'schema.field_rollup',
+        collectionId: parent.id,
+        fieldNames: [field],
+        outcome: 'allowed',
+        reason: rollup
+          ? `rollup=${rollup.aggregate}:${rollup.sourceCollection}`
+          : 'rollup=cleared',
+      });
+
+      if (rollup) {
+        const parents = await client.query<{ id: string }>(
+          `SELECT id FROM ${quoteIdent(schemaName)}.${quoteIdent(parent.tableName)}
+            WHERE _deleted_at IS NULL`,
+        );
+        const parentIds = new Map<string, Set<string>>([
+          [collection, new Set(parents.rows.map((r) => r.id))],
+        ]);
+        const bindings = await loadRollupBindingsForSource(
+          client,
+          workspaceId,
+          rollup.sourceCollection,
+        );
+        const mine = bindings.filter(
+          (b) => b.parentCollection === collection && b.parentField === field,
+        );
+        if (mine.length > 0 && parents.rows.length > 0) {
+          await recomputeRollupParents(
+            client,
+            schemaName,
+            principalId,
+            null,
+            mine,
+            parentIds,
+          );
+        }
+      }
+    });
+  }
+
+  private async refreshRollupsAfterSourceChange(
+    client: import('pg').PoolClient,
+    workspaceId: string,
+    schemaName: string,
+    principalId: string,
+    changeSetId: string | null,
+    sourceCollection: string,
+    recordIds: string[],
+  ): Promise<void> {
+    const bindings = await loadRollupBindingsForSource(
+      client,
+      workspaceId,
+      sourceCollection,
+    );
+    if (bindings.length === 0 || recordIds.length === 0) {
+      return;
+    }
+
+    const source = await getCollectionMeta(
+      client,
+      workspaceId,
+      sourceCollection,
+    );
+    const fkFields = [...new Set(bindings.map((b) => b.foreignKeyField))];
+    const parentIds = new Map<string, Set<string>>();
+    for (const recordId of recordIds) {
+      const fks = await readSourceForeignKeys(
+        client,
+        schemaName,
+        source.tableName,
+        recordId,
+        fkFields,
+      );
+      for (const binding of bindings) {
+        markParent(
+          parentIds,
+          binding.parentCollection,
+          fks[binding.foreignKeyField],
+        );
+      }
+    }
+    await recomputeRollupParents(
+      client,
+      schemaName,
+      principalId,
+      changeSetId,
+      bindings,
+      parentIds,
+    );
+  }
+
+  async upsertAutomationPolicy(
+    workspaceId: string,
+    principalId: string,
+    input: {
+      name: string;
+      kind: 'auto_apply' | 'min_approvals';
+      config: AutoApplyPolicyConfig | MinApprovalsPolicyConfig;
+      enabled?: boolean;
+    },
+  ): Promise<string> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    if (input.kind === 'auto_apply') {
+      assertAutoApplyConfig(input.config as AutoApplyPolicyConfig);
+    } else {
+      assertMinApprovalsConfig(input.config as MinApprovalsPolicyConfig);
+    }
+    const id = uuidv4();
+    await this.ownerPool.query(
+      `INSERT INTO kitsune.automation_policies
+         (id, workspace_id, name, enabled, kind, config)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+       ON CONFLICT (workspace_id, name) DO UPDATE
+         SET enabled = EXCLUDED.enabled,
+             kind = EXCLUDED.kind,
+             config = EXCLUDED.config
+       RETURNING id`,
+      [
+        id,
+        workspaceId,
+        input.name,
+        input.enabled !== false,
+        input.kind,
+        JSON.stringify(input.config),
+      ],
+    );
+    const row = await this.ownerPool.query<{ id: string }>(
+      `SELECT id FROM kitsune.automation_policies
+        WHERE workspace_id = $1 AND name = $2`,
+      [workspaceId, input.name],
+    );
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'automation.policy_upsert',
+      outcome: 'allowed',
+      detail: { name: input.name, kind: input.kind },
+    });
+    const policyId = row.rows[0]?.id;
+    if (!policyId) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    return policyId;
+  }
+
+  async listAutomationPolicies(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      enabled: boolean;
+      kind: 'auto_apply' | 'min_approvals';
+      config: AutoApplyPolicyConfig | MinApprovalsPolicyConfig;
+    }>
+  > {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const result = await this.ownerPool.query<{
+      id: string;
+      name: string;
+      enabled: boolean;
+      kind: 'auto_apply' | 'min_approvals';
+      config: AutoApplyPolicyConfig | MinApprovalsPolicyConfig;
+    }>(
+      `SELECT id, name, enabled, kind, config
+         FROM kitsune.automation_policies
+        WHERE workspace_id = $1
+        ORDER BY name`,
+      [workspaceId],
+    );
+    return result.rows;
+  }
+
+  async deleteAutomationPolicy(
+    workspaceId: string,
+    principalId: string,
+    name: string,
+  ): Promise<void> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const deleted = await this.ownerPool.query(
+      `DELETE FROM kitsune.automation_policies
+        WHERE workspace_id = $1 AND name = $2`,
+      [workspaceId, name],
+    );
+    if ((deleted.rowCount ?? 0) === 0) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'automation.policy_delete',
+      outcome: 'allowed',
+      detail: { name },
+    });
+  }
+
+  private async maybeAutoApplyChangeSet(
+    workspaceId: string,
+    authorId: string,
+    changeSetId: string,
+    operationIds: string[],
+    confidence: number | null,
+  ): Promise<void> {
+    const client = await this.ownerPool.connect();
+    try {
+      const policies = await listEnabledPolicies(client, workspaceId);
+      const autoPolicies = policies.filter((p) => p.kind === 'auto_apply');
+      if (autoPolicies.length === 0) return;
+
+      const ops = await client.query<{
+        collection_name: string;
+        field_name: string | null;
+        op: string;
+      }>(
+        `SELECT c.name AS collection_name, o.field_name, o.op
+           FROM kitsune.change_ops o
+           JOIN kitsune.collections c ON c.id = o.collection_id
+          WHERE o.change_set_id = $1
+          ORDER BY o.seq`,
+        [changeSetId],
+      );
+      const summary = ops.rows.map((o) => ({
+        collectionName: o.collection_name,
+        fieldName: o.field_name,
+        op: o.op,
+      }));
+      const matched = autoPolicies.some((p) =>
+        matchesAutoApply(
+          p.config as AutoApplyPolicyConfig,
+          summary,
+          confidence,
+        ),
+      );
+      if (!matched) return;
+    } finally {
+      client.release();
+    }
+
+    try {
+      await this.reviewChangeSet(
+        workspaceId,
+        authorId,
+        changeSetId,
+        operationIds.map((opId) => ({
+          opId,
+          status: 'approved' as const,
+        })),
+      );
+      await this.applyChangeSet(workspaceId, authorId, changeSetId);
+    } catch (error) {
+      console.error('Auto-apply failed for change set', changeSetId, error);
+    }
+  }
+
+  private async assertMinApprovalsSatisfied(
+    client: import('pg').PoolClient,
+    workspaceId: string,
+    changeSetId: string,
+    ops: Array<{
+      collectionName: string;
+      fieldName: string | null;
+      op: string;
+    }>,
+  ): Promise<void> {
+    const policies = await listEnabledPolicies(client, workspaceId);
+    const minPolicies = policies.filter((p) => p.kind === 'min_approvals');
+    if (minPolicies.length === 0) return;
+
+    const applicable = minPolicies.filter((p) =>
+      matchesMinApprovalsScope(p.config as MinApprovalsPolicyConfig, ops),
+    );
+    if (applicable.length === 0) return;
+
+    const required = Math.max(
+      ...applicable.map(
+        (p) => (p.config as MinApprovalsPolicyConfig).minApprovals,
+      ),
+    );
+    const row = await client.query<{
+      approval_principal_ids: string[] | null;
+    }>(`SELECT approval_principal_ids FROM kitsune.change_sets WHERE id = $1`, [
+      changeSetId,
+    ]);
+    const approvals = row.rows[0]?.approval_principal_ids ?? [];
+    if (approvals.length < required) {
+      throw new KitsuneError(
+        `Change set requires ${required} approvals; has ${approvals.length}`,
+        'validation',
+      );
+    }
+  }
+
+  async createWebhookEndpoint(
+    workspaceId: string,
+    principalId: string,
+    input: { url: string; events?: string[] },
+  ): Promise<{ id: string; secret: string }> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const id = uuidv4();
+    const secret = generateWebhookSecret();
+    const events = input.events ?? ['change_set.applied'];
+    await withOwner(this.ownerPool, async (client) => {
+      await insertWebhookEndpoint(client, {
+        id,
+        workspaceId,
+        url: input.url,
+        secret,
+        events,
+      });
+    });
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'webhooks.endpoint_create',
+      outcome: 'allowed',
+      detail: { endpointId: id, url: input.url },
+    });
+    return { id, secret };
+  }
+
+  async listWebhookEndpoints(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      url: string;
+      events: string[];
+      enabled: boolean;
+      createdAt: string;
+    }>
+  > {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    return withOwner(this.ownerPool, async (client) => {
+      const rows = await listWebhookEndpoints(client, workspaceId);
+      return rows.map((row) => ({
+        id: row.id,
+        url: row.url,
+        events: row.events,
+        enabled: row.enabled,
+        createdAt: row.createdAt,
+      }));
+    });
+  }
+
+  async deleteWebhookEndpoint(
+    workspaceId: string,
+    principalId: string,
+    endpointId: string,
+  ): Promise<void> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const deleted = await withOwner(this.ownerPool, async (client) =>
+      deleteWebhookEndpoint(client, workspaceId, endpointId),
+    );
+    if (!deleted) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'webhooks.endpoint_delete',
+      outcome: 'allowed',
+      detail: { endpointId },
+    });
   }
 
   private async requireCollectionAdmin(

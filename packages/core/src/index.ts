@@ -17,6 +17,13 @@ export {
   resolveApiKey,
   revokeApiKey,
 } from './auth/api-keys.js';
+export {
+  type AutoApplyPolicyConfig,
+  type AutomationPolicy,
+  assertAutoApplyConfig,
+  assertMinApprovalsConfig,
+  type MinApprovalsPolicyConfig,
+} from './automation/policies.js';
 export type { SubscriptionStatus } from './billing/entitlement.js';
 export {
   assertWriteEntitlement,
@@ -63,11 +70,20 @@ export type {
   ParsedIngestBatch,
 } from './ingest/types.js';
 export {
+  type SweepCollectionResult,
+  type SweepRevisionsResult,
+  sweepExpiredRevisions,
+} from './revisions/sweep.js';
+export {
   getChangedFieldsSince,
   getRevisionAtTime,
   getRevisionSnapshot,
   writeRevision,
 } from './revisions/write.js';
+export {
+  assertRollupDefinition,
+  type RollupBinding,
+} from './rollups/recompute.js';
 export {
   assertIdentifier,
   validateCollectionDefinition,
@@ -100,3 +116,9 @@ export {
   type VfsPath,
   type VfsReadResult,
 } from './vfs/paths.js';
+export {
+  generateWebhookSecret,
+  signWebhookPayload,
+  type WebhookDelivery,
+  type WebhookEndpoint,
+} from './webhooks/dispatch.js';

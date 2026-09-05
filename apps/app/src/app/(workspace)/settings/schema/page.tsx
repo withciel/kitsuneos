@@ -14,11 +14,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
+import { notifyWorkspaceChanged } from '@/lib/workspace-events';
 
 interface FieldMeta {
   name: string;
   type: string;
   writable: boolean;
+  relationTarget?: string | null;
 }
 
 interface CollectionMeta {
@@ -45,6 +47,7 @@ export default function SettingsSchemaPage() {
   const [newFieldType, setNewFieldType] =
     useState<(typeof FIELD_TYPES)[number]>('text');
   const [newEnumValues, setNewEnumValues] = useState('');
+  const [newRelationTarget, setNewRelationTarget] = useState('');
   const [newCollectionName, setNewCollectionName] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -111,6 +114,10 @@ export default function SettingsSchemaPage() {
       setError('Enum fields require at least one value');
       return;
     }
+    if (newFieldType === 'relation' && !newRelationTarget) {
+      setError('Relation fields require a target collection');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -121,10 +128,14 @@ export default function SettingsSchemaPage() {
           name: newFieldName.trim(),
           type: newFieldType,
           ...(newFieldType === 'enum' ? { enumValues } : {}),
+          ...(newFieldType === 'relation'
+            ? { relationTarget: newRelationTarget }
+            : {}),
         },
       });
       setNewFieldName('');
       setNewEnumValues('');
+      notifyWorkspaceChanged();
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -172,6 +183,7 @@ export default function SettingsSchemaPage() {
       if (!response.ok) throw new Error(body.error ?? 'Create failed');
       setNewCollectionName('');
       setSelected(newCollectionName.trim());
+      notifyWorkspaceChanged();
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -245,6 +257,9 @@ export default function SettingsSchemaPage() {
                       <span className="font-medium">{field.name}</span>
                       <span className="ml-2 text-muted-foreground">
                         {field.type}
+                        {field.type === 'relation' && field.relationTarget
+                          ? ` → ${field.relationTarget}`
+                          : ''}
                       </span>
                     </span>
                     <Button
@@ -272,9 +287,10 @@ export default function SettingsSchemaPage() {
                   <Label>Type</Label>
                   <Select
                     value={newFieldType}
-                    onValueChange={(value) =>
-                      setNewFieldType(value as (typeof FIELD_TYPES)[number])
-                    }
+                    onValueChange={(value) => {
+                      setNewFieldType(value as (typeof FIELD_TYPES)[number]);
+                      if (value !== 'relation') setNewRelationTarget('');
+                    }}
                   >
                     <SelectTrigger className="w-36">
                       <SelectValue />
@@ -299,10 +315,35 @@ export default function SettingsSchemaPage() {
                     />
                   </div>
                 ) : null}
+                {newFieldType === 'relation' ? (
+                  <div className="space-y-1">
+                    <Label>Related collection</Label>
+                    <Select
+                      value={newRelationTarget}
+                      onValueChange={setNewRelationTarget}
+                    >
+                      <SelectTrigger className="w-44">
+                        <SelectValue placeholder="Select collection" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {collections.map((collection) => (
+                          <SelectItem
+                            key={collection.name}
+                            value={collection.name}
+                          >
+                            {collection.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : null}
                 <Button
                   size="sm"
                   disabled={
-                    busy || (newFieldType === 'enum' && !newEnumValues.trim())
+                    busy ||
+                    (newFieldType === 'enum' && !newEnumValues.trim()) ||
+                    (newFieldType === 'relation' && !newRelationTarget)
                   }
                   onClick={() => void addField()}
                 >

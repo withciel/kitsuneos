@@ -3,7 +3,7 @@
 import { Bell, Database, Settings, Table2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
   Sidebar,
@@ -18,6 +18,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from '@/components/ui/sidebar';
+import { WORKSPACE_CHANGED_EVENT } from '@/lib/workspace-events';
 
 interface SchemaCollection {
   name: string;
@@ -29,7 +30,7 @@ export function AppSidebar() {
   const [collections, setCollections] = useState<SchemaCollection[]>([]);
   const [inboxCount, setInboxCount] = useState(0);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     void fetch('/api/schema')
       .then(async (response) => {
         if (!response.ok) return;
@@ -51,6 +52,18 @@ export function AppSidebar() {
       .catch(() => undefined);
   }, []);
 
+  useEffect(() => {
+    window.addEventListener(WORKSPACE_CHANGED_EVENT, reload);
+    return () => {
+      window.removeEventListener(WORKSPACE_CHANGED_EVENT, reload);
+    };
+  }, [reload]);
+
+  useEffect(() => {
+    if (!pathname) return;
+    reload();
+  }, [pathname, reload]);
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
@@ -70,9 +83,12 @@ export function AppSidebar() {
             <SidebarMenu>
               {collections.length === 0 ? (
                 <SidebarMenuItem>
-                  <span className="px-2 text-xs text-muted-foreground">
-                    No collections yet
-                  </span>
+                  <SidebarMenuButton asChild tooltip="Create a collection">
+                    <Link href="/settings/schema">
+                      <Table2 />
+                      <span>Create a collection</span>
+                    </Link>
+                  </SidebarMenuButton>
                 </SidebarMenuItem>
               ) : (
                 collections.map((collection) => {

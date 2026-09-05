@@ -378,6 +378,47 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'create_webhook_endpoint',
+    description:
+      'Register an outbound HTTPS webhook for applied change sets (R12). Workspace admin only. Returns the endpoint id and HMAC secret once — store the secret to verify x-kitsune-signature headers.',
+    inputSchema: {
+      type: 'object',
+      required: ['url'],
+      properties: {
+        url: {
+          type: 'string',
+          description: 'HTTPS (or http for local) delivery URL.',
+        },
+        events: {
+          type: 'array',
+          items: { type: 'string' },
+          description: "Defaults to ['change_set.applied'].",
+        },
+      },
+    },
+  },
+  {
+    name: 'list_webhook_endpoints',
+    description:
+      'List outbound webhook endpoints for this workspace (admin only). Secrets are never returned.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'delete_webhook_endpoint',
+    description:
+      'Delete an outbound webhook endpoint (admin only). Denied/missing are indistinguishable.',
+    inputSchema: {
+      type: 'object',
+      required: ['endpointId'],
+      properties: {
+        endpointId: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'propose_change_set',
     description:
       'Propose a change instead of writing it. Every operation names a single field. The change set enters a review queue and lands only after a human approves it. Proposing a field outside your grant fails immediately with an error naming the field.',

@@ -1,19 +1,38 @@
 # KitsuneOS
 
-**Developer preview — v0.1.0-preview. The product is the hosted console (`apps/app`). `pnpm quickstart` is an eval path, not a production self-host. Do not put production data in a local preview.**
+**Developer preview — v0.1.0-preview. Humans use the hosted console (`apps/app`); agents use MCP / GraphQL / REST. `pnpm quickstart` and `docker compose` are eval paths, not production self-hosts. Do not put production data in a local preview.**
 
-KitsuneOS is an application database for software that agents write to. Agent writes arrive as
-reviewable change sets instead of landing directly, every record carries an attributed revision
-history, and permissions are field- and row-scoped rows in a table rather than branches in your
-application code. It runs on PostgreSQL and speaks [MCP](https://modelcontextprotocol.io), so an
-agent connects to it the same way it connects to any other tool.
+KitsuneOS is an application database humans and agents share. Humans work collections as tables in
+the console. Agents connect over [MCP](https://modelcontextprotocol.io) (or GraphQL / REST). Agent
+writes arrive as reviewable change sets instead of landing directly. Every record carries an
+attributed revision history. Permissions are field- and row-scoped rows in a table rather than
+branches in your application code. It runs on PostgreSQL.
 
-The thing worth ten minutes of your time: give an agent permission to change two fields, then watch
-it get told no when it reaches for a third.
+The thing worth ten minutes of your time: open the `accounts` table as a human, give an agent
+permission to change two fields, then watch it get told no when it reaches for a third.
 
 ---
 
 ## Quickstart
+
+Two eval paths. Same engine, same grants. Pick the surface you want first.
+
+### Console (humans)
+
+You need **Docker**. The app listens on **http://localhost:8080**; Postgres is on host port **5433**.
+
+```bash
+git clone https://github.com/withciel/kitsuneos.git
+cd kitsuneos
+docker compose up --build
+```
+
+Local demo mode skips WorkOS and seeds a starter CRM workspace (`accounts`, `contacts`,
+`opportunities`). Open the console, pick a collection in the sidebar, and edit a row from the peek
+panel. Inbox is where agent change requests land. Settings is schema, grants, and workspace.
+Details: [apps/app/README.md](apps/app/README.md).
+
+### MCP (agents)
 
 You need **PostgreSQL running locally** and **Node 20+** with `pnpm`. Developed and tested against
 PostgreSQL 16; 14 and 15 are expected to work but are untested.
@@ -53,13 +72,19 @@ Cursor reads `.cursor/mcp.json`; Claude Desktop reads `claude_desktop_config.jso
 
 The demo has two principals. `owner` is a human with admin on everything. `assistant` is an agent
 with `propose` on `opportunities`, limited to the fields `name`, `stage` and `next_step`. The config
-above connects your agent **as the assistant**.
+above connects your agent **as the assistant**. The human opens the same workspace in the console.
 
 ---
 
 ## The worked example
 
-### 1. Ask the agent what it can see
+### 1. Open the workspace as a human
+
+In the console, `accounts` is a table. Click a row, edit a field, save. That write uses
+`write`/`admin` (direct write or an auto-applied change set). It does not wait in Inbox. History
+still records it under the human principal.
+
+### 2. Ask the agent what it can see
 
 The agent calls `describe_schema` and gets back only what its grant allows:
 
@@ -81,9 +106,9 @@ The agent calls `describe_schema` and gets back only what its grant allows:
 
 `accounts` and `contacts` are absent because the assistant has no grant on them. `amount` is absent
 because it is outside the field mask. The agent is not told these exist and are forbidden; from
-where it sits, they are not there at all.
+where it sits, they are not there at all. The human still sees those collections in the sidebar.
 
-### 2. Ask it to update a next step from a meeting note
+### 3. Ask it to update a next step from a meeting note
 
 > "Dana from Northwind asked for a revised quote by Friday. Update the Northwind renewal."
 
@@ -101,9 +126,9 @@ change set a6f3c130-2e3f-408c-bfc4-d91c387586cc
         + Send revised quote by Friday, per Dana
 ```
 
-Nothing has changed in the database yet. The proposal is sitting in a review queue.
+Nothing has changed in the database yet. The proposal is sitting in Inbox.
 
-### 3. Now ask it to change the amount
+### 4. Now ask it to change the amount
 
 > "Also bump the amount to 99,000."
 
@@ -120,11 +145,14 @@ wrapper that decided to be careful. `amount` is not in its grant, so the query c
 build SQL that touches it. There is no phrasing that gets around this, because the refusal does not
 happen anywhere the agent's words can reach. The whole change set is rejected, not partially applied.
 
-Note the asymmetry with step 1. A forbidden **field** is an explicit error that names the field, so
+Note the asymmetry with step 2. A forbidden **field** is an explicit error that names the field, so
 the agent can correct itself. A forbidden **row** is a plain not-found, so the agent cannot use
 denials to map what it is not allowed to see.
 
-### 4. Review the proposal
+### 5. Review the proposal
+
+In the console, open **Inbox**, then the change set. Field-level diffs, partial approve/reject, and
+apply live there. The CLI does the same work:
 
 ```bash
 pnpm review
@@ -144,7 +172,7 @@ back with `read_change_set_feedback`:
 pnpm review <change-set-id> reject <op-id> --comment "Wrong quarter"
 ```
 
-### 5. Check the history
+### 6. Check the history
 
 ```bash
 pnpm history opportunities 0bbb0000-0000-4000-8000-000000000001
@@ -216,7 +244,7 @@ with `pnpm acceptance` (87 tests as of this revision).
 | GraphQL and REST GET share the compiler; masked fields and collections are absent | `graphql.test.ts` |
 | Generated TypeScript client drifts fail `pnpm codegen -- --check` | `codegen.test.ts` |
 | CLI `init` / `schema push` / grant-filtered `export` | `cli.test.ts` |
-| Console surfaces: schema mask, audit not-found, partial review apply | `console.test.ts` |
+| Console APIs: schema mask, audit not-found, partial review apply (UI is collections / Inbox / Settings) | `console.test.ts` |
 | The application role can insert audit rows but cannot update or delete them | supplementary |
 | A masked principal still receives record ids, but never a masked field | supplementary |
 | Row level security really bites: a mismatched workspace GUC returns zero rows | supplementary |
@@ -267,8 +295,9 @@ disclosed here rather than hidden: there is no other way to prove atomicity on t
 - **Apply cost is linear in touched records.** Locks are taken one row at a time in sorted order to
   guarantee acquisition order, which costs a round trip per record. Change sets are expected to be
   small; a thousand-record change set will be slow.
-- **REST is read-only.** `GET /api/records/:collection/:id` maps to `readRecord`. Writes still go
-  through change sets (MCP, engine, or the review queue).
+- **REST reads plus console writes.** `GET /api/records/:collection/:id` maps to `readRecord`.
+  Humans with `write`/`admin` create records with `POST /api/records` (`directWrite`) and update
+  fields with `PATCH` (propose → review → apply, grant-checked). Agents still propose over MCP.
 - **Postgres must be local and trusted for the eval preview.** There is no TLS configuration,
   connection pooling story, or guidance for a managed Postgres on the quickstart path.
 
@@ -288,7 +317,7 @@ packages/mcp         five MCP tools over core, plus a stdio server
 packages/cli         quickstart, init, schema, query, review, history, export
 packages/ui          ActionConsent (field-level diffs, per-op review)
 packages/acceptance  the acceptance suite and its authorization oracle
-apps/app             hosted console (WorkOS) — schema, query, review, grants, audit, history
+apps/app             hosted console — human workspace (collections, Inbox, Settings)
 ```
 
 Every read and every write goes through one query compiler. It resolves the caller's grant, projects

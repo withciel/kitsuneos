@@ -1,21 +1,21 @@
 # KitsuneOS v1 — System Design
 
-**Status:** P0 surfaces implemented. R9 semantic search (pgvector), reference graph, VFS, ingest, and R13 attachments (content-addressed blob store) are implemented.
+**Status:** P0 surfaces implemented. Human console IA shipped. P1 complete: R9 semantic search (pgvector), R10 rollups, R11 automation policies, R12 outbound webhooks, R13 attachments (content-addressed blob store); plus reference graph, VFS, and ingest.
 **Date:** 3 September 2026
 **Companion to:** KitsuneOS v1 PRD
-**Scope:** P0 requirements R1–R8, R9 search + reference graph; architectural accommodation for P2 items R14–R17
+**Scope:** P0 requirements R1–R8; P1 R9–R13 (search, rollups, automation, webhooks, attachments) plus reference graph/VFS/ingest; architectural accommodation for P2 items R14–R17
 
 ---
 
 ## 1. Context
 
-KitsuneOS is an application database whose primitives assume AI agents are writers. Three things are native rather than bolted on:
+KitsuneOS is an application database humans and agents share. Humans use the hosted console; agents use MCP (and GraphQL / REST). Three things are native rather than bolted on:
 
 1. **Revisions.** Every write is historical and attributed.
 2. **Change sets.** A write can be proposed, reviewed, and applied atomically.
 3. **Grants.** Access control is field- and row-scoped, stored as data, enforced in the database.
 
-Applications are built on top. The reference CRM is one such application and gets no privileged access — it uses the same public API as any customer.
+The hosted console is a first-class human workspace (collection tables, Inbox, Settings). Starter CRM collections (`accounts`, `contacts`, `opportunities`) live in that workspace so a human can operate records on day one. They use the same public API as any customer application — they are a demo schema, not a separate product.
 
 The design goal that governs every trade-off below: **be genuinely relational.** If a developer's second query is "pipeline by stage this quarter" and we answer it slowly or not at all, none of the interesting primitives ever get used. Section 12 (ADR-002) is where this is decided.
 
@@ -30,6 +30,7 @@ The design goal that governs every trade-off below: **be genuinely relational.**
 - Full revision history per record, queryable by record, principal, and time
 - Change sets: field-level operations across multiple records and collections, applied atomically, with base-revision optimistic concurrency and partial approval
 - Grants: principal × collection × capability × field mask × row predicate
+- Rollup fields: stored number columns maintained from child aggregates; not writable by principals
 - MCP server with permission-aware schema description
 - Generated GraphQL, REST, and typed TypeScript client
 - Immutable audit log including denied attempts
@@ -59,16 +60,16 @@ The design goal that governs every trade-off below: **be genuinely relational.**
 
 ```
                        ┌──────────────────────────────────────┐
-   Agents ────MCP────► │                                      │
-   (Claude, Codex,     │            API Gateway               │
-    other)             │   authn · rate limit · routing       │
+   Humans ──console──► │                                      │
+   (tables, Inbox,     │            API Gateway               │
+    Settings)          │   authn · rate limit · routing       │
                        └───────────────────┬──────────────────┘
-   Applications ──────►                    │
-   (reference CRM,                         ▼
-    customer apps)     ┌──────────────────────────────────────┐
-                       │          Query Compiler              │
-   Console / CLI ─────►│  grant resolution → SQL predicates   │
-                       │  column projection · shape validation│
+   Agents ────MCP────►                     │
+   (Claude, Codex,                         ▼
+    other)             ┌──────────────────────────────────────┐
+   Applications ──────►│          Query Compiler              │
+   (GraphQL / REST /   │  grant resolution → SQL predicates   │
+    CLI)               │  column projection · shape validation│
                        └───────┬─────────────────┬────────────┘
                                │                 │
                      ┌─────────▼──────┐  ┌───────▼─────────────┐
@@ -143,7 +144,7 @@ CREATE TABLE kitsune.collections (
   name          text NOT NULL,
   table_name    text NOT NULL,
   schema_version int NOT NULL DEFAULT 1,
-  revision_retention_days int,  -- NULL = keep forever; sweeper is P1/Q6
+  revision_retention_days int,  -- NULL = keep forever; admin sweeper deletes expired __rev rows
   UNIQUE (workspace_id, name)
 );
 
@@ -381,7 +382,7 @@ There is still exactly one query compiler. GraphQL, REST, MCP, the console query
 
 **REST** is `GET /api/records/:collection/:id` (`readRecord` only). Missing and forbidden both return `{ "error": "Not found" }`. Writes of business data still go through change sets.
 
-**MCP** exposes `describe_schema`, `query` (including `join`), `read_record`, `propose_change_set`, and `read_change_set_feedback`. `describe_schema` returns only what the calling identity can reach, including its own capabilities per field.
+**MCP** exposes `describe_schema`, `query` (including `join`), `read_record`, `propose_change_set`, `read_change_set_feedback`, attachment tools, and admin webhook tools (`create_webhook_endpoint`, `list_webhook_endpoints`, `delete_webhook_endpoint`). `describe_schema` returns only what the calling identity can reach, including its own capabilities per field.
 
 **TypeScript client** is generated from collection definitions (`pnpm codegen`, `--check` in CI). Types fail the build on incompatible schema change. Types come from `kitsune.fields`, not from GraphQL SDL.
 
@@ -558,7 +559,7 @@ Instrument from day one, including metrics nothing consumes yet:
 
 ### ADR-004: pgvector, not a dedicated vector database
 
-**Status:** Accepted for P1 · **not implemented in P0** · **Deciders:** Engineering
+**Status:** Accepted for P1 · **implemented (pgvector)** · **Deciders:** Engineering
 
 **Context.** The original sketch specified Pinecone. Semantic search must respect field masks and row predicates.
 

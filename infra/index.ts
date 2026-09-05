@@ -6,8 +6,8 @@ const config = new pulumi.Config('kitsuneos');
 const domain = config.get('domain') ?? 'kitsuneos.com';
 const appDomain = config.get('appDomain') ?? 'app.kitsuneos.com';
 const deployApp = config.getBoolean('deployApp') ?? false;
-/** AWS CloudFront+S3 for marketing site. Default on — hosting is AWS-only. */
-const deploySiteCdn = config.getBoolean('deploySiteCdn') ?? true;
+/** Optional CloudFront in front of the marketing bucket (needs AWS account verification). */
+const deploySiteCdn = config.getBoolean('deploySiteCdn') ?? false;
 const stack = pulumi.getStack();
 
 const tags = {
@@ -253,22 +253,85 @@ new aws.acm.CertificateValidation('app-cert-validated', {
   validationRecordFqdns: [appValidation0.fqdn],
 });
 
-// --- Site: S3 + CloudFront + OAC (marketing site on AWS; not Cloudflare) ---
-const siteBucket = deploySiteCdn
+// --- Site: S3 website (no CDN) or S3 + CloudFront (optional) ---
+// CloudFront CreateDistribution needs AWS account verification.
+// deploySite without deploySiteCdn → public S3 website endpoint (HTTP).
+// deploySiteCdn → private S3 + CloudFront + Route53 HTTPS (when AWS allows it).
+const deploySite = (config.getBoolean('deploySite') ?? false) || deploySiteCdn;
+
+const siteBucket = deploySite
   ? new aws.s3.BucketV2('site-bucket', {
       bucket: `${stack}-kitsuneos-site`,
       tags,
     })
   : undefined;
 
-if (siteBucket) {
-  new aws.s3.BucketPublicAccessBlock('site-bucket-block', {
-    bucket: siteBucket.id,
-    blockPublicAcls: true,
-    blockPublicPolicy: true,
-    ignorePublicAcls: true,
-    restrictPublicBuckets: true,
-  });
+const siteWebsite =
+  deploySite && !deploySiteCdn && siteBucket
+    ? new aws.s3.BucketWebsiteConfigurationV2('site-website', {
+        bucket: siteBucket.id,
+        indexDocument: { suffix: 'index.html' },
+        errorDocument: { key: '404.html' },
+      })
+    : undefined;
+
+const sitePublicAccess = siteBucket
+  ? new aws.s3.BucketPublicAccessBlock(
+      'site-bucket-block',
+      {
+        bucket: siteBucket.id,
+        // Website mode must allow a public-read bucket policy.
+        // CDN mode keeps the bucket private (OAC only).
+        blockPublicAcls: deploySiteCdn,
+        blockPublicPolicy: deploySiteCdn,
+        ignorePublicAcls: deploySiteCdn,
+        restrictPublicBuckets: deploySiteCdn,
+      },
+      // Replace-before-create so toggles between website/CDN do not stick
+      // with BlockPublicPolicy=true while a public policy is applied.
+      { deleteBeforeReplace: true },
+    )
+  : undefined;
+
+const siteOwnership =
+  siteBucket && siteWebsite
+    ? new aws.s3.BucketOwnershipControls(
+        'site-bucket-ownership',
+        {
+          bucket: siteBucket.id,
+          rule: { objectOwnership: 'BucketOwnerPreferred' },
+        },
+        { dependsOn: sitePublicAccess ? [sitePublicAccess] : [] },
+      )
+    : undefined;
+
+if (siteBucket && siteWebsite && sitePublicAccess) {
+  // PublicAccessBlock must finish (BlockPublicPolicy=false) before PutBucketPolicy.
+  new aws.s3.BucketPolicy(
+    'site-bucket-public-read',
+    {
+      bucket: siteBucket.id,
+      policy: siteBucket.arn.apply((bucketArn) =>
+        JSON.stringify({
+          Version: '2012-10-17',
+          Statement: [
+            {
+              Sid: 'PublicReadGetObject',
+              Effect: 'Allow',
+              Principal: '*',
+              Action: 's3:GetObject',
+              Resource: `${bucketArn}/*`,
+            },
+          ],
+        }),
+      ),
+    },
+    {
+      dependsOn: siteOwnership
+        ? [sitePublicAccess, siteOwnership]
+        : [sitePublicAccess],
+    },
+  );
 }
 
 const siteOac = deploySiteCdn
@@ -594,4 +657,11 @@ export const dodoWebhookSecretArn = dodoWebhookSecret.arn;
 export const domainName = domain;
 export const appDomainName = appDomain;
 export const appCustomDomain = appRunnerCustomDomain?.dnsTarget ?? '';
-export const siteHosting = deploySiteCdn ? 'cloudfront' : 'disabled';
+export const siteWebsiteEndpoint = siteWebsite
+  ? siteWebsite.websiteEndpoint
+  : '';
+export const siteHosting = deploySiteCdn
+  ? 'cloudfront'
+  : deploySite
+    ? 's3-website'
+    : 'disabled';
