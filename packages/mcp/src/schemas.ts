@@ -459,6 +459,27 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'create_branch',
+    description:
+      'Fork this workspace into a new schema-backed branch (R15). Copies collections, fields, grants, principals, and data-plane rows. Open change sets are not copied. Requires admin on any collection.',
+    inputSchema: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        name: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'list_branches',
+    description:
+      'List schema-level branches forked from this workspace (R15). Requires admin on any collection.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
     name: 'propose_change_set',
     description:
       'Propose a change instead of writing it. Every operation names a single field. The change set enters a review queue and lands only after a human approves it. Proposing a field outside your grant fails immediately with an error naming the field.',

@@ -161,6 +161,18 @@ export function createMcpHandlers(
       });
     },
 
+    async create_branch(args: { name: string }) {
+      const ctx = getContext();
+      return engine.createBranch(ctx.workspaceId, ctx.principalId, {
+        name: args.name,
+      });
+    },
+
+    async list_branches() {
+      const ctx = getContext();
+      return engine.listBranches(ctx.workspaceId, ctx.principalId);
+    },
+
     async propose_change_set(args: ProposeChangeSetInput) {
       const ctx = getContext();
       return engine.proposeChangeSet(ctx.workspaceId, ctx.principalId, args);

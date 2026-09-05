@@ -20,6 +20,12 @@ import {
   matchesMinApprovalsScope,
 } from './automation/policies.js';
 import { assertWriteEntitlement } from './billing/entitlement.js';
+import {
+  type BranchFieldMeta,
+  copyRelationTable,
+  orderCollectionsForBranch,
+  sanitizeBranchName,
+} from './branching/copy.js';
 import { compilePredicate } from './compiler/predicate-sql.js';
 import {
   type CollectionMeta,
@@ -90,6 +96,7 @@ import type {
   ChangeOpInput,
   CollectionDefinition,
   DbConfig,
+  FieldType,
   JsonValue,
   Predicate,
   ProposeChangeSetInput,
@@ -226,6 +233,291 @@ export class KitsuneEngine {
       );
     });
     return { workspaceId, schemaName };
+  }
+
+  /**
+   * Fork a workspace into a new schema-backed workspace (R15).
+   * Copies collections, fields, grants, principals, and data-plane rows.
+   * Open change sets are not copied.
+   */
+  async createBranch(
+    sourceWorkspaceId: string,
+    actorId: string,
+    input: { name: string },
+  ): Promise<{
+    workspaceId: string;
+    schemaName: string;
+    parentWorkspaceId: string;
+    branchName: string;
+  }> {
+    const admin = await this.hasAdminOnAnyCollection(
+      sourceWorkspaceId,
+      actorId,
+    );
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+
+    let branchName: string;
+    try {
+      branchName = sanitizeBranchName(input.name);
+    } catch {
+      throw new KitsuneError(
+        'Branch name must contain letters or digits',
+        'validation',
+      );
+    }
+
+    const source = await withOwner(this.ownerPool, async (client) =>
+      queryOne<{ slug: string; schema_name: string }>(
+        client,
+        `SELECT slug, schema_name FROM kitsune.workspaces WHERE id = $1`,
+        [sourceWorkspaceId],
+      ),
+    );
+    if (!source) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+
+    const branchSlug = `${source.slug}--${branchName}`.slice(0, 100);
+    const created = await this.createWorkspace(branchSlug);
+    const branchWorkspaceId = created.workspaceId;
+    const branchSchema = created.schemaName;
+
+    await withOwner(this.ownerPool, async (client) => {
+      await client.query(
+        `UPDATE kitsune.workspaces
+            SET parent_workspace_id = $1,
+                branch_name = $2,
+                branched_at = now()
+          WHERE id = $3`,
+        [sourceWorkspaceId, branchName, branchWorkspaceId],
+      );
+    });
+
+    const prepared = await withOwner(this.ownerPool, async (client) => {
+      const sourceCollections = await queryRows<{
+        id: string;
+        name: string;
+        table_name: string;
+      }>(
+        client,
+        `SELECT id, name, table_name FROM kitsune.collections
+          WHERE workspace_id = $1 ORDER BY name`,
+        [sourceWorkspaceId],
+      );
+      const fieldsByCollectionId = new Map<string, BranchFieldMeta[]>();
+      for (const collection of sourceCollections) {
+        const fieldRows = await queryRows<{
+          name: string;
+          type: string;
+          nullable: boolean;
+          enum_values: string[] | null;
+          indexed: boolean;
+          rollup: unknown | null;
+          relation_target_name: string | null;
+        }>(
+          client,
+          `SELECT f.name, f.type, f.nullable, f.enum_values, f.indexed, f.rollup,
+                  t.name AS relation_target_name
+             FROM kitsune.fields f
+             LEFT JOIN kitsune.collections t ON t.id = f.relation_target
+            WHERE f.collection_id = $1
+            ORDER BY f.name`,
+          [collection.id],
+        );
+        fieldsByCollectionId.set(
+          collection.id,
+          fieldRows.map((f) => ({
+            name: f.name,
+            type: f.type,
+            nullable: f.nullable,
+            relationTargetName: f.relation_target_name,
+            enumValues: f.enum_values,
+            indexed: f.indexed,
+            rollup: f.rollup,
+          })),
+        );
+      }
+      const ordered = orderCollectionsForBranch(
+        sourceCollections.map((c) => ({
+          id: c.id,
+          name: c.name,
+          tableName: c.table_name,
+        })),
+        fieldsByCollectionId,
+      );
+      return ordered.map((c) => ({
+        sourceId: c.id,
+        tableName: c.tableName,
+        definition: {
+          name: c.name,
+          fields: (fieldsByCollectionId.get(c.id) ?? []).map((f) => ({
+            name: f.name,
+            type: f.type as FieldType,
+            nullable: f.nullable,
+            relationTarget: f.relationTargetName ?? undefined,
+            enumValues: f.enumValues ?? undefined,
+            indexed: f.indexed,
+            rollup: (f.rollup as RollupDefinition | null) ?? undefined,
+          })),
+        } satisfies CollectionDefinition,
+      }));
+    });
+
+    const collectionIdMap = new Map<string, string>();
+    for (const item of prepared) {
+      const newId = await this.defineCollection(
+        branchWorkspaceId,
+        item.definition,
+      );
+      collectionIdMap.set(item.sourceId, newId);
+    }
+
+    await withOwner(this.ownerPool, async (client) => {
+      const principalIdMap = new Map<string, string>();
+      const principals = await queryRows<{
+        id: string;
+        kind: 'human' | 'agent' | 'service';
+        display_name: string;
+      }>(
+        client,
+        `SELECT id, kind, display_name FROM kitsune.principals
+          WHERE workspace_id = $1 AND disabled_at IS NULL`,
+        [sourceWorkspaceId],
+      );
+      for (const principal of principals) {
+        const newId = uuidv4();
+        await client.query(
+          `INSERT INTO kitsune.principals (id, workspace_id, kind, display_name)
+           VALUES ($1, $2, $3, $4)`,
+          [newId, branchWorkspaceId, principal.kind, principal.display_name],
+        );
+        principalIdMap.set(principal.id, newId);
+      }
+
+      const grants = await queryRows<{
+        principal_id: string;
+        collection_id: string;
+        capability: Capability;
+        field_mask: string[] | null;
+        row_predicate: unknown | null;
+      }>(
+        client,
+        `SELECT principal_id, collection_id, capability, field_mask, row_predicate
+           FROM kitsune.grants
+          WHERE workspace_id = $1 AND revoked_at IS NULL`,
+        [sourceWorkspaceId],
+      );
+      for (const grant of grants) {
+        const newPrincipalId = principalIdMap.get(grant.principal_id);
+        const newCollectionId = collectionIdMap.get(grant.collection_id);
+        if (!newPrincipalId || !newCollectionId) continue;
+        await client.query(
+          `INSERT INTO kitsune.grants
+             (id, workspace_id, principal_id, collection_id, capability, field_mask, row_predicate)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            uuidv4(),
+            branchWorkspaceId,
+            newPrincipalId,
+            newCollectionId,
+            grant.capability,
+            grant.field_mask,
+            grant.row_predicate ? JSON.stringify(grant.row_predicate) : null,
+          ],
+        );
+      }
+
+      for (const item of prepared) {
+        await copyRelationTable(
+          client,
+          source.schema_name,
+          branchSchema,
+          item.tableName,
+        );
+        await copyRelationTable(
+          client,
+          source.schema_name,
+          branchSchema,
+          `${item.tableName}__rev`,
+        );
+        const embExists = await queryOne<{ exists: boolean }>(
+          client,
+          `SELECT EXISTS (
+             SELECT 1 FROM information_schema.tables
+              WHERE table_schema = $1 AND table_name = $2
+           ) AS exists`,
+          [source.schema_name, `${item.tableName}__emb`],
+        );
+        if (embExists?.exists) {
+          await copyRelationTable(
+            client,
+            source.schema_name,
+            branchSchema,
+            `${item.tableName}__emb`,
+          );
+        }
+      }
+    });
+
+    await writeAudit(this.ownerPool, {
+      workspaceId: sourceWorkspaceId,
+      principalId: actorId,
+      action: 'workspace.branch_create',
+      outcome: 'allowed',
+      detail: {
+        branchWorkspaceId,
+        branchName,
+        parentWorkspaceId: sourceWorkspaceId,
+      },
+    });
+
+    return {
+      workspaceId: branchWorkspaceId,
+      schemaName: branchSchema,
+      parentWorkspaceId: sourceWorkspaceId,
+      branchName,
+    };
+  }
+
+  async listBranches(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      workspaceId: string;
+      branchName: string;
+      schemaName: string;
+      branchedAt: string;
+    }>
+  > {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    return withOwner(this.ownerPool, async (client) => {
+      const rows = await queryRows<{
+        id: string;
+        branch_name: string;
+        schema_name: string;
+        branched_at: Date;
+      }>(
+        client,
+        `SELECT id, branch_name, schema_name, branched_at
+           FROM kitsune.workspaces
+          WHERE parent_workspace_id = $1
+            AND branch_name IS NOT NULL
+          ORDER BY branched_at ASC`,
+        [workspaceId],
+      );
+      return rows.map((row) => ({
+        workspaceId: row.id,
+        branchName: row.branch_name,
+        schemaName: row.schema_name,
+        branchedAt: row.branched_at.toISOString(),
+      }));
+    });
   }
 
   async createPrincipal(
