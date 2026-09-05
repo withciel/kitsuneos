@@ -36,15 +36,15 @@ import {
 import { assertFieldAllowed, loadResolvedGrant } from './grants/resolve.js';
 import type { IngestRequest, IngestResult } from './ingest/types.js';
 import {
+  type SweepRevisionsResult,
+  sweepExpiredRevisions,
+} from './revisions/sweep.js';
+import {
   getChangedFieldsSince,
   getRevisionAtTime,
   getRevisionSnapshot,
   writeRevision,
 } from './revisions/write.js';
-import {
-  sweepExpiredRevisions,
-  type SweepRevisionsResult,
-} from './revisions/sweep.js';
 import {
   validateCollectionDefinition,
   validateFieldDefinition,
@@ -2645,8 +2645,7 @@ export class KitsuneEngine {
       action: 'schema.revision_retention',
       fieldNames: [collection],
       outcome: 'allowed',
-      reason:
-        days === null ? 'retention=forever' : `retention_days=${days}`,
+      reason: days === null ? 'retention=forever' : `retention_days=${days}`,
     });
   }
 

@@ -63,16 +63,16 @@ export type {
   ParsedIngestBatch,
 } from './ingest/types.js';
 export {
+  type SweepCollectionResult,
+  type SweepRevisionsResult,
+  sweepExpiredRevisions,
+} from './revisions/sweep.js';
+export {
   getChangedFieldsSince,
   getRevisionAtTime,
   getRevisionSnapshot,
   writeRevision,
 } from './revisions/write.js';
-export {
-  sweepExpiredRevisions,
-  type SweepCollectionResult,
-  type SweepRevisionsResult,
-} from './revisions/sweep.js';
 export {
   assertIdentifier,
   validateCollectionDefinition,
