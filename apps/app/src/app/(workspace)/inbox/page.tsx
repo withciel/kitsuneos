@@ -63,7 +63,8 @@ export default function InboxPage() {
           </div>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No open change sets. Ask an agent to propose one via MCP.
+            No open change sets. Writes from propose-capability users and agents
+            land here for review.
           </p>
         ) : (
           <Table>

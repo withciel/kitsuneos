@@ -17,6 +17,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Sheet,
   SheetContent,
   SheetFooter,
@@ -33,11 +40,25 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import { recordLabel } from '@/lib/record-label';
+
+const NONE_VALUE = '__none__';
 
 interface FieldMeta {
   name: string;
   type: string;
   writable: boolean;
+  relationTarget?: string | null;
+}
+
+interface SchemaCollection {
+  name: string;
+  fields: FieldMeta[];
+}
+
+interface RelationOption {
+  id: string;
+  label: string;
 }
 
 interface RelatedNeighbor {
@@ -50,6 +71,14 @@ interface RelatedNeighbor {
 interface RelatedResult {
   outgoing: RelatedNeighbor[];
   incoming: RelatedNeighbor[];
+}
+
+interface RevisionSummary {
+  revision: number;
+  changedFields: string[];
+  principalId: string;
+  changeSetId: string | null;
+  validFrom: string;
 }
 
 interface ViewState {
@@ -90,9 +119,77 @@ function cellText(value: JsonValue | undefined): string {
   return JSON.stringify(value);
 }
 
+function formatWhen(iso: string): string {
+  const parsed = Date.parse(iso);
+  if (Number.isNaN(parsed)) return iso;
+  return new Date(parsed).toLocaleString();
+}
+
+async function loadRelationOptions(
+  collections: SchemaCollection[],
+): Promise<Record<string, RelationOption[]>> {
+  const targets = new Set<string>();
+  for (const collection of collections) {
+    for (const field of collection.fields) {
+      if (field.type === 'relation' && field.relationTarget) {
+        targets.add(field.relationTarget);
+      }
+    }
+  }
+
+  const options: Record<string, RelationOption[]> = {};
+  await Promise.all(
+    [...targets].map(async (target) => {
+      const meta = collections.find((item) => item.name === target);
+      const fields = meta?.fields.map((field) => field.name) ?? ['id'];
+      const queryRes = await fetch('/api/query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collection: target,
+          fields,
+          limit: 100,
+        }),
+      });
+      const queryBody = (await queryRes.json()) as {
+        rows?: Array<Record<string, JsonValue>>;
+        error?: string;
+      };
+      if (!queryRes.ok) {
+        throw new Error(
+          queryBody.error ?? `Failed to load related ${target} records`,
+        );
+      }
+      options[target] = (queryBody.rows ?? [])
+        .filter((row): row is Record<string, JsonValue> & { id: string } => {
+          return typeof row.id === 'string' && row.id.length > 0;
+        })
+        .map((row) => ({ id: row.id, label: recordLabel(row) }));
+    }),
+  );
+  return options;
+}
+
+function relationLabel(
+  field: FieldMeta,
+  value: JsonValue | undefined,
+  options: Record<string, RelationOption[]>,
+): string {
+  const id = cellText(value);
+  if (!id) return '';
+  const target = field.relationTarget;
+  const match = target
+    ? options[target]?.find((option) => option.id === id)
+    : undefined;
+  return match?.label ?? id.slice(0, 8);
+}
+
 export function CollectionView({ collection }: { collection: string }) {
   const [fields, setFields] = useState<FieldMeta[]>([]);
   const [rows, setRows] = useState<Array<Record<string, JsonValue>>>([]);
+  const [relationOptions, setRelationOptions] = useState<
+    Record<string, RelationOption[]>
+  >({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [viewScope, setViewScope] = useState('anon');
@@ -106,6 +203,8 @@ export function CollectionView({ collection }: { collection: string }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
+  const [revisionsLoading, setRevisionsLoading] = useState(false);
   const [related, setRelated] = useState<RelatedResult | null>(null);
   const [relatedLoading, setRelatedLoading] = useState(false);
   const collectionRef = useRef(collection);
@@ -131,7 +230,7 @@ export function CollectionView({ collection }: { collection: string }) {
 
       const schemaRes = await fetch('/api/schema');
       const schemaBody = (await schemaRes.json()) as {
-        collections?: Array<{ name: string; fields: FieldMeta[] }>;
+        collections?: SchemaCollection[];
         error?: string;
       };
       if (!schemaRes.ok) {
@@ -163,6 +262,9 @@ export function CollectionView({ collection }: { collection: string }) {
       }
       if (collectionRef.current !== target) return;
       setRows(queryBody.rows ?? []);
+      setRelationOptions(
+        await loadRelationOptions(schemaBody.collections ?? []),
+      );
     } catch (err) {
       if (collectionRef.current !== target) return;
       setError(err instanceof Error ? err.message : String(err));
@@ -176,6 +278,8 @@ export function CollectionView({ collection }: { collection: string }) {
     setCreating(false);
     setRows([]);
     setFields([]);
+    setRelationOptions({});
+    setRevisions([]);
     setRelated(null);
     void reload();
   }, [reload]);
@@ -184,12 +288,44 @@ export function CollectionView({ collection }: { collection: string }) {
     const recordId =
       !creating && typeof selected?.id === 'string' ? selected.id : '';
     if (!recordId) {
+      setRevisions([]);
+      setRevisionsLoading(false);
       setRelated(null);
       setRelatedLoading(false);
       return;
     }
     let cancelled = false;
+    setRevisionsLoading(true);
     setRelatedLoading(true);
+    void fetch('/api/history', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        collection,
+        recordId,
+        limit: 20,
+      }),
+    })
+      .then(async (response) => {
+        const body = (await response.json()) as {
+          revisions?: RevisionSummary[];
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!response.ok) {
+          throw new Error(body.error ?? 'Failed to load history');
+        }
+        setRevisions(body.revisions ?? []);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setRevisions([]);
+      })
+      .finally(() => {
+        if (!cancelled) setRevisionsLoading(false);
+      });
+
     void fetch('/api/related', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -230,11 +366,20 @@ export function CollectionView({ collection }: { collection: string }) {
     const q = view.search.trim().toLowerCase();
     if (!q) return rows;
     return rows.filter((row) =>
-      visibleFields.some((field) =>
-        cellText(row[field.name]).toLowerCase().includes(q),
-      ),
+      visibleFields.some((field) => {
+        const raw = cellText(row[field.name]).toLowerCase();
+        const label =
+          field.type === 'relation'
+            ? relationLabel(
+                field,
+                row[field.name],
+                relationOptions,
+              ).toLowerCase()
+            : '';
+        return raw.includes(q) || label.includes(q);
+      }),
     );
-  }, [rows, view.search, visibleFields]);
+  }, [rows, view.search, visibleFields, relationOptions]);
 
   function updateView(next: ViewState) {
     setView(next);
@@ -261,6 +406,10 @@ export function CollectionView({ collection }: { collection: string }) {
     setDraft(next);
   }
 
+  function setDraftField(name: string, value: string) {
+    setDraft((prev) => ({ ...prev, [name]: value }));
+  }
+
   async function saveRecord() {
     setSaving(true);
     setError('');
@@ -281,6 +430,8 @@ export function CollectionView({ collection }: { collection: string }) {
           }
         } else if (field.type === 'boolean') {
           payload[field.name] = raw === 'true';
+        } else if (field.type === 'relation') {
+          payload[field.name] = raw === '' || raw === NONE_VALUE ? null : raw;
         } else {
           payload[field.name] = raw;
         }
@@ -393,6 +544,9 @@ export function CollectionView({ collection }: { collection: string }) {
                     {field.name}
                     <span className="ml-1 text-[10px] text-muted-foreground">
                       {field.type}
+                      {field.type === 'relation' && field.relationTarget
+                        ? ` → ${field.relationTarget}`
+                        : ''}
                     </span>
                   </TableHead>
                 ))}
@@ -405,7 +559,9 @@ export function CollectionView({ collection }: { collection: string }) {
                     colSpan={Math.max(visibleFields.length, 1)}
                     className="h-24 text-center text-muted-foreground"
                   >
-                    No rows
+                    {rows.length === 0
+                      ? 'No records yet. Create the first one.'
+                      : 'No matching rows'}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -417,7 +573,25 @@ export function CollectionView({ collection }: { collection: string }) {
                   >
                     {visibleFields.map((field) => (
                       <TableCell key={field.name} className="max-w-64 truncate">
-                        {cellText(row[field.name])}
+                        {field.type === 'relation' && field.relationTarget ? (
+                          cellText(row[field.name]) ? (
+                            <Link
+                              href={`/c/${field.relationTarget}`}
+                              className="text-primary underline-offset-4 hover:underline"
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              {relationLabel(
+                                field,
+                                row[field.name],
+                                relationOptions,
+                              )}
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )
+                        ) : (
+                          cellText(row[field.name])
+                        )}
                       </TableCell>
                     ))}
                   </TableRow>
@@ -455,34 +629,23 @@ export function CollectionView({ collection }: { collection: string }) {
                 <Label htmlFor={`field-${field.name}`}>
                   {field.name}
                   <span className="ml-1 text-muted-foreground">
-                    ({field.type})
+                    ({field.type}
+                    {field.type === 'relation' && field.relationTarget
+                      ? ` → ${field.relationTarget}`
+                      : ''}
+                    )
                   </span>
                 </Label>
-                {field.type === 'prose' ? (
-                  <Textarea
-                    id={`field-${field.name}`}
-                    value={draft[field.name] ?? ''}
-                    disabled={!field.writable}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        [field.name]: event.target.value,
-                      }))
-                    }
-                  />
-                ) : (
-                  <Input
-                    id={`field-${field.name}`}
-                    value={draft[field.name] ?? ''}
-                    disabled={!field.writable}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        [field.name]: event.target.value,
-                      }))
-                    }
-                  />
-                )}
+                <FieldControl
+                  field={field}
+                  value={draft[field.name] ?? ''}
+                  options={
+                    field.relationTarget
+                      ? (relationOptions[field.relationTarget] ?? [])
+                      : []
+                  }
+                  onChange={(value) => setDraftField(field.name, value)}
+                />
               </div>
             ))}
             {!creating && typeof selected?.id === 'string' ? (
@@ -532,6 +695,44 @@ export function CollectionView({ collection }: { collection: string }) {
                 )}
               </div>
             ) : null}
+            {!creating && typeof selected?.id === 'string' ? (
+              <div className="space-y-2 border-t border-border pt-4">
+                <p className="text-xs font-medium text-muted-foreground uppercase">
+                  History
+                </p>
+                {revisionsLoading ? (
+                  <Skeleton className="h-16 w-full" />
+                ) : revisions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No revisions yet.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {revisions.map((revision) => (
+                      <li
+                        key={`${revision.revision}-${revision.validFrom}`}
+                        className="rounded-md border border-border px-3 py-2 text-xs"
+                      >
+                        <p className="font-medium">
+                          Revision {revision.revision}
+                        </p>
+                        <p className="text-muted-foreground">
+                          {formatWhen(revision.validFrom)}
+                          {revision.principalId
+                            ? ` · ${revision.principalId}`
+                            : ''}
+                        </p>
+                        {revision.changedFields.length > 0 ? (
+                          <p className="mt-1 text-muted-foreground">
+                            {revision.changedFields.join(', ')}
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
           </div>
           <SheetFooter>
             <Button
@@ -550,5 +751,78 @@ export function CollectionView({ collection }: { collection: string }) {
         </SheetContent>
       </Sheet>
     </div>
+  );
+}
+
+function FieldControl({
+  field,
+  value,
+  options,
+  onChange,
+}: {
+  field: FieldMeta;
+  value: string;
+  options: RelationOption[];
+  onChange: (value: string) => void;
+}) {
+  if (field.type === 'prose') {
+    return (
+      <Textarea
+        id={`field-${field.name}`}
+        value={value}
+        disabled={!field.writable}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+
+  if (field.type === 'boolean') {
+    return (
+      <Select
+        value={value === 'true' ? 'true' : 'false'}
+        disabled={!field.writable}
+        onValueChange={onChange}
+      >
+        <SelectTrigger id={`field-${field.name}`} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="true">true</SelectItem>
+          <SelectItem value="false">false</SelectItem>
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  if (field.type === 'relation') {
+    return (
+      <Select
+        value={value || NONE_VALUE}
+        disabled={!field.writable}
+        onValueChange={(next) => onChange(next === NONE_VALUE ? '' : next)}
+      >
+        <SelectTrigger id={`field-${field.name}`} className="w-full">
+          <SelectValue placeholder="Select related record" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE_VALUE}>None</SelectItem>
+          {options.map((option) => (
+            <SelectItem key={option.id} value={option.id}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  return (
+    <Input
+      id={`field-${field.name}`}
+      type={field.type === 'number' ? 'number' : 'text'}
+      value={value}
+      disabled={!field.writable}
+      onChange={(event) => onChange(event.target.value)}
+    />
   );
 }
