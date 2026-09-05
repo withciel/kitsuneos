@@ -240,6 +240,15 @@ export function createMcpHandlers(
     async define_collection(args: CollectionDefinition) {
       const ctx = getContext();
       const collectionId = await engine.defineCollection(ctx.workspaceId, args);
+      await engine.createGrant(
+        ctx.workspaceId,
+        ctx.principalId,
+        collectionId,
+        'admin',
+        null,
+        null,
+        { actorId: ctx.principalId },
+      );
       return { collectionId };
     },
   };

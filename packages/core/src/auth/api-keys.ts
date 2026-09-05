@@ -77,6 +77,20 @@ export async function revokeApiKey(
   );
 }
 
+/** Revoke every active key for a principal (used before minting a replacement). */
+export async function revokeApiKeysForPrincipal(
+  ownerPool: Pool,
+  principalId: string,
+): Promise<number> {
+  const result = await ownerPool.query(
+    `UPDATE kitsune.api_keys
+        SET revoked_at = now()
+      WHERE principal_id = $1 AND revoked_at IS NULL`,
+    [principalId],
+  );
+  return result.rowCount ?? 0;
+}
+
 export async function resolveApiKey(
   ownerPool: Pool,
   bearer: string,

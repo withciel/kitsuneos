@@ -16,6 +16,7 @@ export {
   hashApiKeyForAudit,
   resolveApiKey,
   revokeApiKey,
+  revokeApiKeysForPrincipal,
 } from './auth/api-keys.js';
 export {
   type AutoApplyPolicyConfig,

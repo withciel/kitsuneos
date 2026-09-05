@@ -13,6 +13,7 @@ const COLLECTION_NAME_RE = /^[a-z_][a-z0-9_]*$/;
 export default function WorkspaceHomePage() {
   const router = useRouter();
   const [empty, setEmpty] = useState(false);
+  const [bootError, setBootError] = useState('');
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -26,7 +27,13 @@ export default function WorkspaceHomePage() {
           return;
         }
         if (!response.ok) {
-          setEmpty(true);
+          const body = (await response.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          setBootError(
+            body.error ??
+              'Could not load your workspace. Refresh or sign in again.',
+          );
           return;
         }
         const body = (await response.json()) as {
@@ -39,7 +46,11 @@ export default function WorkspaceHomePage() {
           setEmpty(true);
         }
       })
-      .catch(() => setEmpty(true));
+      .catch(() =>
+        setBootError(
+          'Could not reach the workspace API. Check your connection and retry.',
+        ),
+      );
   }, [router]);
 
   async function createFirstCollection() {
@@ -68,6 +79,26 @@ export default function WorkspaceHomePage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (bootError) {
+    return (
+      <div className="flex flex-1 flex-col items-start gap-4 p-8">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Workspace unavailable
+        </h1>
+        <p className="max-w-md text-sm text-destructive">{bootError}</p>
+        <Button
+          variant="outline"
+          onClick={() => {
+            setBootError('');
+            window.location.reload();
+          }}
+        >
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   if (empty) {

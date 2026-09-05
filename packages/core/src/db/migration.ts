@@ -183,6 +183,10 @@ CREATE TABLE IF NOT EXISTS kitsune.users (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
+-- One-time API key reveal after signup (cleared when Settings loads /api/me).
+ALTER TABLE kitsune.users
+  ADD COLUMN IF NOT EXISTS pending_api_key text;
+
 CREATE TABLE IF NOT EXISTS kitsune.provisioning_steps (
   workos_id     text PRIMARY KEY,
   step          text NOT NULL,

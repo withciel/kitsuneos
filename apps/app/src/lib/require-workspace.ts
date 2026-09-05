@@ -51,9 +51,21 @@ export async function requireWorkspace(): Promise<WorkspaceContext> {
   const testUser = headerStore.get('x-kitsune-test-user');
   if (testUser && process.env.KITSUNE_ALLOW_TEST_USER_HEADER === '1') {
     const engine = getEngine();
-    const ctx = await lookupUser(engine, testUser);
+    let ctx = await lookupUser(engine, testUser);
     if (!ctx) {
-      throw new KitsuneError('Not found', 'not_found');
+      // Local demo / eval: provision on first request instead of requiring seed.
+      const email =
+        process.env.KITSUNE_DEMO_EMAIL?.trim() || `${testUser}@localhost`;
+      const provisioned = await provisionUserWorkspace(engine, {
+        workosId: testUser,
+        email,
+      });
+      ctx = {
+        userId: provisioned.userId,
+        workspaceId: provisioned.workspaceId,
+        principalId: provisioned.principalId,
+        apiKeyPlaintext: provisioned.apiKeyPlaintext ?? undefined,
+      };
     }
     return ctx;
   }
@@ -79,4 +91,21 @@ export async function requireWorkspace(): Promise<WorkspaceContext> {
     };
   }
   return ctx;
+}
+
+/** Read and clear the one-time API key reveal stored at provision time. */
+export async function consumePendingApiKey(
+  userId: string,
+): Promise<string | null> {
+  const engine = getEngine();
+  const result = await engine.ownerPool.query<{
+    pending_api_key: string | null;
+  }>(`SELECT pending_api_key FROM kitsune.users WHERE id = $1`, [userId]);
+  const pending = result.rows[0]?.pending_api_key ?? null;
+  if (!pending) return null;
+  await engine.ownerPool.query(
+    `UPDATE kitsune.users SET pending_api_key = NULL WHERE id = $1`,
+    [userId],
+  );
+  return pending;
 }

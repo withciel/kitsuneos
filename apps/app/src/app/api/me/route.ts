@@ -1,16 +1,21 @@
 import { NextResponse } from 'next/server';
-import { requireWorkspace } from '@/lib/require-workspace';
+import {
+  consumePendingApiKey,
+  requireWorkspace,
+} from '@/lib/require-workspace';
 
 const PRIVATE_HEADERS = { 'Cache-Control': 'no-store' };
 
 export async function GET() {
   try {
     const ctx = await requireWorkspace();
+    const pending =
+      ctx.apiKeyPlaintext ?? (await consumePendingApiKey(ctx.userId));
     return NextResponse.json(
       {
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
-        apiKeyPlaintext: ctx.apiKeyPlaintext ?? null,
+        apiKeyPlaintext: pending,
       },
       { headers: PRIVATE_HEADERS },
     );

@@ -10,6 +10,16 @@ export async function POST(request: Request) {
     const body = (await request.json()) as CollectionDefinition;
     validateCollectionDefinition(body);
     const collectionId = await engine.defineCollection(ctx.workspaceId, body);
+    // Creator must see the collection — defineCollection only creates DDL/metadata.
+    await engine.createGrant(
+      ctx.workspaceId,
+      ctx.principalId,
+      collectionId,
+      'admin',
+      null,
+      null,
+      { actorId: ctx.principalId },
+    );
     return NextResponse.json({ collectionId });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
