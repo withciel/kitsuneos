@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS kitsune.fields (
   UNIQUE (collection_id, name)
 );
 
+ALTER TABLE kitsune.fields
+  ADD COLUMN IF NOT EXISTS rollup jsonb;
+
 CREATE TABLE IF NOT EXISTS kitsune.grants (
   id            uuid PRIMARY KEY,
   workspace_id  uuid NOT NULL REFERENCES kitsune.workspaces(id),

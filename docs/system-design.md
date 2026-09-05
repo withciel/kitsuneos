@@ -30,6 +30,7 @@ The design goal that governs every trade-off below: **be genuinely relational.**
 - Full revision history per record, queryable by record, principal, and time
 - Change sets: field-level operations across multiple records and collections, applied atomically, with base-revision optimistic concurrency and partial approval
 - Grants: principal × collection × capability × field mask × row predicate
+- Rollup fields: stored number columns maintained from child aggregates; not writable by principals
 - MCP server with permission-aware schema description
 - Generated GraphQL, REST, and typed TypeScript client
 - Immutable audit log including denied attempts

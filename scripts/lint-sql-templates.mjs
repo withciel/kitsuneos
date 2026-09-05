@@ -53,6 +53,9 @@ const SAFE_IDENTIFIERS = new Set([
   'values',
   'stmts',
   'DEMO_SCHEMA_NAME',
+  'sourceTable',
+  'parentTable',
+  'aggExpr',
 ]);
 
 function looksLikeSql(templateText) {

@@ -46,6 +46,15 @@ import {
   writeRevision,
 } from './revisions/write.js';
 import {
+  assertRollupDefinition,
+  loadRollupBindingsForSource,
+  loadRollupFieldNames,
+  markParent,
+  readSourceForeignKeys,
+  recomputeRollupParents,
+} from './rollups/recompute.js';
+
+import {
   validateCollectionDefinition,
   validateFieldDefinition,
 } from './schema/validate-definition.js';
@@ -72,6 +81,7 @@ import type {
   ResolvedGrant,
   ReviewDecision,
   RevisionSummary,
+  RollupDefinition,
   SchemaChangeInput,
 } from './types.js';
 import {
@@ -1526,6 +1536,17 @@ export class KitsuneEngine {
             throw new KitsuneError('Not found', 'not_found');
           }
         } else if (op.fieldName) {
+          const rollupFields = await loadRollupFieldNames(
+            client,
+            workspaceId,
+            op.collection,
+          );
+          if (rollupFields.has(op.fieldName)) {
+            throw new KitsuneError(
+              `Field ${op.fieldName} is a rollup and cannot be proposed`,
+              'validation',
+            );
+          }
           assertFieldAllowed(grant, op.fieldName, 'propose');
         }
 
@@ -1788,6 +1809,40 @@ export class KitsuneEngine {
       );
       await this.acquireApplyLocks(client, schemaName, reviewerId, lockTargets);
 
+      const rollupParentIds = new Map<string, Set<string>>();
+      const rollupBindingsBySource = new Map<
+        string,
+        Awaited<ReturnType<typeof loadRollupBindingsForSource>>
+      >();
+      for (const op of approvedOps) {
+        if (!op.record_id || !op.collection_name) continue;
+        let bindings = rollupBindingsBySource.get(op.collection_name);
+        if (!bindings) {
+          bindings = await loadRollupBindingsForSource(
+            client,
+            workspaceId,
+            op.collection_name,
+          );
+          rollupBindingsBySource.set(op.collection_name, bindings);
+        }
+        if (bindings.length === 0) continue;
+        const fkFields = [...new Set(bindings.map((b) => b.foreignKeyField))];
+        const fks = await readSourceForeignKeys(
+          client,
+          schemaName,
+          op.table_name,
+          op.record_id,
+          fkFields,
+        );
+        for (const binding of bindings) {
+          markParent(
+            rollupParentIds,
+            binding.parentCollection,
+            fks[binding.foreignKeyField],
+          );
+        }
+      }
+
       for (const op of approvedOps) {
         const grant = await loadResolvedGrant(
           client,
@@ -2036,6 +2091,39 @@ export class KitsuneEngine {
           );
         }
       }
+
+      for (const op of approvedOps) {
+        if (!op.record_id || !op.collection_name) continue;
+        const bindings = rollupBindingsBySource.get(op.collection_name) ?? [];
+        if (bindings.length === 0) continue;
+        const fkFields = [...new Set(bindings.map((b) => b.foreignKeyField))];
+        const fks = await readSourceForeignKeys(
+          client,
+          schemaName,
+          op.table_name,
+          op.record_id,
+          fkFields,
+        );
+        for (const binding of bindings) {
+          markParent(
+            rollupParentIds,
+            binding.parentCollection,
+            fks[binding.foreignKeyField],
+          );
+        }
+      }
+      const allBindings = [...rollupBindingsBySource.values()].flat();
+      if (allBindings.length > 0 && rollupParentIds.size > 0) {
+        await recomputeRollupParents(
+          client,
+          schemaName,
+          reviewerId,
+          changeSetId,
+          allBindings,
+          rollupParentIds,
+        );
+      }
+
       await client.query('COMMIT');
       for (const [key, collectionName] of reindexTargets) {
         const recordId = key.slice(collectionName.length + 1);
@@ -2129,7 +2217,18 @@ export class KitsuneEngine {
       ) {
         throw new KitsuneError('Not found', 'not_found');
       }
+      const rollupFields = await loadRollupFieldNames(
+        client,
+        workspaceId,
+        collection,
+      );
       for (const field of Object.keys(record)) {
+        if (rollupFields.has(field)) {
+          throw new KitsuneError(
+            `Field ${field} is a rollup and cannot be written`,
+            'validation',
+          );
+        }
         assertFieldAllowed(grant, field, 'write');
       }
       const recordId = options?.recordId ?? uuidv4();
@@ -2166,6 +2265,15 @@ export class KitsuneEngine {
         fieldNames: Object.keys(record),
         outcome: 'allowed',
       });
+      await this.refreshRollupsAfterSourceChange(
+        client,
+        workspaceId,
+        schemaName,
+        principalId,
+        null,
+        collection,
+        [recordId],
+      );
       await client.query('COMMIT');
       const recordIdOut = recordId;
       client.release();
@@ -2884,6 +2992,163 @@ export class KitsuneEngine {
       [workspaceId, principalId],
     );
     return row.rows.length > 0;
+  }
+
+  /**
+   * Configure or clear a rollup on an existing number field. Admin-only.
+   * Rollup fields are platform-maintained and reject direct/proposed writes.
+   */
+  async setFieldRollup(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    field: string,
+    rollup: RollupDefinition | null,
+  ): Promise<void> {
+    await this.requireCollectionAdmin(workspaceId, principalId, collection);
+    if (rollup) {
+      assertRollupDefinition(rollup);
+    }
+
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    await withOwner(this.ownerPool, async (client) => {
+      const parent = await getCollectionMeta(client, workspaceId, collection);
+      const fieldMeta = parent.fieldMeta.find((f) => f.name === field);
+      if (!fieldMeta) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      if (fieldMeta.type !== 'number') {
+        throw new KitsuneError(
+          'Rollup fields must have type number',
+          'validation',
+        );
+      }
+
+      if (rollup) {
+        const source = await getCollectionMeta(
+          client,
+          workspaceId,
+          rollup.sourceCollection,
+        );
+        if (!source.fields.includes(rollup.foreignKeyField)) {
+          throw new KitsuneError(
+            `Source field ${rollup.foreignKeyField} not found`,
+            'validation',
+          );
+        }
+        if (
+          rollup.aggregate !== 'count' &&
+          rollup.valueField &&
+          !source.fields.includes(rollup.valueField)
+        ) {
+          throw new KitsuneError(
+            `Source value field ${rollup.valueField} not found`,
+            'validation',
+          );
+        }
+      }
+
+      const updated = await client.query(
+        `UPDATE kitsune.fields
+            SET rollup = $1::jsonb
+          WHERE collection_id = $2 AND name = $3`,
+        [rollup ? JSON.stringify(rollup) : null, parent.id, field],
+      );
+      if ((updated.rowCount ?? 0) === 0) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+
+      await writeAuditInTxn(client, {
+        workspaceId,
+        principalId,
+        action: 'schema.field_rollup',
+        collectionId: parent.id,
+        fieldNames: [field],
+        outcome: 'allowed',
+        reason: rollup
+          ? `rollup=${rollup.aggregate}:${rollup.sourceCollection}`
+          : 'rollup=cleared',
+      });
+
+      if (rollup) {
+        const parents = await client.query<{ id: string }>(
+          `SELECT id FROM ${quoteIdent(schemaName)}.${quoteIdent(parent.tableName)}
+            WHERE _deleted_at IS NULL`,
+        );
+        const parentIds = new Map<string, Set<string>>([
+          [collection, new Set(parents.rows.map((r) => r.id))],
+        ]);
+        const bindings = await loadRollupBindingsForSource(
+          client,
+          workspaceId,
+          rollup.sourceCollection,
+        );
+        const mine = bindings.filter(
+          (b) => b.parentCollection === collection && b.parentField === field,
+        );
+        if (mine.length > 0 && parents.rows.length > 0) {
+          await recomputeRollupParents(
+            client,
+            schemaName,
+            principalId,
+            null,
+            mine,
+            parentIds,
+          );
+        }
+      }
+    });
+  }
+
+  private async refreshRollupsAfterSourceChange(
+    client: import('pg').PoolClient,
+    workspaceId: string,
+    schemaName: string,
+    principalId: string,
+    changeSetId: string | null,
+    sourceCollection: string,
+    recordIds: string[],
+  ): Promise<void> {
+    const bindings = await loadRollupBindingsForSource(
+      client,
+      workspaceId,
+      sourceCollection,
+    );
+    if (bindings.length === 0 || recordIds.length === 0) {
+      return;
+    }
+
+    const source = await getCollectionMeta(
+      client,
+      workspaceId,
+      sourceCollection,
+    );
+    const fkFields = [...new Set(bindings.map((b) => b.foreignKeyField))];
+    const parentIds = new Map<string, Set<string>>();
+    for (const recordId of recordIds) {
+      const fks = await readSourceForeignKeys(
+        client,
+        schemaName,
+        source.tableName,
+        recordId,
+        fkFields,
+      );
+      for (const binding of bindings) {
+        markParent(
+          parentIds,
+          binding.parentCollection,
+          fks[binding.foreignKeyField],
+        );
+      }
+    }
+    await recomputeRollupParents(
+      client,
+      schemaName,
+      principalId,
+      changeSetId,
+      bindings,
+      parentIds,
+    );
   }
 
   private async requireCollectionAdmin(
