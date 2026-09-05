@@ -147,7 +147,7 @@ export default function SettingsSchemaPage() {
   async function dropField(fieldName: string) {
     if (!selected) return;
     const ok = window.confirm(
-      `Drop field "${fieldName}" from ${selected}? This cannot be undone.`,
+      `Remove column "${fieldName}" from ${selected}? This cannot be undone.`,
     );
     if (!ok) return;
     setBusy(true);
@@ -198,7 +198,7 @@ export default function SettingsSchemaPage() {
       <div className="grid flex-1 gap-6 p-6 lg:grid-cols-[220px_1fr]">
         <aside className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground uppercase">
-            Collections
+            Databases
           </p>
           {loading ? (
             <Skeleton className="h-24 w-full" />
@@ -222,12 +222,12 @@ export default function SettingsSchemaPage() {
             </ul>
           )}
           <div className="space-y-2 border-t border-border pt-3">
-            <Label htmlFor="new-collection">New collection</Label>
+            <Label htmlFor="new-collection">New database</Label>
             <Input
               id="new-collection"
               value={newCollectionName}
               onChange={(e) => setNewCollectionName(e.target.value)}
-              placeholder="name"
+              placeholder="accounts"
             />
             <Button
               size="sm"
@@ -245,7 +245,17 @@ export default function SettingsSchemaPage() {
             <>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-medium">{current.name}</h2>
-                <Badge variant="secondary">{current.capability}</Badge>
+                <Badge variant="secondary">
+                  {current.capability === 'admin'
+                    ? 'Full control'
+                    : current.capability === 'write'
+                      ? 'Can edit'
+                      : current.capability === 'propose'
+                        ? 'Can suggest'
+                        : current.capability === 'read'
+                          ? 'View only'
+                          : current.capability}
+                </Badge>
               </div>
               <ul className="divide-y divide-border rounded-md border border-border">
                 {current.fields.map((field) => (
@@ -268,19 +278,19 @@ export default function SettingsSchemaPage() {
                       disabled={busy}
                       onClick={() => void dropField(field.name)}
                     >
-                      Drop
+                      Remove
                     </Button>
                   </li>
                 ))}
               </ul>
               <div className="flex flex-wrap items-end gap-2 rounded-md border border-border p-3">
                 <div className="space-y-1">
-                  <Label htmlFor="field-name">Add field</Label>
+                  <Label htmlFor="field-name">Add column</Label>
                   <Input
                     id="field-name"
                     value={newFieldName}
                     onChange={(e) => setNewFieldName(e.target.value)}
-                    placeholder="field_name"
+                    placeholder="accounts"
                   />
                 </div>
                 <div className="space-y-1">
@@ -347,7 +357,7 @@ export default function SettingsSchemaPage() {
                   }
                   onClick={() => void addField()}
                 >
-                  Add field
+                  Add column
                 </Button>
               </div>
             </>

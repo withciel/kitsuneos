@@ -56,7 +56,7 @@ export default function WorkspaceHomePage() {
   async function createFirstCollection() {
     const trimmed = name.trim();
     if (!COLLECTION_NAME_RE.test(trimmed)) {
-      setError('Use a lowercase name like accounts or deals.');
+      setError('Use a simple lowercase name like accounts or deals.');
       return;
     }
     setBusy(true);
@@ -106,11 +106,11 @@ export default function WorkspaceHomePage() {
       <div className="flex flex-1 flex-col items-start gap-4 p-8">
         <div className="space-y-2">
           <h1 className="text-2xl font-semibold tracking-tight">
-            Create your first collection
+            Create your first database
           </h1>
           <p className="max-w-md text-sm text-muted-foreground">
-            Collections are tables you and agents share. Start with a name; you
-            can add fields in Settings.
+            A database is a shared table for you and your AI helpers. Start with
+            a simple name — you can add columns later in Settings.
           </p>
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -122,7 +122,7 @@ export default function WorkspaceHomePage() {
           }}
         >
           <div className="space-y-1.5">
-            <Label htmlFor="first-collection">Collection name</Label>
+            <Label htmlFor="first-collection">Database name</Label>
             <Input
               id="first-collection"
               value={name}
@@ -132,7 +132,7 @@ export default function WorkspaceHomePage() {
             />
           </div>
           <Button type="submit" disabled={busy || !name.trim()}>
-            {busy ? 'Creating…' : 'Create collection'}
+            {busy ? 'Creating…' : 'Create database'}
           </Button>
         </form>
       </div>

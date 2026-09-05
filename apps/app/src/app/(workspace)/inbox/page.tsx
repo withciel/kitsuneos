@@ -49,11 +49,9 @@ export default function InboxPage() {
   return (
     <div className="flex flex-1 flex-col">
       <div className="border-b border-border px-6 py-4">
-        <h1 className="text-xl font-semibold tracking-tight">
-          Change requests
-        </h1>
+        <h1 className="text-xl font-semibold tracking-tight">Inbox</h1>
         <p className="text-xs text-muted-foreground">
-          Open proposals awaiting review — like pull requests across pages
+          Suggested changes from people and AI helpers, waiting for your OK
         </p>
       </div>
       <div className="flex-1 overflow-auto px-6 py-4">
@@ -66,8 +64,8 @@ export default function InboxPage() {
           </div>
         ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No open change requests. Writes from propose-capability users and
-            agents land here for review.
+            Nothing to review. When someone (or an AI helper) suggests a change,
+            it will show up here for you to approve or reject.
           </p>
         ) : (
           <Table>

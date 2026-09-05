@@ -13,7 +13,7 @@ async function requireAdmin(ctx: WorkspaceContext): Promise<void> {
   if (
     !schema.collections.some((collection) => collection.capability === 'admin')
   ) {
-    throw new Error('Not found');
+    throw new Error('Only workspace admins can manage access');
   }
 }
 
@@ -48,8 +48,8 @@ export async function GET() {
     const message = error instanceof Error ? error.message : String(error);
     const status = message.includes('Unauthorized')
       ? 401
-      : message.includes('Not found')
-        ? 404
+      : message.includes('Only workspace admins')
+        ? 403
         : 400;
     return NextResponse.json({ error: message }, { status });
   }
