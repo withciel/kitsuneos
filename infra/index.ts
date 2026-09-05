@@ -275,38 +275,63 @@ const siteWebsite =
       })
     : undefined;
 
-if (siteBucket) {
-  new aws.s3.BucketPublicAccessBlock('site-bucket-block', {
-    bucket: siteBucket.id,
-    blockPublicAcls: deploySiteCdn,
-    blockPublicPolicy: deploySiteCdn,
-    ignorePublicAcls: deploySiteCdn,
-    restrictPublicBuckets: deploySiteCdn,
-  });
-}
+const sitePublicAccess = siteBucket
+  ? new aws.s3.BucketPublicAccessBlock(
+      'site-bucket-block',
+      {
+        bucket: siteBucket.id,
+        // Website mode must allow a public-read bucket policy.
+        // CDN mode keeps the bucket private (OAC only).
+        blockPublicAcls: deploySiteCdn,
+        blockPublicPolicy: deploySiteCdn,
+        ignorePublicAcls: deploySiteCdn,
+        restrictPublicBuckets: deploySiteCdn,
+      },
+      // Replace-before-create so toggles between website/CDN do not stick
+      // with BlockPublicPolicy=true while a public policy is applied.
+      { deleteBeforeReplace: true },
+    )
+  : undefined;
 
-if (siteBucket && siteWebsite) {
-  new aws.s3.BucketOwnershipControls('site-bucket-ownership', {
-    bucket: siteBucket.id,
-    rule: { objectOwnership: 'BucketOwnerPreferred' },
-  });
-  new aws.s3.BucketPolicy('site-bucket-public-read', {
-    bucket: siteBucket.id,
-    policy: siteBucket.arn.apply((bucketArn) =>
-      JSON.stringify({
-        Version: '2012-10-17',
-        Statement: [
-          {
-            Sid: 'PublicReadGetObject',
-            Effect: 'Allow',
-            Principal: '*',
-            Action: 's3:GetObject',
-            Resource: `${bucketArn}/*`,
-          },
-        ],
-      }),
-    ),
-  });
+const siteOwnership =
+  siteBucket && siteWebsite
+    ? new aws.s3.BucketOwnershipControls(
+        'site-bucket-ownership',
+        {
+          bucket: siteBucket.id,
+          rule: { objectOwnership: 'BucketOwnerPreferred' },
+        },
+        { dependsOn: sitePublicAccess ? [sitePublicAccess] : [] },
+      )
+    : undefined;
+
+if (siteBucket && siteWebsite && sitePublicAccess) {
+  // PublicAccessBlock must finish (BlockPublicPolicy=false) before PutBucketPolicy.
+  new aws.s3.BucketPolicy(
+    'site-bucket-public-read',
+    {
+      bucket: siteBucket.id,
+      policy: siteBucket.arn.apply((bucketArn) =>
+        JSON.stringify({
+          Version: '2012-10-17',
+          Statement: [
+            {
+              Sid: 'PublicReadGetObject',
+              Effect: 'Allow',
+              Principal: '*',
+              Action: 's3:GetObject',
+              Resource: `${bucketArn}/*`,
+            },
+          ],
+        }),
+      ),
+    },
+    {
+      dependsOn: siteOwnership
+        ? [sitePublicAccess, siteOwnership]
+        : [sitePublicAccess],
+    },
+  );
 }
 
 const siteOac = deploySiteCdn
