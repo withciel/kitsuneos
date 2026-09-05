@@ -1,7 +1,8 @@
-import type { Metadata } from 'next';
-import { Fraunces, IBM_Plex_Mono, Outfit } from 'next/font/google';
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
+import { Fraunces, IBM_Plex_Mono, Outfit } from 'next/font/google';
+import { siteMetadata } from '@/lib/site-metadata';
+import { signInUrl, signUpUrl } from '@/lib/urls';
 import './globals.css';
 
 const display = Fraunces({
@@ -23,11 +24,7 @@ const mono = IBM_Plex_Mono({
   display: 'swap',
 });
 
-export const metadata: Metadata = {
-  title: 'KitsuneOS — Agents propose. You approve.',
-  description:
-    'A database layer where agents propose changes and humans approve them.',
-};
+export const metadata = siteMetadata;
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
@@ -50,9 +47,16 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link className="site-logo" href="/">
               Kitsune<span>OS</span>
             </Link>
-            <nav aria-label="Account">
-              <a className="site-signin" href="[REDACTED]">
+            <nav className="site-header-nav" aria-label="Primary">
+              <a href="/#how">Product</a>
+              <a href="/#proof">Proof</a>
+              <a href="/#trust">Security</a>
+              <a href="/#pricing">Pricing</a>
+              <a className="site-signin" href={signInUrl}>
                 Sign in
+              </a>
+              <a className="site-cta" href={signUpUrl}>
+                Start free
               </a>
             </nav>
           </header>
@@ -62,6 +66,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <Link href="/terms/">Terms</Link>
               <Link href="/privacy/">Privacy</Link>
               <Link href="/refund/">Refunds</Link>
+              <a href="https://github.com/withciel/kitsuneos">GitHub</a>
               <a href="mailto:support@kitsuneos.com">support@kitsuneos.com</a>
             </nav>
           </footer>
