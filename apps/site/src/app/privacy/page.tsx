@@ -47,9 +47,7 @@ export default function PrivacyPage() {
       <ul>
         <li>WorkOS — authentication</li>
         <li>Dodo Payments — billing</li>
-        <li>
-          Amazon Web Services — hosting (RDS, App Runner, S3, CloudFront)
-        </li>
+        <li>Amazon Web Services — hosting (RDS, App Runner, S3, CloudFront)</li>
       </ul>
 
       <p>

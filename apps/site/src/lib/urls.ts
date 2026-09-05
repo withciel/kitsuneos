@@ -1,7 +1,10 @@
 const defaultAppHost = 'app.kitsuneos.com';
 const defaultSiteHost = 'kitsuneos.com';
 
-function originFromEnv(envValue: string | undefined, defaultHost: string): string {
+function originFromEnv(
+  envValue: string | undefined,
+  defaultHost: string,
+): string {
   if (envValue) {
     return envValue;
   }

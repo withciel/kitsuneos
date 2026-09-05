@@ -18,16 +18,16 @@ export default function TermsPage() {
       <p>
         KitsuneOS is in early access. Features, APIs, and schemas may change
         without notice. We do not guarantee uptime or data retention during this
-        period. The hosted product is intended for evaluation and
-        non-production workloads until we announce general availability.
+        period. The hosted product is intended for evaluation and non-production
+        workloads until we announce general availability.
       </p>
 
       <h2>Production use at Ciel</h2>
       <p>
-        Ciel uses KitsuneOS internally for its own agent workflows. That internal
-        use does not change the early-access status of the hosted product
-        offered at app.kitsuneos.com, which remains subject to these Terms
-        until general availability.
+        Ciel uses KitsuneOS internally for its own agent workflows. That
+        internal use does not change the early-access status of the hosted
+        product offered at app.kitsuneos.com, which remains subject to these
+        Terms until general availability.
       </p>
 
       <h2>No security audit</h2>
