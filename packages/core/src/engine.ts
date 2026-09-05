@@ -42,6 +42,10 @@ import {
   writeRevision,
 } from './revisions/write.js';
 import {
+  sweepExpiredRevisions,
+  type SweepRevisionsResult,
+} from './revisions/sweep.js';
+import {
   validateCollectionDefinition,
   validateFieldDefinition,
 } from './schema/validate-definition.js';
@@ -2607,6 +2611,69 @@ export class KitsuneEngine {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * Set per-collection revision retention. `null` keeps history forever.
+   * Admin-only (same gate as audit).
+   */
+  async setRevisionRetentionDays(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    days: number | null,
+  ): Promise<void> {
+    if (days !== null && (!Number.isInteger(days) || days < 1)) {
+      throw new KitsuneError(
+        'revision_retention_days must be a positive integer or null',
+        'validation',
+      );
+    }
+    await this.requireCollectionAdmin(workspaceId, principalId, collection);
+    const updated = await this.ownerPool.query(
+      `UPDATE kitsune.collections
+          SET revision_retention_days = $1
+        WHERE workspace_id = $2 AND name = $3`,
+      [days, workspaceId, collection],
+    );
+    if ((updated.rowCount ?? 0) === 0) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'schema.revision_retention',
+      fieldNames: [collection],
+      outcome: 'allowed',
+      reason:
+        days === null ? 'retention=forever' : `retention_days=${days}`,
+    });
+  }
+
+  /**
+   * Delete expired `__rev` rows per collection retention. Admin-only.
+   */
+  async sweepRevisions(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<SweepRevisionsResult> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const result = await withOwner(this.ownerPool, async (client) =>
+      sweepExpiredRevisions(client, workspaceId, schemaName),
+    );
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'revisions.sweep',
+      fieldNames: result.collections.map((c) => c.collection),
+      outcome: 'allowed',
+      reason: `deleted=${result.deleted}`,
+    });
+    return result;
   }
 
   async listRevisionsByPrincipal(

@@ -69,6 +69,11 @@ export {
   writeRevision,
 } from './revisions/write.js';
 export {
+  sweepExpiredRevisions,
+  type SweepCollectionResult,
+  type SweepRevisionsResult,
+} from './revisions/sweep.js';
+export {
   assertIdentifier,
   validateCollectionDefinition,
   validateFieldDefinition,
