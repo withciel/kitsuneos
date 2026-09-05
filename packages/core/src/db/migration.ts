@@ -8,6 +8,16 @@ CREATE TABLE IF NOT EXISTS kitsune.workspaces (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE kitsune.workspaces
+  ADD COLUMN IF NOT EXISTS parent_workspace_id uuid REFERENCES kitsune.workspaces(id);
+ALTER TABLE kitsune.workspaces
+  ADD COLUMN IF NOT EXISTS branch_name text;
+ALTER TABLE kitsune.workspaces
+  ADD COLUMN IF NOT EXISTS branched_at timestamptz;
+CREATE UNIQUE INDEX IF NOT EXISTS workspaces_parent_branch_name_idx
+  ON kitsune.workspaces (parent_workspace_id, branch_name)
+  WHERE parent_workspace_id IS NOT NULL AND branch_name IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS kitsune.principals (
   id            uuid PRIMARY KEY,
   workspace_id  uuid NOT NULL REFERENCES kitsune.workspaces(id),
