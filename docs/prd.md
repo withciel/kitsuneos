@@ -217,13 +217,13 @@ Every read, write, denied attempt, grant change, and schema change, by principal
 - [x] Denied attempts included
 
 **R8. Console and CLI**
-The hosted console is a human workspace, not a set of developer tool pages. Sidebar lists databases (collections); opening one shows a table of pages. Opening a row lands on a full **page** (`/p/[pageId]` — planned; peek is secondary). Inbox is the **change-request** (PR) surface and must support proposals that touch multiple pages across databases. Settings owns schema, grants, and workspace metadata. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`. Query, audit, and history remain engine/API surfaces even when they are not top-level nav. Direction: `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`.
+The hosted console is a human workspace, not a set of developer tool pages. Sidebar lists databases (collections); opening one shows a table of pages. Opening a row lands on a full **page** (`/p/[pageId]`). Inbox is the **change-request** (PR) surface and supports proposals that touch multiple pages across databases. Settings owns schema, grants, and workspace metadata. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`. Query, audit, and history remain engine/API surfaces even when they are not top-level nav. Direction: `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`.
 
 - [x] Collection table views (`/c/[collection]`) with column visibility and local search
-- [x] Record peek: create (`directWrite`) and update (auto-applied change set for `write`/`admin`) *(peek remains; full page route is the next UX slice)*
-- [ ] Full page route `/p/[pageId]` as primary open surface (title, body, properties)
+- [x] Record peek: create (`directWrite`) and update (auto-applied change set for `write`/`admin`) *(peek remains as New page / optional quick path; full page is primary)*
+- [x] Full page route `/p/[pageId]` as primary open surface (title, body, properties)
 - [x] Inbox lists open change sets; detail shows field-level diffs, partial approve/reject, apply
-- [ ] Inbox detail groups diffs by page for multi-page / multi-collection change requests
+- [x] Inbox detail groups diffs by page for multi-page / multi-collection change requests
 - [x] Settings: schema editor, grants, workspace
 - [x] `export` produces the full workspace as portable data plus schema (grant-filtered for non-admins)
 

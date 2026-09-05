@@ -81,3 +81,36 @@ export function summarizePagesTouched(
     label: `${pageLabel} across ${dbLabel}`,
   };
 }
+
+export interface OpenChangeRequestRef {
+  id: string;
+  title: string | null;
+}
+
+/**
+ * Filter open change sets to those with at least one op on this page.
+ * Client-side first pass over the existing Inbox list payload.
+ */
+export function changeRequestsTouchingPage(
+  changeSets: ReadonlyArray<{
+    id: string;
+    title: string | null;
+    operations: ReadonlyArray<{
+      collection: string;
+      recordId?: string | null;
+    }>;
+  }>,
+  collection: string,
+  pageId: string,
+): OpenChangeRequestRef[] {
+  const matches: OpenChangeRequestRef[] = [];
+  for (const changeSet of changeSets) {
+    const touches = changeSet.operations.some(
+      (op) => op.collection === collection && op.recordId === pageId,
+    );
+    if (touches) {
+      matches.push({ id: changeSet.id, title: changeSet.title });
+    }
+  }
+  return matches;
+}

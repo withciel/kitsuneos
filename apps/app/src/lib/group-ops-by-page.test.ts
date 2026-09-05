@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { groupOpsByPage, summarizePagesTouched } from './group-ops-by-page.ts';
+import {
+  changeRequestsTouchingPage,
+  groupOpsByPage,
+  summarizePagesTouched,
+} from './group-ops-by-page.ts';
 
 describe('groupOpsByPage', () => {
   it('groups multi-collection ops into ≥2 pages', () => {
@@ -65,5 +69,38 @@ describe('summarizePagesTouched', () => {
     assert.equal(summary.pageCount, 2);
     assert.equal(summary.databaseCount, 2);
     assert.equal(summary.label, '2 pages across 2 databases');
+  });
+});
+
+describe('changeRequestsTouchingPage', () => {
+  it('returns only open change requests that touch the page', () => {
+    const touching = changeRequestsTouchingPage(
+      [
+        {
+          id: 'cr-1',
+          title: 'Close Acme deal',
+          operations: [
+            { collection: 'opportunities', recordId: 'opp-1' },
+            { collection: 'accounts', recordId: 'acct-1' },
+          ],
+        },
+        {
+          id: 'cr-2',
+          title: 'Other page',
+          operations: [{ collection: 'opportunities', recordId: 'opp-2' }],
+        },
+        {
+          id: 'cr-3',
+          title: null,
+          operations: [{ collection: 'accounts', recordId: 'acct-1' }],
+        },
+      ],
+      'accounts',
+      'acct-1',
+    );
+    assert.deepEqual(touching, [
+      { id: 'cr-1', title: 'Close Acme deal' },
+      { id: 'cr-3', title: null },
+    ]);
   });
 });

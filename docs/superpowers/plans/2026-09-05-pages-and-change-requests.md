@@ -132,9 +132,9 @@
 - Modify: page view + optional lightweight API
 - Modify: inbox only if needed
 
-- [ ] **Step 1:** Given page id, find open change sets that include ops for that record (reuse list endpoint + filter client-side first)
-- [ ] **Step 2:** Banner: “N open change requests touch this page” with links
-- [ ] **Step 3:** Commit
+- [x] **Step 1:** Given page id, find open change sets that include ops for that record (reuse list endpoint + filter client-side first)
+- [x] **Step 2:** Banner: “N open change requests touch this page” with links
+- [x] **Step 3:** Commit
 
 ---
 
@@ -145,9 +145,9 @@
 - Modify: acceptance tests only if behavior is contract-level
 - Modify: `AGENTS.md` only if agent-facing nouns change in MCP descriptions (optional; don’t rename MCP tools)
 
-- [ ] **Step 1:** Update PRD human stories 1–4 to page wording if not done in Task 0
-- [ ] **Step 2:** Smoke: multi-collection change set displays two pages in Inbox detail
-- [ ] **Step 3:** Ensure CI `verify` green; open implementation PR(s); merge
+- [x] **Step 1:** Update PRD human stories 1–4 to page wording if not done in Task 0
+- [x] **Step 2:** Smoke: multi-collection change set displays two pages in Inbox detail
+- [x] **Step 3:** Ensure CI `verify` green; open implementation PR(s); merge
 
 ---
 

@@ -15,6 +15,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  changeRequestsTouchingPage,
+  type OpenChangeRequestRef,
+} from '@/lib/group-ops-by-page';
 import { pageHref, pickBodyField, pickTitleField } from '@/lib/page';
 import { recordLabel } from '@/lib/record-label';
 
@@ -116,6 +120,9 @@ export function PageView({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [pendingChangeRequests, setPendingChangeRequests] = useState<
+    OpenChangeRequestRef[]
+  >([]);
 
   const titleField = useMemo(() => pickTitleField(fields), [fields]);
   const bodyField = useMemo(() => pickBodyField(fields), [fields]);
@@ -240,6 +247,33 @@ export function PageView({
     };
   }, [collection, pageId]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void fetch('/api/review')
+      .then(async (response) => {
+        const body = (await response.json()) as {
+          changeSets?: Array<{
+            id: string;
+            title: string | null;
+            operations: Array<{
+              collection: string;
+              recordId?: string | null;
+            }>;
+          }>;
+        };
+        if (cancelled || !response.ok) return;
+        setPendingChangeRequests(
+          changeRequestsTouchingPage(body.changeSets ?? [], collection, pageId),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setPendingChangeRequests([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [collection, pageId]);
+
   function setDraftField(name: string, value: string) {
     setDraft((prev) => ({ ...prev, [name]: value }));
     setDirty(true);
@@ -346,6 +380,27 @@ export function PageView({
         </div>
         {error ? (
           <p className="mt-2 text-sm text-destructive">{error}</p>
+        ) : null}
+        {pendingChangeRequests.length > 0 ? (
+          <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+            <p className="font-medium">
+              {pendingChangeRequests.length === 1
+                ? '1 open change request touches this page'
+                : `${pendingChangeRequests.length} open change requests touch this page`}
+            </p>
+            <ul className="mt-1 space-y-0.5 text-muted-foreground">
+              {pendingChangeRequests.map((cr) => (
+                <li key={cr.id}>
+                  <Link
+                    href={`/inbox/${cr.id}`}
+                    className="text-primary underline-offset-4 hover:underline"
+                  >
+                    {cr.title?.trim() || 'Untitled change request'}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </div>
 
