@@ -235,7 +235,7 @@ P1 complete for R9–R13. **R12 webhooks** implemented (HMAC-signed `change_set.
 
 **R11. Change-set automation policies.** Rules such as auto-apply when confidence is high and only these fields are touched, or require two approvals above a value threshold. **Implemented:** workspace policies for `auto_apply` (field allowlist + optional min confidence) and `min_approvals` (distinct reviewers before apply).
 
-**R12. Webhooks and change streams.** Subscribe to applied change sets for downstream sync. **Implemented:** workspace admins register HTTPS endpoints; apply dispatches HMAC-signed `change_set.applied` payloads and records deliveries.
+**R12. Webhooks and change streams.** Subscribe to applied change sets for downstream sync. **Implemented:** workspace admins register HTTPS endpoints (engine + MCP tools); apply dispatches HMAC-signed `change_set.applied` payloads and records deliveries.
 
 **R13. Attachments.** Binary blobs in object storage (local filesystem store by default; S3/R2-compatible store pluggable), referenced by content hash from a record field. Grants apply to metadata listing and download; primary records stay in Postgres.
 

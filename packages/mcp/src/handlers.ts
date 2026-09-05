@@ -110,6 +110,30 @@ export function createMcpHandlers(
       );
     },
 
+    async create_webhook_endpoint(args: { url: string; events?: string[] }) {
+      const ctx = getContext();
+      return engine.createWebhookEndpoint(
+        ctx.workspaceId,
+        ctx.principalId,
+        args,
+      );
+    },
+
+    async list_webhook_endpoints() {
+      const ctx = getContext();
+      return engine.listWebhookEndpoints(ctx.workspaceId, ctx.principalId);
+    },
+
+    async delete_webhook_endpoint(args: { endpointId: string }) {
+      const ctx = getContext();
+      await engine.deleteWebhookEndpoint(
+        ctx.workspaceId,
+        ctx.principalId,
+        args.endpointId,
+      );
+      return { ok: true };
+    },
+
     async propose_change_set(args: ProposeChangeSetInput) {
       const ctx = getContext();
       return engine.proposeChangeSet(ctx.workspaceId, ctx.principalId, args);

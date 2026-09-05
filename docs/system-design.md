@@ -382,7 +382,7 @@ There is still exactly one query compiler. GraphQL, REST, MCP, the console query
 
 **REST** is `GET /api/records/:collection/:id` (`readRecord` only). Missing and forbidden both return `{ "error": "Not found" }`. Writes of business data still go through change sets.
 
-**MCP** exposes `describe_schema`, `query` (including `join`), `read_record`, `propose_change_set`, and `read_change_set_feedback`. `describe_schema` returns only what the calling identity can reach, including its own capabilities per field.
+**MCP** exposes `describe_schema`, `query` (including `join`), `read_record`, `propose_change_set`, `read_change_set_feedback`, attachment tools, and admin webhook tools (`create_webhook_endpoint`, `list_webhook_endpoints`, `delete_webhook_endpoint`). `describe_schema` returns only what the calling identity can reach, including its own capabilities per field.
 
 **TypeScript client** is generated from collection definitions (`pnpm codegen`, `--check` in CI). Types fail the build on incompatible schema change. Types come from `kitsune.fields`, not from GraphQL SDL.
 

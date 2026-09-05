@@ -33,6 +33,12 @@ export async function invokeMcpTool(
       return handlers.list_attachments(args as never);
     case 'get_attachment':
       return handlers.get_attachment(args as never);
+    case 'create_webhook_endpoint':
+      return handlers.create_webhook_endpoint(args as never);
+    case 'list_webhook_endpoints':
+      return handlers.list_webhook_endpoints();
+    case 'delete_webhook_endpoint':
+      return handlers.delete_webhook_endpoint(args as never);
     case 'propose_change_set':
       return handlers.propose_change_set(args as never);
     case 'read_change_set_feedback':
