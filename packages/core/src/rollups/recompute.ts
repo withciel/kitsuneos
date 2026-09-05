@@ -198,8 +198,8 @@ export async function recomputeRollupParents(
         [nextValue, nextRevision, principalId, parentId],
       );
 
-      const snapshot = await client.query(
-        `SELECT * FROM ${parentTable} WHERE id = $1`,
+      const snapshot = await client.query<{ row: Record<string, unknown> }>(
+        `SELECT to_jsonb(t) AS row FROM ${parentTable} t WHERE id = $1`,
         [parentId],
       );
       await writeRevision(
@@ -208,7 +208,7 @@ export async function recomputeRollupParents(
         binding.parentTable,
         parentId,
         nextRevision,
-        snapshot.rows[0] ?? {},
+        snapshot.rows[0]?.row ?? {},
         [binding.parentField],
         principalId,
         changeSetId,
