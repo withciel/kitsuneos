@@ -1,4 +1,13 @@
 WEBVTT
 
-00:00.000 --> 00:30.000
-Agent proposes next_step, amount rejected, human approves, history shows attribution.
+00:00.000 --> 00:06.000
+An agent proposes updating next_step on an opportunity record.
+
+00:06.000 --> 00:13.000
+The amount field is rejected — the agent grant allows only name, stage, and next_step.
+
+00:13.000 --> 00:22.000
+A human reviews the change set in the inbox and approves the allowed fields.
+
+00:22.000 --> 00:30.000
+Revision history shows the agent as the acting principal on the applied change.

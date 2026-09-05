@@ -4,21 +4,37 @@
     <meta charset="utf-8" />
     <title>Page not found — KitsuneOS</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <style>
       body {
         margin: 0;
         background: #2e2b26;
         color: #e4ded2;
-        font-family: system-ui, sans-serif;
+        font-family: "Outfit", system-ui, sans-serif;
         padding: 3rem 1.5rem;
         max-width: 48rem;
+        line-height: 1.65;
       }
-      a { color: #d8a961; }
+      h1 {
+        color: #f4f0e8;
+        font-family: Georgia, serif;
+        letter-spacing: -0.02em;
+      }
+      a {
+        color: #d8a961;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      a:focus-visible {
+        outline: 2px solid #e49581;
+        outline-offset: 2px;
+      }
     </style>
   </head>
   <body>
-    <h1>404</h1>
-    <p>This page does not exist.</p>
-    <p><a href="/">Back to KitsuneOS</a></p>
+    <h1>Page not found</h1>
+    <p>The page you requested does not exist.</p>
+    <p><a href="/">Back to home</a></p>
   </body>
 </html>

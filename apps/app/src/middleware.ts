@@ -10,9 +10,29 @@ import {
 const redirectUri =
   process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI ||
   process.env.WORKOS_REDIRECT_URI ||
-  'https://app.kitsuneos.com/callback';
+  `${originFromAppHost()}/callback`;
 
-const authkit = authkitMiddleware({ redirectUri });
+function originFromAppHost(): string {
+  const host = process.env.NEXT_PUBLIC_APP_HOST ?? 'app.kitsuneos.com';
+  return `https://${host}`;
+}
+
+const authkit = authkitMiddleware({
+  redirectUri,
+  middlewareAuth: {
+    enabled: true,
+    unauthenticatedPaths: [
+      '/login',
+      '/signup',
+      '/callback',
+      '/health',
+      '/api/billing/webhook',
+      '/api/mcp/tools/call',
+      '/api/mcp/tools',
+    ],
+  },
+  signUpPaths: ['/signup'],
+});
 
 export default function middleware(
   request: NextRequest,

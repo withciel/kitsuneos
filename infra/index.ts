@@ -343,6 +343,35 @@ const siteOac = deploySiteCdn
     })
   : undefined;
 
+const siteResponseHeadersPolicy = deploySiteCdn
+  ? new aws.cloudfront.ResponseHeadersPolicy('site-security-headers', {
+      name: `kitsune-site-security-${stack}`,
+      securityHeadersConfig: {
+        strictTransportSecurity: {
+          accessControlMaxAgeSec: 31536000,
+          includeSubdomains: true,
+          override: true,
+        },
+        contentTypeOptions: { override: true },
+        frameOptions: { frameOption: 'DENY', override: true },
+        referrerPolicy: {
+          referrerPolicy: 'strict-origin-when-cross-origin',
+          override: true,
+        },
+      },
+      customHeadersConfig: {
+        items: [
+          {
+            header: 'Content-Security-Policy',
+            value:
+              "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; media-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+            override: true,
+          },
+        ],
+      },
+    })
+  : undefined;
+
 const siteDistribution =
   deploySiteCdn && siteBucket && siteOac
     ? new aws.cloudfront.Distribution('site-cdn', {
@@ -366,6 +395,7 @@ const siteDistribution =
             cookies: { forward: 'none' },
           },
           compress: true,
+          responseHeadersPolicyId: siteResponseHeadersPolicy?.id,
         },
         customErrorResponses: [
           {

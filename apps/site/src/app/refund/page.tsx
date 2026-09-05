@@ -1,4 +1,12 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
+import { pageMetadata } from '@/lib/site-metadata';
+
+export const metadata: Metadata = pageMetadata(
+  'Refund Policy',
+  'Refund terms for paid KitsuneOS subscriptions during early access.',
+  '/refund/',
+);
 
 export default function RefundPage() {
   return (
@@ -7,8 +15,8 @@ export default function RefundPage() {
       <p>Last updated: September 2026</p>
       <p>
         Paid subscriptions may be refunded within 14 days of purchase if you
-        have not materially used write access (proposals, applies, schema
-        changes). Contact{' '}
+        have not materially used write access (for example: submitting change
+        sets, applying approved changes, or modifying schema). Contact{' '}
         <a href="mailto:support@kitsuneos.com">support@kitsuneos.com</a> with
         your workspace email.
       </p>

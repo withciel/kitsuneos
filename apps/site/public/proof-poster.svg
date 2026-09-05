@@ -1,5 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-label="KitsuneOS proof demo poster">
   <rect width="960" height="540" fill="#24211c"/>
-  <text x="480" y="260" fill="#e4ded2" font-family="system-ui,sans-serif" font-size="28" text-anchor="middle">KitsuneOS proof demo</text>
-  <text x="480" y="300" fill="#b7af9f" font-family="system-ui,sans-serif" font-size="18" text-anchor="middle">Agent propose ’ reject amount ’ human approve</text>
+  <rect x="48" y="48" width="864" height="444" rx="12" fill="#2e2b26" stroke="#48423a"/>
+  <text x="480" y="200" fill="#f4f0e8" font-family="system-ui,sans-serif" font-size="32" font-weight="600" text-anchor="middle">KitsuneOS review queue</text>
+  <text x="480" y="260" fill="#e4ded2" font-family="system-ui,sans-serif" font-size="20" text-anchor="middle">Agent proposes next_step</text>
+  <text x="480" y="300" fill="#e49581" font-family="system-ui,sans-serif" font-size="18" text-anchor="middle">amount rejected by grant</text>
+  <text x="480" y="340" fill="#a7e2d7" font-family="system-ui,sans-serif" font-size="18" text-anchor="middle">human approves · history attributed</text>
+  <polygon points="450,400 450,460 520,430" fill="#d8a961"/>
 </svg>
