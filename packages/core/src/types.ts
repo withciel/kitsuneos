@@ -180,6 +180,8 @@ export interface ChangeOpInput {
 export interface ProposeChangeSetInput {
   title?: string;
   rationale?: string;
+  /** Optional agent confidence in [0, 1], used by automation policies. */
+  confidence?: number;
   operations: ChangeOpInput[];
 }
 

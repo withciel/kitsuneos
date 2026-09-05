@@ -10,6 +10,15 @@ import type {
   PutAttachmentInput,
 } from './attachments/types.js';
 import { writeAudit, writeAuditInTxn } from './audit/log.js';
+import {
+  type AutoApplyPolicyConfig,
+  assertAutoApplyConfig,
+  assertMinApprovalsConfig,
+  listEnabledPolicies,
+  type MinApprovalsPolicyConfig,
+  matchesAutoApply,
+  matchesMinApprovalsScope,
+} from './automation/policies.js';
 import { assertWriteEntitlement } from './billing/entitlement.js';
 import { compilePredicate } from './compiler/predicate-sql.js';
 import {
@@ -1494,6 +1503,17 @@ export class KitsuneEngine {
     input: ProposeChangeSetInput,
   ): Promise<{ changeSetId: string; operationIds: string[] }> {
     await assertWriteEntitlement(this.ownerPool, workspaceId);
+    if (
+      input.confidence !== undefined &&
+      (typeof input.confidence !== 'number' ||
+        input.confidence < 0 ||
+        input.confidence > 1)
+    ) {
+      throw new KitsuneError(
+        'confidence must be between 0 and 1',
+        'validation',
+      );
+    }
     const schemaName = schemaNameForWorkspace(workspaceId);
     const changeSetId = uuidv4();
     const operationIds: string[] = [];
@@ -1575,14 +1595,16 @@ export class KitsuneEngine {
       }
 
       await client.query(
-        `INSERT INTO kitsune.change_sets (id, workspace_id, author_id, status, title, rationale)
-         VALUES ($1, $2, $3, 'open', $4, $5)`,
+        `INSERT INTO kitsune.change_sets
+          (id, workspace_id, author_id, status, title, rationale, confidence)
+         VALUES ($1, $2, $3, 'open', $4, $5, $6)`,
         [
           changeSetId,
           workspaceId,
           authorId,
           input.title ?? null,
           input.rationale ?? null,
+          input.confidence ?? null,
         ],
       );
 
@@ -1640,6 +1662,13 @@ export class KitsuneEngine {
       });
 
       await client.query('COMMIT');
+      await this.maybeAutoApplyChangeSet(
+        workspaceId,
+        authorId,
+        changeSetId,
+        operationIds,
+        input.confidence ?? null,
+      );
       return { changeSetId, operationIds };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -1687,6 +1716,22 @@ export class KitsuneEngine {
         `UPDATE kitsune.change_sets SET decided_by = $1 WHERE id = $2`,
         [reviewerId, changeSetId],
       );
+      const allApproved = decisions.every((d) => d.status === 'approved');
+      if (allApproved && decisions.length > 0) {
+        await client.query(
+          `UPDATE kitsune.change_sets
+              SET approval_principal_ids = (
+                SELECT ARRAY(
+                  SELECT DISTINCT x
+                    FROM unnest(
+                      coalesce(approval_principal_ids, '{}'::uuid[]) || $1::uuid
+                    ) AS x
+                )
+              )
+            WHERE id = $2`,
+          [reviewerId, changeSetId],
+        );
+      }
       await writeAuditInTxn(client, {
         workspaceId,
         principalId: reviewerId,
@@ -1761,6 +1806,17 @@ export class KitsuneEngine {
           'validation',
         );
       }
+
+      await this.assertMinApprovalsSatisfied(
+        metaClient,
+        workspaceId,
+        changeSetId,
+        ops.map((o) => ({
+          collectionName: o.collection_name,
+          fieldName: o.field_name,
+          op: o.op,
+        })),
+      );
     } finally {
       metaClient.release();
     }
@@ -3149,6 +3205,217 @@ export class KitsuneEngine {
       bindings,
       parentIds,
     );
+  }
+
+  async upsertAutomationPolicy(
+    workspaceId: string,
+    principalId: string,
+    input: {
+      name: string;
+      kind: 'auto_apply' | 'min_approvals';
+      config: AutoApplyPolicyConfig | MinApprovalsPolicyConfig;
+      enabled?: boolean;
+    },
+  ): Promise<string> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    if (input.kind === 'auto_apply') {
+      assertAutoApplyConfig(input.config as AutoApplyPolicyConfig);
+    } else {
+      assertMinApprovalsConfig(input.config as MinApprovalsPolicyConfig);
+    }
+    const id = uuidv4();
+    await this.ownerPool.query(
+      `INSERT INTO kitsune.automation_policies
+         (id, workspace_id, name, enabled, kind, config)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+       ON CONFLICT (workspace_id, name) DO UPDATE
+         SET enabled = EXCLUDED.enabled,
+             kind = EXCLUDED.kind,
+             config = EXCLUDED.config
+       RETURNING id`,
+      [
+        id,
+        workspaceId,
+        input.name,
+        input.enabled !== false,
+        input.kind,
+        JSON.stringify(input.config),
+      ],
+    );
+    const row = await this.ownerPool.query<{ id: string }>(
+      `SELECT id FROM kitsune.automation_policies
+        WHERE workspace_id = $1 AND name = $2`,
+      [workspaceId, input.name],
+    );
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'automation.policy_upsert',
+      outcome: 'allowed',
+      detail: { name: input.name, kind: input.kind },
+    });
+    const policyId = row.rows[0]?.id;
+    if (!policyId) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    return policyId;
+  }
+
+  async listAutomationPolicies(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      enabled: boolean;
+      kind: 'auto_apply' | 'min_approvals';
+      config: AutoApplyPolicyConfig | MinApprovalsPolicyConfig;
+    }>
+  > {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const result = await this.ownerPool.query<{
+      id: string;
+      name: string;
+      enabled: boolean;
+      kind: 'auto_apply' | 'min_approvals';
+      config: AutoApplyPolicyConfig | MinApprovalsPolicyConfig;
+    }>(
+      `SELECT id, name, enabled, kind, config
+         FROM kitsune.automation_policies
+        WHERE workspace_id = $1
+        ORDER BY name`,
+      [workspaceId],
+    );
+    return result.rows;
+  }
+
+  async deleteAutomationPolicy(
+    workspaceId: string,
+    principalId: string,
+    name: string,
+  ): Promise<void> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const deleted = await this.ownerPool.query(
+      `DELETE FROM kitsune.automation_policies
+        WHERE workspace_id = $1 AND name = $2`,
+      [workspaceId, name],
+    );
+    if ((deleted.rowCount ?? 0) === 0) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'automation.policy_delete',
+      outcome: 'allowed',
+      detail: { name },
+    });
+  }
+
+  private async maybeAutoApplyChangeSet(
+    workspaceId: string,
+    authorId: string,
+    changeSetId: string,
+    operationIds: string[],
+    confidence: number | null,
+  ): Promise<void> {
+    const client = await this.ownerPool.connect();
+    try {
+      const policies = await listEnabledPolicies(client, workspaceId);
+      const autoPolicies = policies.filter((p) => p.kind === 'auto_apply');
+      if (autoPolicies.length === 0) return;
+
+      const ops = await client.query<{
+        collection_name: string;
+        field_name: string | null;
+        op: string;
+      }>(
+        `SELECT c.name AS collection_name, o.field_name, o.op
+           FROM kitsune.change_ops o
+           JOIN kitsune.collections c ON c.id = o.collection_id
+          WHERE o.change_set_id = $1
+          ORDER BY o.seq`,
+        [changeSetId],
+      );
+      const summary = ops.rows.map((o) => ({
+        collectionName: o.collection_name,
+        fieldName: o.field_name,
+        op: o.op,
+      }));
+      const matched = autoPolicies.some((p) =>
+        matchesAutoApply(
+          p.config as AutoApplyPolicyConfig,
+          summary,
+          confidence,
+        ),
+      );
+      if (!matched) return;
+    } finally {
+      client.release();
+    }
+
+    try {
+      await this.reviewChangeSet(
+        workspaceId,
+        authorId,
+        changeSetId,
+        operationIds.map((opId) => ({
+          opId,
+          status: 'approved' as const,
+        })),
+      );
+      await this.applyChangeSet(workspaceId, authorId, changeSetId);
+    } catch (error) {
+      console.error('Auto-apply failed for change set', changeSetId, error);
+    }
+  }
+
+  private async assertMinApprovalsSatisfied(
+    client: import('pg').PoolClient,
+    workspaceId: string,
+    changeSetId: string,
+    ops: Array<{
+      collectionName: string;
+      fieldName: string | null;
+      op: string;
+    }>,
+  ): Promise<void> {
+    const policies = await listEnabledPolicies(client, workspaceId);
+    const minPolicies = policies.filter((p) => p.kind === 'min_approvals');
+    if (minPolicies.length === 0) return;
+
+    const applicable = minPolicies.filter((p) =>
+      matchesMinApprovalsScope(p.config as MinApprovalsPolicyConfig, ops),
+    );
+    if (applicable.length === 0) return;
+
+    const required = Math.max(
+      ...applicable.map(
+        (p) => (p.config as MinApprovalsPolicyConfig).minApprovals,
+      ),
+    );
+    const row = await client.query<{
+      approval_principal_ids: string[] | null;
+    }>(`SELECT approval_principal_ids FROM kitsune.change_sets WHERE id = $1`, [
+      changeSetId,
+    ]);
+    const approvals = row.rows[0]?.approval_principal_ids ?? [];
+    if (approvals.length < required) {
+      throw new KitsuneError(
+        `Change set requires ${required} approvals; has ${approvals.length}`,
+        'validation',
+      );
+    }
   }
 
   private async requireCollectionAdmin(

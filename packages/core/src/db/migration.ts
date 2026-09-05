@@ -223,6 +223,24 @@ CREATE INDEX IF NOT EXISTS audit_log_workspace_collection_at_idx
   ON kitsune.audit_log (workspace_id, collection_id, at DESC);
 
 -- Content-addressed attachment metadata (blobs live in object storage / local dir).
+
+ALTER TABLE kitsune.change_sets
+  ADD COLUMN IF NOT EXISTS confidence double precision;
+ALTER TABLE kitsune.change_sets
+  ADD COLUMN IF NOT EXISTS approval_principal_ids uuid[] NOT NULL DEFAULT '{}';
+
+CREATE TABLE IF NOT EXISTS kitsune.automation_policies (
+  id            uuid PRIMARY KEY,
+  workspace_id  uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  name          text NOT NULL,
+  enabled       boolean NOT NULL DEFAULT true,
+  kind          text NOT NULL CHECK (kind IN ('auto_apply', 'min_approvals')),
+  config        jsonb NOT NULL,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (workspace_id, name)
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.automation_policies TO kitsune_app;
+
 CREATE TABLE IF NOT EXISTS kitsune.attachments (
   id             uuid PRIMARY KEY,
   workspace_id   uuid NOT NULL REFERENCES kitsune.workspaces(id),

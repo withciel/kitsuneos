@@ -17,6 +17,13 @@ export {
   resolveApiKey,
   revokeApiKey,
 } from './auth/api-keys.js';
+export {
+  type AutoApplyPolicyConfig,
+  type AutomationPolicy,
+  assertAutoApplyConfig,
+  assertMinApprovalsConfig,
+  type MinApprovalsPolicyConfig,
+} from './automation/policies.js';
 export type { SubscriptionStatus } from './billing/entitlement.js';
 export {
   assertWriteEntitlement,
