@@ -20,6 +20,12 @@ import {
   matchesMinApprovalsScope,
 } from './automation/policies.js';
 import { assertWriteEntitlement } from './billing/entitlement.js';
+import {
+  copyRelationTable,
+  orderCollectionsForBranch,
+  sanitizeBranchName,
+  type BranchFieldMeta,
+} from './branching/copy.js';
 import { compilePredicate } from './compiler/predicate-sql.js';
 import {
   type CollectionMeta,
@@ -44,6 +50,14 @@ import {
 } from './ddl/generator.js';
 import { assertFieldAllowed, loadResolvedGrant } from './grants/resolve.js';
 import type { IngestRequest, IngestResult } from './ingest/types.js';
+import {
+  claimNextMergeQueueEntry,
+  completeMergeQueueEntry,
+  insertMergeQueueEntry,
+  listMergeQueueEntries,
+  type MergeQueueEntry,
+  type MergeQueueStatus,
+} from './merge/queue.js';
 import {
   type SweepRevisionsResult,
   sweepExpiredRevisions,
@@ -82,6 +96,7 @@ import type {
   ChangeOpInput,
   CollectionDefinition,
   DbConfig,
+  FieldType,
   JsonValue,
   Predicate,
   ProposeChangeSetInput,
@@ -220,21 +235,451 @@ export class KitsuneEngine {
     return { workspaceId, schemaName };
   }
 
+  /**
+   * Fork a workspace into a new schema-backed workspace (R15).
+   * Copies collections, fields, grants, principals, and data-plane rows.
+   * Open change sets are not copied.
+   */
+  async createBranch(
+    sourceWorkspaceId: string,
+    actorId: string,
+    input: { name: string },
+  ): Promise<{
+    workspaceId: string;
+    schemaName: string;
+    parentWorkspaceId: string;
+    branchName: string;
+  }> {
+    const admin = await this.hasAdminOnAnyCollection(
+      sourceWorkspaceId,
+      actorId,
+    );
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+
+    let branchName: string;
+    try {
+      branchName = sanitizeBranchName(input.name);
+    } catch {
+      throw new KitsuneError(
+        'Branch name must contain letters or digits',
+        'validation',
+      );
+    }
+
+    const source = await withOwner(this.ownerPool, async (client) =>
+      queryOne<{ slug: string; schema_name: string }>(
+        client,
+        `SELECT slug, schema_name FROM kitsune.workspaces WHERE id = $1`,
+        [sourceWorkspaceId],
+      ),
+    );
+    if (!source) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+
+    const branchSlug = `${source.slug}--${branchName}`.slice(0, 100);
+    const created = await this.createWorkspace(branchSlug);
+    const branchWorkspaceId = created.workspaceId;
+    const branchSchema = created.schemaName;
+
+    await withOwner(this.ownerPool, async (client) => {
+      await client.query(
+        `UPDATE kitsune.workspaces
+            SET parent_workspace_id = $1,
+                branch_name = $2,
+                branched_at = now()
+          WHERE id = $3`,
+        [sourceWorkspaceId, branchName, branchWorkspaceId],
+      );
+    });
+
+    const prepared = await withOwner(this.ownerPool, async (client) => {
+      const sourceCollections = await queryRows<{
+        id: string;
+        name: string;
+        table_name: string;
+      }>(
+        client,
+        `SELECT id, name, table_name FROM kitsune.collections
+          WHERE workspace_id = $1 ORDER BY name`,
+        [sourceWorkspaceId],
+      );
+      const fieldsByCollectionId = new Map<string, BranchFieldMeta[]>();
+      for (const collection of sourceCollections) {
+        const fieldRows = await queryRows<{
+          name: string;
+          type: string;
+          nullable: boolean;
+          enum_values: string[] | null;
+          indexed: boolean;
+          rollup: unknown | null;
+          relation_target_name: string | null;
+        }>(
+          client,
+          `SELECT f.name, f.type, f.nullable, f.enum_values, f.indexed, f.rollup,
+                  t.name AS relation_target_name
+             FROM kitsune.fields f
+             LEFT JOIN kitsune.collections t ON t.id = f.relation_target
+            WHERE f.collection_id = $1
+            ORDER BY f.name`,
+          [collection.id],
+        );
+        fieldsByCollectionId.set(
+          collection.id,
+          fieldRows.map((f) => ({
+            name: f.name,
+            type: f.type,
+            nullable: f.nullable,
+            relationTargetName: f.relation_target_name,
+            enumValues: f.enum_values,
+            indexed: f.indexed,
+            rollup: f.rollup,
+          })),
+        );
+      }
+      const ordered = orderCollectionsForBranch(
+        sourceCollections.map((c) => ({
+          id: c.id,
+          name: c.name,
+          tableName: c.table_name,
+        })),
+        fieldsByCollectionId,
+      );
+      return ordered.map((c) => ({
+        sourceId: c.id,
+        tableName: c.tableName,
+        definition: {
+          name: c.name,
+          fields: (fieldsByCollectionId.get(c.id) ?? []).map((f) => ({
+            name: f.name,
+            type: f.type as FieldType,
+            nullable: f.nullable,
+            relationTarget: f.relationTargetName ?? undefined,
+            enumValues: f.enumValues ?? undefined,
+            indexed: f.indexed,
+            rollup: (f.rollup as RollupDefinition | null) ?? undefined,
+          })),
+        } satisfies CollectionDefinition,
+      }));
+    });
+
+    const collectionIdMap = new Map<string, string>();
+    for (const item of prepared) {
+      const newId = await this.defineCollection(
+        branchWorkspaceId,
+        item.definition,
+      );
+      collectionIdMap.set(item.sourceId, newId);
+    }
+
+    await withOwner(this.ownerPool, async (client) => {
+      const principalIdMap = new Map<string, string>();
+      const principals = await queryRows<{
+        id: string;
+        kind: 'human' | 'agent' | 'service';
+        display_name: string;
+        external_issuer: string | null;
+        external_subject: string | null;
+      }>(
+        client,
+        `SELECT id, kind, display_name, external_issuer, external_subject
+           FROM kitsune.principals
+          WHERE workspace_id = $1 AND disabled_at IS NULL`,
+        [sourceWorkspaceId],
+      );
+      for (const principal of principals) {
+        const newId = uuidv4();
+        await client.query(
+          `INSERT INTO kitsune.principals
+             (id, workspace_id, kind, display_name, external_issuer, external_subject)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            newId,
+            branchWorkspaceId,
+            principal.kind,
+            principal.display_name,
+            principal.external_issuer,
+            principal.external_subject,
+          ],
+        );
+        principalIdMap.set(principal.id, newId);
+      }
+
+      const grants = await queryRows<{
+        principal_id: string;
+        collection_id: string;
+        capability: Capability;
+        field_mask: string[] | null;
+        row_predicate: unknown | null;
+      }>(
+        client,
+        `SELECT principal_id, collection_id, capability, field_mask, row_predicate
+           FROM kitsune.grants
+          WHERE workspace_id = $1 AND revoked_at IS NULL`,
+        [sourceWorkspaceId],
+      );
+      for (const grant of grants) {
+        const newPrincipalId = principalIdMap.get(grant.principal_id);
+        const newCollectionId = collectionIdMap.get(grant.collection_id);
+        if (!newPrincipalId || !newCollectionId) continue;
+        await client.query(
+          `INSERT INTO kitsune.grants
+             (id, workspace_id, principal_id, collection_id, capability, field_mask, row_predicate)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            uuidv4(),
+            branchWorkspaceId,
+            newPrincipalId,
+            newCollectionId,
+            grant.capability,
+            grant.field_mask,
+            grant.row_predicate ? JSON.stringify(grant.row_predicate) : null,
+          ],
+        );
+      }
+
+      for (const item of prepared) {
+        await copyRelationTable(
+          client,
+          source.schema_name,
+          branchSchema,
+          item.tableName,
+        );
+        await copyRelationTable(
+          client,
+          source.schema_name,
+          branchSchema,
+          `${item.tableName}__rev`,
+        );
+        const embExists = await queryOne<{ exists: boolean }>(
+          client,
+          `SELECT EXISTS (
+             SELECT 1 FROM information_schema.tables
+              WHERE table_schema = $1 AND table_name = $2
+           ) AS exists`,
+          [source.schema_name, `${item.tableName}__emb`],
+        );
+        if (embExists?.exists) {
+          await copyRelationTable(
+            client,
+            source.schema_name,
+            branchSchema,
+            `${item.tableName}__emb`,
+          );
+        }
+      }
+    });
+
+    await writeAudit(this.ownerPool, {
+      workspaceId: sourceWorkspaceId,
+      principalId: actorId,
+      action: 'workspace.branch_create',
+      outcome: 'allowed',
+      detail: {
+        branchWorkspaceId,
+        branchName,
+        parentWorkspaceId: sourceWorkspaceId,
+      },
+    });
+
+    return {
+      workspaceId: branchWorkspaceId,
+      schemaName: branchSchema,
+      parentWorkspaceId: sourceWorkspaceId,
+      branchName,
+    };
+  }
+
+  async listBranches(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      workspaceId: string;
+      branchName: string;
+      schemaName: string;
+      branchedAt: string;
+    }>
+  > {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    return withOwner(this.ownerPool, async (client) => {
+      const rows = await queryRows<{
+        id: string;
+        branch_name: string;
+        schema_name: string;
+        branched_at: Date;
+      }>(
+        client,
+        `SELECT id, branch_name, schema_name, branched_at
+           FROM kitsune.workspaces
+          WHERE parent_workspace_id = $1
+            AND branch_name IS NOT NULL
+          ORDER BY branched_at ASC`,
+        [workspaceId],
+      );
+      return rows.map((row) => ({
+        workspaceId: row.id,
+        branchName: row.branch_name,
+        schemaName: row.schema_name,
+        branchedAt: row.branched_at.toISOString(),
+      }));
+    });
+  }
+
   async createPrincipal(
     workspaceId: string,
     kind: 'human' | 'agent' | 'service',
     displayName: string,
-    options?: { principalId?: string },
+    options?: {
+      principalId?: string;
+      externalIssuer?: string;
+      externalSubject?: string;
+    },
   ): Promise<string> {
     const id = options?.principalId ?? uuidv4();
+    const externalIssuer = options?.externalIssuer?.trim() || null;
+    const externalSubject = options?.externalSubject?.trim() || null;
+    if ((externalIssuer == null) !== (externalSubject == null)) {
+      throw new KitsuneError(
+        'externalIssuer and externalSubject must be set together',
+        'validation',
+      );
+    }
     await withOwner(this.ownerPool, async (client) => {
       await client.query(
-        `INSERT INTO kitsune.principals (id, workspace_id, kind, display_name)
-         VALUES ($1, $2, $3, $4)`,
-        [id, workspaceId, kind, displayName],
+        `INSERT INTO kitsune.principals
+           (id, workspace_id, kind, display_name, external_issuer, external_subject)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [id, workspaceId, kind, displayName, externalIssuer, externalSubject],
       );
     });
     return id;
+  }
+
+  /**
+   * Link a principal to a stable external subject (R16).
+   * The same (issuer, subject) may appear in many workspaces; within one
+   * workspace it must remain unique among active principals.
+   */
+  async linkPrincipalIdentity(
+    workspaceId: string,
+    actorId: string,
+    input: {
+      principalId: string;
+      externalIssuer: string;
+      externalSubject: string;
+    },
+  ): Promise<void> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, actorId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const issuer = input.externalIssuer.trim();
+    const subject = input.externalSubject.trim();
+    if (!issuer || !subject) {
+      throw new KitsuneError(
+        'externalIssuer and externalSubject are required',
+        'validation',
+      );
+    }
+
+    await withOwner(this.ownerPool, async (client) => {
+      const principal = await queryOne<{ id: string }>(
+        client,
+        `SELECT id FROM kitsune.principals
+          WHERE id = $1 AND workspace_id = $2 AND disabled_at IS NULL`,
+        [input.principalId, workspaceId],
+      );
+      if (!principal) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      try {
+        await client.query(
+          `UPDATE kitsune.principals
+              SET external_issuer = $1,
+                  external_subject = $2
+            WHERE id = $3 AND workspace_id = $4`,
+          [issuer, subject, input.principalId, workspaceId],
+        );
+      } catch (error) {
+        const code =
+          error && typeof error === 'object' && 'code' in error
+            ? String((error as { code: unknown }).code)
+            : '';
+        if (code === '23505') {
+          throw new KitsuneError(
+            'External identity already linked in this workspace',
+            'conflict',
+          );
+        }
+        throw error;
+      }
+    });
+
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId: actorId,
+      action: 'principal.identity_link',
+      outcome: 'allowed',
+      detail: {
+        principalId: input.principalId,
+        externalIssuer: issuer,
+        externalSubject: subject,
+      },
+    });
+  }
+
+  /**
+   * Resolve an external subject to workspace-local principals (R16).
+   * Control-plane identity lookup only — does not federate data-plane reads.
+   */
+  async resolvePrincipalsByExternalSubject(
+    externalIssuer: string,
+    externalSubject: string,
+  ): Promise<
+    Array<{
+      principalId: string;
+      workspaceId: string;
+      kind: 'human' | 'agent' | 'service';
+      displayName: string;
+    }>
+  > {
+    const issuer = externalIssuer.trim();
+    const subject = externalSubject.trim();
+    if (!issuer || !subject) {
+      throw new KitsuneError(
+        'externalIssuer and externalSubject are required',
+        'validation',
+      );
+    }
+    return withOwner(this.ownerPool, async (client) => {
+      const rows = await queryRows<{
+        id: string;
+        workspace_id: string;
+        kind: 'human' | 'agent' | 'service';
+        display_name: string;
+      }>(
+        client,
+        `SELECT id, workspace_id, kind, display_name
+           FROM kitsune.principals
+          WHERE external_issuer = $1
+            AND external_subject = $2
+            AND disabled_at IS NULL
+          ORDER BY workspace_id ASC, display_name ASC`,
+        [issuer, subject],
+      );
+      return rows.map((row) => ({
+        principalId: row.id,
+        workspaceId: row.workspace_id,
+        kind: row.kind,
+        displayName: row.display_name,
+      }));
+    });
   }
 
   async defineCollection(
@@ -3524,6 +3969,234 @@ export class KitsuneEngine {
       outcome: 'allowed',
       detail: { endpointId },
     });
+  }
+
+  /**
+   * Enqueue a fully reviewed change set for ordered apply (R14).
+   * Disjoint field sets apply automatically as the queue drains; overlapping
+   * fields leave the set blocked and the queue continues.
+   */
+  async enqueueMerge(
+    workspaceId: string,
+    principalId: string,
+    changeSetId: string,
+  ): Promise<{ queueId: string }> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
+
+    const metaClient = await this.appPool.connect();
+    let ops: Array<{
+      status: string;
+      collection_name: string;
+      field_name: string | null;
+      op: string;
+    }>;
+    try {
+      const changeSet = await queryOne<{
+        status: string;
+        expires_at: Date;
+      }>(
+        metaClient,
+        `SELECT status, expires_at FROM kitsune.change_sets
+          WHERE id = $1 AND workspace_id = $2`,
+        [changeSetId, workspaceId],
+      );
+      if (!changeSet) {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      if (
+        changeSet.status === 'expired' ||
+        new Date(changeSet.expires_at) < new Date()
+      ) {
+        throw new KitsuneError('Change set expired', 'expired');
+      }
+      if (changeSet.status === 'applied' || changeSet.status === 'rejected') {
+        throw new KitsuneError(
+          `Change set status is ${changeSet.status}`,
+          'validation',
+        );
+      }
+      if (changeSet.status !== 'open' && changeSet.status !== 'blocked') {
+        throw new KitsuneError(
+          `Change set status is ${changeSet.status}`,
+          'validation',
+        );
+      }
+
+      ops = await queryRows<{
+        status: string;
+        collection_name: string;
+        field_name: string | null;
+        op: string;
+      }>(
+        metaClient,
+        `SELECT o.status, c.name AS collection_name, o.field_name, o.op
+           FROM kitsune.change_ops o
+           JOIN kitsune.collections c ON c.id = o.collection_id
+          WHERE o.change_set_id = $1`,
+        [changeSetId],
+      );
+      if (ops.length === 0) {
+        throw new KitsuneError('Change set has no operations', 'validation');
+      }
+      if (ops.some((o) => o.status === 'proposed')) {
+        throw new KitsuneError(
+          'All operations must be approved or rejected before enqueue',
+          'validation',
+        );
+      }
+      if (!ops.some((o) => o.status === 'approved')) {
+        throw new KitsuneError(
+          'Change set has no approved operations',
+          'validation',
+        );
+      }
+
+      await this.assertMinApprovalsSatisfied(
+        metaClient,
+        workspaceId,
+        changeSetId,
+        ops.map((o) => ({
+          collectionName: o.collection_name,
+          fieldName: o.field_name,
+          op: o.op,
+        })),
+      );
+    } finally {
+      metaClient.release();
+    }
+
+    const queueId = uuidv4();
+    await withOwner(this.ownerPool, async (client) => {
+      await insertMergeQueueEntry(client, {
+        id: queueId,
+        workspaceId,
+        changeSetId,
+        enqueuedBy: principalId,
+      });
+    });
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'merge.enqueue',
+      outcome: 'allowed',
+      detail: { queueId, changeSetId },
+    });
+    return { queueId };
+  }
+
+  async listMergeQueue(
+    workspaceId: string,
+    principalId: string,
+    options?: { statuses?: MergeQueueStatus[] },
+  ): Promise<MergeQueueEntry[]> {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
+    // Any entitled principal may inspect the queue (reviewers need visibility).
+    void principalId;
+    return withOwner(this.ownerPool, async (client) =>
+      listMergeQueueEntries(client, workspaceId, options?.statuses),
+    );
+  }
+
+  /**
+   * Drain pending merge-queue entries in enqueue order. Blocked change sets
+   * (field conflicts) are marked blocked on the queue entry and skipped so
+   * later disjoint sets still apply.
+   */
+  async processMergeQueue(
+    workspaceId: string,
+    principalId: string,
+    options?: { limit?: number },
+  ): Promise<
+    Array<{
+      queueId: string;
+      changeSetId: string;
+      status: 'applied' | 'blocked';
+      conflicts?: string[];
+    }>
+  > {
+    await assertWriteEntitlement(this.ownerPool, workspaceId);
+    const limit = Math.min(Math.max(options?.limit ?? 10, 1), 100);
+    const results: Array<{
+      queueId: string;
+      changeSetId: string;
+      status: 'applied' | 'blocked';
+      conflicts?: string[];
+    }> = [];
+
+    for (let i = 0; i < limit; i++) {
+      const claimed = await withOwner(this.ownerPool, async (client) =>
+        claimNextMergeQueueEntry(client, workspaceId),
+      );
+      if (!claimed) {
+        break;
+      }
+
+      try {
+        const applied = await this.applyChangeSet(
+          workspaceId,
+          principalId,
+          claimed.changeSetId,
+        );
+        if (applied.status === 'applied') {
+          await withOwner(this.ownerPool, async (client) => {
+            await completeMergeQueueEntry(client, claimed.id, 'applied');
+          });
+          results.push({
+            queueId: claimed.id,
+            changeSetId: claimed.changeSetId,
+            status: 'applied',
+          });
+        } else {
+          await withOwner(this.ownerPool, async (client) => {
+            await completeMergeQueueEntry(
+              client,
+              claimed.id,
+              'blocked',
+              applied.conflicts?.join(',') ?? 'blocked',
+            );
+          });
+          results.push({
+            queueId: claimed.id,
+            changeSetId: claimed.changeSetId,
+            status: 'blocked',
+            conflicts: applied.conflicts,
+          });
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'merge processing failed';
+        const code = error instanceof KitsuneError ? error.code : 'internal';
+        await withOwner(this.ownerPool, async (client) => {
+          await completeMergeQueueEntry(
+            client,
+            claimed.id,
+            code === 'blocked' || code === 'validation' || code === 'expired'
+              ? 'blocked'
+              : 'blocked',
+            message,
+          );
+        });
+        results.push({
+          queueId: claimed.id,
+          changeSetId: claimed.changeSetId,
+          status: 'blocked',
+          conflicts: [message],
+        });
+      }
+    }
+
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'merge.process',
+      outcome: 'allowed',
+      detail: {
+        processed: results.length,
+        applied: results.filter((r) => r.status === 'applied').length,
+        blocked: results.filter((r) => r.status === 'blocked').length,
+      },
+    });
+    return results;
   }
 
   private async requireCollectionAdmin(

@@ -39,6 +39,20 @@ export async function invokeMcpTool(
       return handlers.list_webhook_endpoints();
     case 'delete_webhook_endpoint':
       return handlers.delete_webhook_endpoint(args as never);
+    case 'enqueue_merge':
+      return handlers.enqueue_merge(args as never);
+    case 'list_merge_queue':
+      return handlers.list_merge_queue(args as never);
+    case 'process_merge_queue':
+      return handlers.process_merge_queue(args as never);
+    case 'create_branch':
+      return handlers.create_branch(args as never);
+    case 'list_branches':
+      return handlers.list_branches();
+    case 'link_principal_identity':
+      return handlers.link_principal_identity(args as never);
+    case 'resolve_principal_identity':
+      return handlers.resolve_principal_identity(args as never);
     case 'propose_change_set':
       return handlers.propose_change_set(args as never);
     case 'read_change_set_feedback':

@@ -10,9 +10,16 @@ import {
 const redirectUri =
   process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI ||
   process.env.WORKOS_REDIRECT_URI ||
-  'https://app.kitsuneos.com/callback';
+  (process.env.KITSUNE_LOCAL_DEMO === '1'
+    ? 'http://localhost:3000/api/auth/callback'
+    : undefined);
+if (!redirectUri && process.env.KITSUNE_LOCAL_DEMO !== '1') {
+  throw new Error(
+    'Set NEXT_PUBLIC_WORKOS_REDIRECT_URI (or WORKOS_REDIRECT_URI) for hosted auth, or KITSUNE_LOCAL_DEMO=1 for local eval',
+  );
+}
 
-const authkit = authkitMiddleware({ redirectUri });
+const authkit = authkitMiddleware({ redirectUri: redirectUri! });
 
 export default function middleware(
   request: NextRequest,

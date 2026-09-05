@@ -345,6 +345,18 @@ Useful reports include your Postgres version (`psql --version`), the output of `
 what you expected instead. If it is an authorization bug — a principal reading or writing something
 its grant should have prevented — say so in the title. Those get looked at first.
 
+
+
+## Self-host eval checklist (R17)
+
+> Eval / preview only. Production self-hosting is **not** supported in v1.
+
+1. Postgres 16 with **pgvector** (`docker compose` uses `pgvector/pgvector:pg16`, or `pnpm quickstart` after installing the extension).
+2. Set `KITSUNE_OWNER_URL` / `KITSUNE_APP_URL` (defaults target local roles created by quickstart).
+3. Keep defaults for local eval: filesystem blobs (`.kitsune-blobs`) and the deterministic embedder. Set `KITSUNE_EMBEDDING_PROVIDER=openai` only if you want hosted embeddings.
+4. Console auth: `KITSUNE_LOCAL_DEMO=1` for local eval, or configure WorkOS redirect URIs explicitly (no hardcoded production hostname fallback).
+5. Billing (Dodo) is optional — omit keys to leave writes unrestricted for eval.
+
 ## License
 
 [Apache 2.0](LICENSE).

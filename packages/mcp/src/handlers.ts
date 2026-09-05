@@ -134,6 +134,68 @@ export function createMcpHandlers(
       return { ok: true };
     },
 
+    async enqueue_merge(args: { changeSetId: string }) {
+      const ctx = getContext();
+      return engine.enqueueMerge(
+        ctx.workspaceId,
+        ctx.principalId,
+        args.changeSetId,
+      );
+    },
+
+    async list_merge_queue(args: {
+      statuses?: Array<
+        'pending' | 'processing' | 'applied' | 'blocked' | 'cancelled'
+      >;
+    }) {
+      const ctx = getContext();
+      return engine.listMergeQueue(ctx.workspaceId, ctx.principalId, {
+        statuses: args.statuses,
+      });
+    },
+
+    async process_merge_queue(args: { limit?: number }) {
+      const ctx = getContext();
+      return engine.processMergeQueue(ctx.workspaceId, ctx.principalId, {
+        limit: args.limit,
+      });
+    },
+
+    async create_branch(args: { name: string }) {
+      const ctx = getContext();
+      return engine.createBranch(ctx.workspaceId, ctx.principalId, {
+        name: args.name,
+      });
+    },
+
+    async list_branches() {
+      const ctx = getContext();
+      return engine.listBranches(ctx.workspaceId, ctx.principalId);
+    },
+
+    async link_principal_identity(args: {
+      principalId: string;
+      externalIssuer: string;
+      externalSubject: string;
+    }) {
+      const ctx = getContext();
+      await engine.linkPrincipalIdentity(ctx.workspaceId, ctx.principalId, args);
+      return { ok: true };
+    },
+
+    async resolve_principal_identity(args: {
+      externalIssuer: string;
+      externalSubject: string;
+    }) {
+      const ctx = getContext();
+      // Admin gate: listBranches throws not_found for non-admins.
+      await engine.listBranches(ctx.workspaceId, ctx.principalId);
+      return engine.resolvePrincipalsByExternalSubject(
+        args.externalIssuer,
+        args.externalSubject,
+      );
+    },
+
     async propose_change_set(args: ProposeChangeSetInput) {
       const ctx = getContext();
       return engine.proposeChangeSet(ctx.workspaceId, ctx.principalId, args);

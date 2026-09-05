@@ -8,6 +8,16 @@ CREATE TABLE IF NOT EXISTS kitsune.workspaces (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 
+ALTER TABLE kitsune.workspaces
+  ADD COLUMN IF NOT EXISTS parent_workspace_id uuid REFERENCES kitsune.workspaces(id);
+ALTER TABLE kitsune.workspaces
+  ADD COLUMN IF NOT EXISTS branch_name text;
+ALTER TABLE kitsune.workspaces
+  ADD COLUMN IF NOT EXISTS branched_at timestamptz;
+CREATE UNIQUE INDEX IF NOT EXISTS workspaces_parent_branch_name_idx
+  ON kitsune.workspaces (parent_workspace_id, branch_name)
+  WHERE parent_workspace_id IS NOT NULL AND branch_name IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS kitsune.principals (
   id            uuid PRIMARY KEY,
   workspace_id  uuid NOT NULL REFERENCES kitsune.workspaces(id),
@@ -16,6 +26,16 @@ CREATE TABLE IF NOT EXISTS kitsune.principals (
   acts_for      uuid REFERENCES kitsune.principals(id),
   disabled_at   timestamptz
 );
+
+-- R16: stable external identity so the same subject can be resolved across workspaces.
+ALTER TABLE kitsune.principals
+  ADD COLUMN IF NOT EXISTS external_issuer text;
+ALTER TABLE kitsune.principals
+  ADD COLUMN IF NOT EXISTS external_subject text;
+DROP INDEX IF EXISTS kitsune.principals_external_identity_idx;
+CREATE UNIQUE INDEX IF NOT EXISTS principals_workspace_external_identity_idx
+  ON kitsune.principals (workspace_id, external_issuer, external_subject)
+  WHERE external_subject IS NOT NULL AND disabled_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS kitsune.collections (
   id            uuid PRIMARY KEY,
@@ -270,6 +290,26 @@ CREATE INDEX IF NOT EXISTS webhook_deliveries_endpoint_idx
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.webhook_endpoints TO kitsune_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.webhook_deliveries TO kitsune_app;
+
+CREATE TABLE IF NOT EXISTS kitsune.merge_queue (
+  id              uuid PRIMARY KEY,
+  workspace_id    uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  change_set_id   uuid NOT NULL REFERENCES kitsune.change_sets(id),
+  enqueued_by     uuid NOT NULL REFERENCES kitsune.principals(id),
+  status          text NOT NULL CHECK (
+                    status IN ('pending','processing','applied','blocked','cancelled')
+                  ),
+  enqueued_at     timestamptz NOT NULL DEFAULT now(),
+  processed_at    timestamptz,
+  last_error      text
+);
+CREATE INDEX IF NOT EXISTS merge_queue_workspace_pending_idx
+  ON kitsune.merge_queue (workspace_id, status, enqueued_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS merge_queue_active_change_set_idx
+  ON kitsune.merge_queue (change_set_id)
+  WHERE status IN ('pending', 'processing');
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.merge_queue TO kitsune_app;
 
 
 CREATE TABLE IF NOT EXISTS kitsune.attachments (

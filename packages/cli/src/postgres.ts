@@ -149,6 +149,33 @@ function rolesAndDatabaseReady(): boolean {
   );
 }
 
+
+export function ensureVectorExtension(): void {
+  // pgvector is required for embeddings (ADR-004). Prefer a pgvector image
+  // (pgvector/pgvector:pg16) or install the extension package on the host.
+  const sql = 'CREATE EXTENSION IF NOT EXISTS vector;';
+  try {
+    execFileSync(
+      'psql',
+      [OWNER_URL, '-v', 'ON_ERROR_STOP=1', '-c', sql],
+      { stdio: ['ignore', 'ignore', 'pipe'], env: process.env },
+    );
+  } catch (error) {
+    const detail =
+      error instanceof Error && 'stderr' in error
+        ? String((error as { stderr?: Buffer }).stderr ?? '')
+        : '';
+    console.error(
+      'Could not create the pgvector extension in database `kitsune`.',
+    );
+    console.error(
+      'Use the pgvector/pgvector:pg16 image (docker compose) or install pgvector.',
+    );
+    if (detail.trim()) console.error(detail.trim());
+    process.exit(1);
+  }
+}
+
 export function ensureRolesAndDatabase(): 'created' | 'already-present' {
   if (rolesAndDatabaseReady()) {
     return 'already-present';

@@ -69,6 +69,10 @@ export type {
   IngestSourceKind,
   ParsedIngestBatch,
 } from './ingest/types.js';
+export type {
+  MergeQueueEntry,
+  MergeQueueStatus,
+} from './merge/queue.js';
 export {
   type SweepCollectionResult,
   type SweepRevisionsResult,
