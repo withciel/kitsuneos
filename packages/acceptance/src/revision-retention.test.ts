@@ -127,12 +127,7 @@ describe('Revision retention sweeper', () => {
       second.collections.find((c) => c.collection === 'accounts'),
     ).toBeUndefined();
     expect(
-      await getRevisionCount(
-        engine,
-        fixture.schemaName,
-        'accounts',
-        accountId,
-      ),
+      await getRevisionCount(engine, fixture.schemaName, 'accounts', accountId),
     ).toBe(1);
   });
 });
