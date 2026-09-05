@@ -61,6 +61,15 @@ export type Predicate =
       value?: JsonValue;
     };
 
+export type RollupAggregate = 'sum' | 'count' | 'avg' | 'min' | 'max';
+
+export interface RollupDefinition {
+  sourceCollection: string;
+  foreignKeyField: string;
+  aggregate: RollupAggregate;
+  valueField?: string;
+}
+
 export interface FieldDefinition {
   name: string;
   type: FieldType;
@@ -68,6 +77,8 @@ export interface FieldDefinition {
   relationTarget?: string;
   enumValues?: string[];
   indexed?: boolean;
+  /** When set, the field is platform-maintained and not writable. */
+  rollup?: RollupDefinition;
 }
 
 export interface CollectionDefinition {

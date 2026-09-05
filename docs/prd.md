@@ -227,11 +227,11 @@ Do not claim Playwright coverage. Engine-backed `console.test.ts` still covers s
 
 ### P1 — Should have
 
-P1 remaining (R10–R12): rollups, automation, webhooks. **R9 semantic search** and **R13 attachments** are implemented (pgvector; content-addressed blobs with grant-gated metadata/download).
+P1 remaining (R11–R12): automation, webhooks. **R10 rollups** implemented. **R9 semantic search** and **R13 attachments** are implemented (pgvector; content-addressed blobs with grant-gated metadata/download).
 
 **R9. Semantic search over prose fields.** Embeddings on prose fields via pgvector in the same database, with grants applied inside the search rather than as a post-filter, and field masks respected in returned excerpts.
 
-**R10. Computed and rollup fields.** Derived values maintained by the platform, e.g. account-level pipeline totals.
+**R10. Computed and rollup fields.** Derived values maintained by the platform, e.g. account-level pipeline totals. **Implemented:** `number` fields can declare a `rollup` (sum/count/avg/min/max over a child collection via FK); values recompute on source writes and reject direct/proposed edits.
 
 **R11. Change-set automation policies.** Rules such as auto-apply when confidence is high and only these fields are touched, or require two approvals above a value threshold.
 

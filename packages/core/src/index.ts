@@ -74,6 +74,10 @@ export {
   writeRevision,
 } from './revisions/write.js';
 export {
+  assertRollupDefinition,
+  type RollupBinding,
+} from './rollups/recompute.js';
+export {
   assertIdentifier,
   validateCollectionDefinition,
   validateFieldDefinition,

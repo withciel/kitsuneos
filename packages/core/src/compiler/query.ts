@@ -5,7 +5,11 @@ import {
   projectFields,
 } from '../grants/resolve.js';
 import { assertIdentifier } from '../schema/validate-definition.js';
-import type { QueryRequest, ResolvedGrant } from '../types.js';
+import type {
+  QueryRequest,
+  ResolvedGrant,
+  RollupDefinition,
+} from '../types.js';
 import { KitsuneError, quoteIdent } from '../types.js';
 import { compileFilter, compilePredicate } from './predicate-sql.js';
 
@@ -13,6 +17,7 @@ export interface CollectionFieldMeta {
   name: string;
   type: string;
   relationTarget: string | null;
+  rollup: RollupDefinition | null;
 }
 
 export interface CollectionMeta {
@@ -51,8 +56,9 @@ export async function getCollectionMeta(
     name: string;
     type: string;
     relation_target: string | null;
+    rollup: RollupDefinition | null;
   }>(
-    `SELECT f.name, f.type, target.name AS relation_target
+    `SELECT f.name, f.type, target.name AS relation_target, f.rollup
        FROM kitsune.fields f
        LEFT JOIN kitsune.collections target ON target.id = f.relation_target
       WHERE f.collection_id = $1
@@ -68,6 +74,7 @@ export async function getCollectionMeta(
       name: f.name,
       type: f.type,
       relationTarget: f.relation_target,
+      rollup: f.rollup,
     })),
   };
 }
