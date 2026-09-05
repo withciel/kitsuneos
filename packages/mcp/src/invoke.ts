@@ -45,6 +45,10 @@ export async function invokeMcpTool(
       return handlers.list_merge_queue(args as never);
     case 'process_merge_queue':
       return handlers.process_merge_queue(args as never);
+    case 'create_branch':
+      return handlers.create_branch(args as never);
+    case 'list_branches':
+      return handlers.list_branches();
     case 'propose_change_set':
       return handlers.propose_change_set(args as never);
     case 'read_change_set_feedback':
