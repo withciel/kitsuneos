@@ -116,3 +116,9 @@ export {
   type VfsPath,
   type VfsReadResult,
 } from './vfs/paths.js';
+export {
+  generateWebhookSecret,
+  signWebhookPayload,
+  type WebhookDelivery,
+  type WebhookEndpoint,
+} from './webhooks/dispatch.js';

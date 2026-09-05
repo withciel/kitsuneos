@@ -1,9 +1,9 @@
 # KitsuneOS v1 — System Design
 
-**Status:** P0 surfaces implemented. Human console IA shipped. R9 semantic search (pgvector), reference graph, VFS, ingest, and R13 attachments (content-addressed blob store) are implemented.
+**Status:** P0 surfaces implemented. Human console IA shipped. P1 complete: R9 semantic search (pgvector), R10 rollups, R11 automation policies, R12 outbound webhooks, R13 attachments (content-addressed blob store); plus reference graph, VFS, and ingest.
 **Date:** 3 September 2026
 **Companion to:** KitsuneOS v1 PRD
-**Scope:** P0 requirements R1–R8, R9 search + reference graph; architectural accommodation for P2 items R14–R17
+**Scope:** P0 requirements R1–R8; P1 R9–R13 (search, rollups, automation, webhooks, attachments) plus reference graph/VFS/ingest; architectural accommodation for P2 items R14–R17
 
 ---
 
@@ -559,7 +559,7 @@ Instrument from day one, including metrics nothing consumes yet:
 
 ### ADR-004: pgvector, not a dedicated vector database
 
-**Status:** Accepted for P1 · **not implemented in P0** · **Deciders:** Engineering
+**Status:** Accepted for P1 · **implemented (pgvector)** · **Deciders:** Engineering
 
 **Context.** The original sketch specified Pinecone. Semantic search must respect field masks and row predicates.
 

@@ -241,6 +241,37 @@ CREATE TABLE IF NOT EXISTS kitsune.automation_policies (
 );
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.automation_policies TO kitsune_app;
 
+CREATE TABLE IF NOT EXISTS kitsune.webhook_endpoints (
+  id            uuid PRIMARY KEY,
+  workspace_id  uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  url           text NOT NULL,
+  secret        text NOT NULL,
+  events        text[] NOT NULL,
+  enabled       boolean NOT NULL DEFAULT true,
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS webhook_endpoints_workspace_idx
+  ON kitsune.webhook_endpoints (workspace_id);
+
+CREATE TABLE IF NOT EXISTS kitsune.webhook_deliveries (
+  id             uuid PRIMARY KEY,
+  endpoint_id    uuid NOT NULL REFERENCES kitsune.webhook_endpoints(id) ON DELETE CASCADE,
+  workspace_id   uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  event_type     text NOT NULL,
+  payload        jsonb NOT NULL,
+  status         text NOT NULL CHECK (status IN ('pending','delivered','failed')),
+  attempt_count  int NOT NULL DEFAULT 0,
+  last_error     text,
+  change_set_id  uuid REFERENCES kitsune.change_sets(id),
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS webhook_deliveries_endpoint_idx
+  ON kitsune.webhook_deliveries (endpoint_id, created_at DESC);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.webhook_endpoints TO kitsune_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.webhook_deliveries TO kitsune_app;
+
+
 CREATE TABLE IF NOT EXISTS kitsune.attachments (
   id             uuid PRIMARY KEY,
   workspace_id   uuid NOT NULL REFERENCES kitsune.workspaces(id),

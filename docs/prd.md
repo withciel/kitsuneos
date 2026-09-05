@@ -1,6 +1,6 @@
 # KitsuneOS v1 — Product Requirements Document
 
-**Status:** P0 implemented against acceptance tests (2026-09-02). Human console IA shipped (2026-09-03). P1 unbuilt.
+**Status:** P0 implemented against acceptance tests (2026-09-02). Human console IA shipped (2026-09-03). P1 (R9–R13) implemented.
 **Date:** 3 September 2026
 **Supersedes:** agent-primary draft (2 September 2026)
 **Positioning:** The application database humans and agents share.
@@ -189,7 +189,7 @@ A grant binds a principal (human or agent identity) to a collection, a capabilit
 
 Additional criteria:
 - [x] Row predicates are enforced in the database, not the application layer
-- [x] Field masks apply to reads, writes, and aggregates (search is P1 and unbuilt)
+- [x] Field masks apply to reads, writes, and aggregates (search is P1 and implemented via pgvector)
 - [x] Absence of a matching grant denies
 - [x] Revoking a grant makes affected open change sets unmergeable
 
@@ -227,7 +227,7 @@ Do not claim Playwright coverage. Engine-backed `console.test.ts` still covers s
 
 ### P1 — Should have
 
-P1 remaining (R12): webhooks. **R10 rollups** and **R11 automation policies** implemented. **R9 semantic search** and **R13 attachments** are implemented (pgvector; content-addressed blobs with grant-gated metadata/download).
+P1 complete for R9–R13. **R12 webhooks** implemented (HMAC-signed `change_set.applied` deliveries). **R10 rollups** and **R11 automation policies** implemented. **R9 semantic search** and **R13 attachments** are implemented (pgvector; content-addressed blobs with grant-gated metadata/download).
 
 **R9. Semantic search over prose fields.** Embeddings on prose fields via pgvector in the same database, with grants applied inside the search rather than as a post-filter, and field masks respected in returned excerpts.
 
@@ -235,7 +235,7 @@ P1 remaining (R12): webhooks. **R10 rollups** and **R11 automation policies** im
 
 **R11. Change-set automation policies.** Rules such as auto-apply when confidence is high and only these fields are touched, or require two approvals above a value threshold. **Implemented:** workspace policies for `auto_apply` (field allowlist + optional min confidence) and `min_approvals` (distinct reviewers before apply).
 
-**R12. Webhooks and change streams.** Subscribe to applied change sets for downstream sync.
+**R12. Webhooks and change streams.** Subscribe to applied change sets for downstream sync. **Implemented:** workspace admins register HTTPS endpoints; apply dispatches HMAC-signed `change_set.applied` payloads and records deliveries.
 
 **R13. Attachments.** Binary blobs in object storage (local filesystem store by default; S3/R2-compatible store pluggable), referenced by content hash from a record field. Grants apply to metadata listing and download; primary records stay in Postgres.
 

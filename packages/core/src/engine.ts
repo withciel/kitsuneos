@@ -62,7 +62,6 @@ import {
   readSourceForeignKeys,
   recomputeRollupParents,
 } from './rollups/recompute.js';
-
 import {
   validateCollectionDefinition,
   validateFieldDefinition,
@@ -107,6 +106,13 @@ import {
   type VfsListResult,
   type VfsReadResult,
 } from './vfs/paths.js';
+import {
+  deleteWebhookEndpoint,
+  dispatchChangeSetApplied,
+  generateWebhookSecret,
+  insertWebhookEndpoint,
+  listWebhookEndpoints,
+} from './webhooks/dispatch.js';
 
 export interface ApplyFaultInjection {
   afterOpIndex?: number;
@@ -2196,6 +2202,25 @@ export class KitsuneEngine {
           );
         }
       }
+      try {
+        await dispatchChangeSetApplied(this.ownerPool, {
+          workspaceId,
+          changeSetId,
+          authorId: changeSet.author_id,
+          appliedBy: reviewerId,
+          operations: approvedOps.map((o) => ({
+            collection: o.collection_name,
+            recordId: o.record_id,
+            op: o.op,
+            fieldName: o.field_name,
+          })),
+        });
+      } catch (webhookError) {
+        console.error(
+          'Webhook dispatch failed after applyChangeSet',
+          webhookError,
+        );
+      }
       return { status: 'applied' };
     } catch (error) {
       await client.query('ROLLBACK');
@@ -3416,6 +3441,89 @@ export class KitsuneEngine {
         'validation',
       );
     }
+  }
+
+  async createWebhookEndpoint(
+    workspaceId: string,
+    principalId: string,
+    input: { url: string; events?: string[] },
+  ): Promise<{ id: string; secret: string }> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const id = uuidv4();
+    const secret = generateWebhookSecret();
+    const events = input.events ?? ['change_set.applied'];
+    await withOwner(this.ownerPool, async (client) => {
+      await insertWebhookEndpoint(client, {
+        id,
+        workspaceId,
+        url: input.url,
+        secret,
+        events,
+      });
+    });
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'webhooks.endpoint_create',
+      outcome: 'allowed',
+      detail: { endpointId: id, url: input.url },
+    });
+    return { id, secret };
+  }
+
+  async listWebhookEndpoints(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      url: string;
+      events: string[];
+      enabled: boolean;
+      createdAt: string;
+    }>
+  > {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    return withOwner(this.ownerPool, async (client) => {
+      const rows = await listWebhookEndpoints(client, workspaceId);
+      return rows.map((row) => ({
+        id: row.id,
+        url: row.url,
+        events: row.events,
+        enabled: row.enabled,
+        createdAt: row.createdAt,
+      }));
+    });
+  }
+
+  async deleteWebhookEndpoint(
+    workspaceId: string,
+    principalId: string,
+    endpointId: string,
+  ): Promise<void> {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const deleted = await withOwner(this.ownerPool, async (client) =>
+      deleteWebhookEndpoint(client, workspaceId, endpointId),
+    );
+    if (!deleted) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    await writeAudit(this.ownerPool, {
+      workspaceId,
+      principalId,
+      action: 'webhooks.endpoint_delete',
+      outcome: 'allowed',
+      detail: { endpointId },
+    });
   }
 
   private async requireCollectionAdmin(
