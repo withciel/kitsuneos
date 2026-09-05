@@ -480,6 +480,33 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'link_principal_identity',
+    description:
+      'Link a principal in this workspace to a stable external subject (R16). The same issuer/subject may exist in other workspaces; within one workspace it must be unique among active principals. Requires admin on any collection.',
+    inputSchema: {
+      type: 'object',
+      required: ['principalId', 'externalIssuer', 'externalSubject'],
+      properties: {
+        principalId: { type: 'string' },
+        externalIssuer: { type: 'string' },
+        externalSubject: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'resolve_principal_identity',
+    description:
+      'Resolve an external subject to workspace-local principals (R16). Returns control-plane identity hits only — does not federate data-plane reads. Requires admin on any collection in the calling workspace.',
+    inputSchema: {
+      type: 'object',
+      required: ['externalIssuer', 'externalSubject'],
+      properties: {
+        externalIssuer: { type: 'string' },
+        externalSubject: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'propose_change_set',
     description:
       'Propose a change instead of writing it. Every operation names a single field. The change set enters a review queue and lands only after a human approves it. Proposing a field outside your grant fails immediately with an error naming the field.',

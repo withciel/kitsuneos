@@ -6,6 +6,7 @@ import { DEMO, DEMO_SCHEMA_NAME, provisionDemo } from './demo.js';
 import {
   APP_URL,
   ensureRolesAndDatabase,
+  ensureVectorExtension,
   OWNER_URL,
   requirePostgres,
 } from './postgres.js';
@@ -32,6 +33,7 @@ export async function quickstart(): Promise<void> {
 
   step(2, 'Ensuring roles and database');
   const roles = ensureRolesAndDatabase();
+  ensureVectorExtension();
   console.log(
     roles === 'created'
       ? '      created kitsune_owner, kitsune_app and the kitsune database'

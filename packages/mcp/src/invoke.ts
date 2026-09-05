@@ -49,6 +49,10 @@ export async function invokeMcpTool(
       return handlers.create_branch(args as never);
     case 'list_branches':
       return handlers.list_branches();
+    case 'link_principal_identity':
+      return handlers.link_principal_identity(args as never);
+    case 'resolve_principal_identity':
+      return handlers.resolve_principal_identity(args as never);
     case 'propose_change_set':
       return handlers.propose_change_set(args as never);
     case 'read_change_set_feedback':
