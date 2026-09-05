@@ -61,6 +61,11 @@ export async function bootstrapRds() {
         'RDS bootstrap: skipped self-grant (expected when admin is kitsune_owner)',
       );
     }
+
+    // pgvector: required for embedding columns. Safe no-op when already installed.
+    // Needs a privileged role (rds_superuser / kitsune_admin on RDS).
+    await pool.query('CREATE EXTENSION IF NOT EXISTS vector');
+
     console.log('RDS bootstrap complete');
   } finally {
     await pool.end();

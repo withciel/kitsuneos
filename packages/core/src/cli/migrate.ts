@@ -17,6 +17,10 @@ export async function migrate(
   const { ownerPool } = createPools(config);
   const client = await ownerPool.connect();
   try {
+    // Embeddings DDL uses the `vector` type (pgvector). Local docker-init
+    // creates this as superuser; RDS must get the same before any collection
+    // schema is provisioned (otherwise: type "vector" does not exist).
+    await client.query('CREATE EXTENSION IF NOT EXISTS vector');
     await client.query(CONTROL_PLANE_MIGRATION);
     console.log('Control plane migration complete');
   } finally {

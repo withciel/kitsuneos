@@ -23,6 +23,7 @@ BEGIN
 END
 $$;
 GRANT kitsune_owner TO CURRENT_USER;
+CREATE EXTENSION IF NOT EXISTS vector;
 SQL
 
 echo "RDS bootstrap complete"
