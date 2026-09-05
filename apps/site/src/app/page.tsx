@@ -1,4 +1,10 @@
-import { signInUrl, signUpUrl, acceptanceTestsUrl, gate0bTestsUrl, githubUrl } from '@/lib/urls';
+import {
+  acceptanceTestsUrl,
+  gate0bTestsUrl,
+  githubUrl,
+  signInUrl,
+  signUpUrl,
+} from '@/lib/urls';
 
 export default function LandingPage() {
   return (
@@ -99,10 +105,9 @@ export default function LandingPage() {
             Ciel
           </a>
           . KitsuneOS powers Ciel&apos;s own agent workflows today; the hosted
-          product is in{' '}
-          <a href="/terms/">early access</a> — use it for evaluation and
-          non-production workloads until we announce general availability (see{' '}
-          <a href="/terms/">Terms</a>).
+          product is in <a href="/terms/">early access</a> — use it for
+          evaluation and non-production workloads until we announce general
+          availability (see <a href="/terms/">Terms</a>).
         </p>
         <ul>
           <li>

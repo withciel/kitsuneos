@@ -1,6 +1,6 @@
+import { Fraunces, IBM_Plex_Mono, Outfit } from 'next/font/google';
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
-import { Fraunces, IBM_Plex_Mono, Outfit } from 'next/font/google';
 import { siteMetadata } from '@/lib/site-metadata';
 import { signInUrl, signUpUrl } from '@/lib/urls';
 import './globals.css';
