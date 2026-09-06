@@ -71,8 +71,7 @@ export default function GraphPage() {
         <div>
           <h1 className="text-xl font-semibold tracking-tight">Graph</h1>
           <p className="text-sm text-muted-foreground">
-            Obsidian-like neighborhood of pages you can see. Export JSON via{' '}
-            <code className="text-xs">/api/graph</code>.
+            Pages you can see and how they link.
           </p>
         </div>
         <div className="flex gap-2">

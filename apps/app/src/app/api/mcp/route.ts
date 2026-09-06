@@ -7,7 +7,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function resourceMetadataUrl(request: Request): string {
-  return `${publicAppOrigin(request)}/.well-known/oauth-protected-resource`;
+  // Prefer path-appended PRM (RFC 9728) so clients resolving /api/mcp find JSON
+  // instead of the Next.js HTML 404 at the unscoped well-known path alone.
+  return `${publicAppOrigin(request)}/.well-known/oauth-protected-resource/api/mcp`;
 }
 
 function allowedOriginsFromEnv(): string[] {

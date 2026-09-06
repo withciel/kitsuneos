@@ -5,6 +5,7 @@ import {
   hashClientSecret,
   newClientSecret,
 } from '@/lib/mcp-oauth';
+import { mcpOAuthOptionsResponse, withMcpOAuthCors } from '@/lib/oauth-cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,9 +21,9 @@ export async function POST(request: Request) {
   try {
     body = (await request.json()) as typeof body;
   } catch {
-    return NextResponse.json(
-      { error: 'invalid_client_metadata' },
-      { status: 400 },
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'invalid_client_metadata' }, { status: 400 }),
     );
   }
 
@@ -30,9 +31,9 @@ export async function POST(request: Request) {
     ? body.redirect_uris.filter((u) => typeof u === 'string' && u.length > 0)
     : [];
   if (redirectUris.length === 0) {
-    return NextResponse.json(
-      { error: 'invalid_redirect_uri' },
-      { status: 400 },
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'invalid_redirect_uri' }, { status: 400 }),
     );
   }
 
@@ -57,17 +58,24 @@ export async function POST(request: Request) {
     ],
   );
 
-  return NextResponse.json(
-    {
-      client_id: clientId,
-      client_secret: clientSecret ?? undefined,
-      client_name: clientName,
-      redirect_uris: redirectUris,
-      token_endpoint_auth_method: authMethod,
-      grant_types: ['authorization_code'],
-      response_types: ['code'],
-      scope: 'mcp:tools',
-    },
-    { status: 201 },
+  return withMcpOAuthCors(
+    request,
+    NextResponse.json(
+      {
+        client_id: clientId,
+        client_secret: clientSecret ?? undefined,
+        client_name: clientName,
+        redirect_uris: redirectUris,
+        token_endpoint_auth_method: authMethod,
+        grant_types: ['authorization_code'],
+        response_types: ['code'],
+        scope: 'mcp:tools',
+      },
+      { status: 201 },
+    ),
   );
+}
+
+export async function OPTIONS(request: Request) {
+  return mcpOAuthOptionsResponse(request);
 }

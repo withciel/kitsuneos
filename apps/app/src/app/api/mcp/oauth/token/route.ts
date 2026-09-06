@@ -8,6 +8,7 @@ import {
   mintMcpAccessToken,
   pkceChallengeS256,
 } from '@/lib/mcp-oauth';
+import { mcpOAuthOptionsResponse, withMcpOAuthCors } from '@/lib/oauth-cors';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,9 +26,9 @@ export async function POST(request: Request) {
   }
 
   if (params.get('grant_type') !== 'authorization_code') {
-    return NextResponse.json(
-      { error: 'unsupported_grant_type' },
-      { status: 400 },
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'unsupported_grant_type' }, { status: 400 }),
     );
   }
 
@@ -38,7 +39,10 @@ export async function POST(request: Request) {
   const clientSecret = params.get('client_secret');
 
   if (!code || !redirectUri || !clientId || !codeVerifier) {
-    return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'invalid_request' }, { status: 400 }),
+    );
   }
 
   const client = await engine.ownerPool.query<{
@@ -52,7 +56,10 @@ export async function POST(request: Request) {
   );
   const clientRow = client.rows[0];
   if (!clientRow) {
-    return NextResponse.json({ error: 'invalid_client' }, { status: 401 });
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'invalid_client' }, { status: 401 }),
+    );
   }
   if (clientRow.token_endpoint_auth_method !== 'none') {
     if (
@@ -60,7 +67,10 @@ export async function POST(request: Request) {
       !clientRow.client_secret_hash ||
       hashClientSecret(clientSecret) !== clientRow.client_secret_hash
     ) {
-      return NextResponse.json({ error: 'invalid_client' }, { status: 401 });
+      return withMcpOAuthCors(
+        request,
+        NextResponse.json({ error: 'invalid_client' }, { status: 401 }),
+      );
     }
   }
 
@@ -83,19 +93,34 @@ export async function POST(request: Request) {
   );
   const auth = codeRow.rows[0];
   if (!auth) {
-    return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'invalid_grant' }, { status: 400 }),
+    );
   }
   if (auth.client_id !== clientId || auth.redirect_uri !== redirectUri) {
-    return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'invalid_grant' }, { status: 400 }),
+    );
   }
   if (new Date(auth.expires_at).getTime() < Date.now()) {
-    return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'invalid_grant' }, { status: 400 }),
+    );
   }
   if (auth.code_challenge_method !== 'S256') {
-    return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'invalid_grant' }, { status: 400 }),
+    );
   }
   if (pkceChallengeS256(codeVerifier) !== auth.code_challenge) {
-    return NextResponse.json({ error: 'invalid_grant' }, { status: 400 });
+    return withMcpOAuthCors(
+      request,
+      NextResponse.json({ error: 'invalid_grant' }, { status: 400 }),
+    );
   }
 
   const minted = mintMcpAccessToken({
@@ -105,10 +130,17 @@ export async function POST(request: Request) {
     scope: auth.scope,
   });
 
-  return NextResponse.json({
-    access_token: minted.accessToken,
-    token_type: 'Bearer',
-    expires_in: minted.expiresIn,
-    scope: auth.scope,
-  });
+  return withMcpOAuthCors(
+    request,
+    NextResponse.json({
+      access_token: minted.accessToken,
+      token_type: 'Bearer',
+      expires_in: minted.expiresIn,
+      scope: auth.scope,
+    }),
+  );
+}
+
+export async function OPTIONS(request: Request) {
+  return mcpOAuthOptionsResponse(request);
 }

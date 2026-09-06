@@ -7,7 +7,7 @@ import {
   requireWorkspaceAdmin,
 } from '@/lib/require-workspace';
 
-/** List agent profiles in the active workspace. */
+/** List agents in the active workspace. */
 export async function GET() {
   try {
     const ctx = await requireWorkspace();
@@ -41,7 +41,7 @@ export async function GET() {
   }
 }
 
-/** Create an agent profile (admin). */
+/** Create an agent (admin). */
 export async function POST(request: Request) {
   try {
     const ctx = await requireWorkspace();
@@ -60,7 +60,7 @@ export async function POST(request: Request) {
       name,
     );
 
-    // Ensure a durable agent_memory database the agent can write (Supermemory path).
+    // Ensure a durable agent_memory database the agent can write.
     const existingMemory = await engine.ownerPool.query<{ id: string }>(
       `SELECT id FROM kitsune.collections
         WHERE workspace_id = $1 AND name = 'agent_memory'`,

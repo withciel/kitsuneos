@@ -7,7 +7,7 @@ import { canViewPage } from '../org/page-access.js';
 import type { ResolvedGrant } from '../types.js';
 import { CAPABILITY_ORDER, KitsuneError, quoteIdent } from '../types.js';
 
-/** Matches `[[target]]` or `[[target|alias]]` (Obsidian-style). */
+/** Matches `[[target]]` or `[[target|alias]]` wiki-link syntax. */
 const WIKI_LINK_RE = /\[\[([^\]]+?)\]\]/g;
 
 export interface ParsedWikiLink {

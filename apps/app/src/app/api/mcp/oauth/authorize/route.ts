@@ -1,5 +1,6 @@
 // workspace-lint: ignore — MCP OAuth binds workspace from the authenticated
 // session (requireWorkspace / token claims), never from client request params.
+import { KitsuneError } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import {
@@ -48,7 +49,17 @@ export async function GET(request: Request) {
   let workspace: Awaited<ReturnType<typeof requireWorkspace>>;
   try {
     workspace = await requireWorkspace();
-  } catch {
+  } catch (err) {
+    // Only bounce unauthenticated browsers through AuthKit. Other failures
+    // (DB, provisioning) must not look like a successful Claude connect.
+    const unauthorized =
+      err instanceof KitsuneError &&
+      err.code === 'forbidden' &&
+      err.message === 'Unauthorized';
+    if (!unauthorized) {
+      console.error('mcp oauth authorize: workspace resolve failed', err);
+      return NextResponse.json({ error: 'server_error' }, { status: 500 });
+    }
     const login = new URL('/login', publicAppOrigin(request));
     login.searchParams.set('returnTo', `${url.pathname}${url.search}`);
     return NextResponse.redirect(login);

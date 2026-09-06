@@ -5,7 +5,7 @@ import { jsonError } from '@/lib/http-error';
 import { requireWorkspace } from '@/lib/require-workspace';
 
 /**
- * Graph distribution API — nodes/edges for Obsidian-like views and exporters.
+ * Graph distribution API — nodes/edges for linked-page views and exporters.
  *
  * Visibility: engine.query / engine.readRecord already post-filter via
  * filterVisibleRecordIds / canViewPage. We still drop nodes that fail an
@@ -133,7 +133,7 @@ export async function GET(request: Request) {
       }
     }
 
-    // Wiki-link edges (Obsidian-style) in addition to typed relations.
+    // Wiki-link edges in addition to typed relations.
     const wikiEdges = await engine.listWikiLinkEdges(
       ctx.workspaceId,
       ctx.principalId,

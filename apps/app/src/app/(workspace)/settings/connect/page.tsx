@@ -71,16 +71,13 @@ export default function SettingsConnectPage() {
           mcpServers: {
             kitsuneos: {
               url: `${origin}/api/mcp`,
-              headers: {
-                Authorization: `Bearer ${keyForConfig}`,
-              },
             },
           },
         },
         null,
         2,
       ),
-    [origin, keyForConfig],
+    [origin],
   );
 
   const claudeRemoteSteps = useMemo(
@@ -179,12 +176,11 @@ export default function SettingsConnectPage() {
         <section className="space-y-3 rounded-lg border border-border p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-medium">
-                1. Assistant connection key
-              </h3>
+              <h3 className="text-sm font-medium">1. API key (optional)</h3>
               <p className="text-xs text-muted-foreground">
-                Needed for Cursor remote and REST. Claude connectors use OAuth
-                instead. Treat the key like a password; it is shown once.
+                Only for legacy REST scripts. Cursor remote and Claude
+                connectors sign in with OAuth — no key paste. Treat the key like
+                a password; it is shown once.
               </p>
             </div>
             <Button
@@ -221,8 +217,8 @@ export default function SettingsConnectPage() {
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No key on screen yet. Create one before copying remote Cursor
-              config.
+              No key on screen yet. Create one only if you need the legacy REST
+              guide.
             </p>
           )}
         </section>
@@ -273,12 +269,12 @@ export default function SettingsConnectPage() {
 
           {guide === 'cursor-remote' ? (
             <GuideBlock
-              title="Cursor (remote Streamable HTTP)"
+              title="Cursor (remote Streamable HTTP + OAuth)"
               steps={[
                 'In Cursor, open Settings → MCP.',
-                'Add a server with a url (not command).',
-                `Use ${origin}/api/mcp — this is real MCP, not /api/mcp/tools.`,
-                'Send Authorization: Bearer with your API key.',
+                'Add a server with a url (not command). Do not add Authorization headers.',
+                `Paste ${origin}/api/mcp — Cursor discovers OAuth and opens a browser login.`,
+                'Approve access for your workspace when prompted, then return to Cursor.',
                 'Ask Cursor to describe your schema to confirm initialize + tools/call work.',
               ]}
               value={cursorRemoteConfig}
@@ -315,15 +311,15 @@ export default function SettingsConnectPage() {
             />
           ) : null}
 
-          {!apiKey && !hasApiKey ? (
+          {guide === 'rest' && !apiKey && !hasApiKey ? (
             <p className="text-xs text-amber-700 dark:text-amber-400">
-              Create a key first — the samples above still say YOUR_API_KEY
-              until you do.
+              Create a key first — the REST sample still says YOUR_API_KEY until
+              you do.
             </p>
           ) : null}
-          {!apiKey && hasApiKey ? (
+          {guide === 'rest' && !apiKey && hasApiKey ? (
             <p className="text-xs text-muted-foreground">
-              Paste the key you saved earlier into the config (replace
+              Paste the key you saved earlier into the REST sample (replace
               YOUR_API_KEY), or rotate above to reveal a new one.
             </p>
           ) : null}

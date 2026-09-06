@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { mcpOAuthCorsHeaders } from '@/lib/oauth-cors';
 import { publicAppOrigin } from '@/lib/public-origin';
 
 export const runtime = 'nodejs';
@@ -20,8 +21,15 @@ export async function GET(request: Request) {
     {
       headers: {
         'Cache-Control': 'public, max-age=60',
-        'Access-Control-Allow-Origin': '*',
+        ...mcpOAuthCorsHeaders(request),
       },
     },
   );
+}
+
+export async function OPTIONS(request: Request) {
+  return new Response(null, {
+    status: 204,
+    headers: mcpOAuthCorsHeaders(request),
+  });
 }

@@ -298,7 +298,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'memory_search',
     description:
-      'Supermemory-style recall: search grant-visible workspace prose and return cited snippets the agent can use as memory.',
+      'Search grant-visible workspace prose and return cited snippets the agent can use as memory.',
     inputSchema: searchSchema,
   },
   {

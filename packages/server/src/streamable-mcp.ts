@@ -23,23 +23,54 @@ export interface StreamableMcpOptions {
   resolveOAuthCredential?: (token: string) => Promise<CredentialContext | null>;
 }
 
-function unauthorizedResponse(resourceMetadataUrl?: string): Response {
+function corsHeaders(origin: string | null): Record<string, string> {
+  return {
+    'Access-Control-Allow-Origin': origin ?? '*',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers':
+      'Authorization, Content-Type, Accept, MCP-Session-Id, MCP-Protocol-Version, Last-Event-ID',
+    'Access-Control-Expose-Headers':
+      'MCP-Session-Id, MCP-Protocol-Version, WWW-Authenticate',
+    'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
+  };
+}
+
+function withCors(origin: string | null, response: Response): Response {
+  const headers = new Headers(response.headers);
+  for (const [key, value] of Object.entries(corsHeaders(origin))) {
+    headers.set(key, value);
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+function unauthorizedResponse(
+  origin: string | null,
+  resourceMetadataUrl?: string,
+): Response {
   const params = ['Bearer realm="kitsuneos"', 'scope="mcp:tools"'];
   if (resourceMetadataUrl) {
     params.push(`resource_metadata="${resourceMetadataUrl}"`);
   }
-  return new Response(
-    JSON.stringify({
-      error: 'unauthorized',
-      message: 'Bearer API key or OAuth access token required',
-    }),
-    {
-      status: 401,
-      headers: {
-        'Content-Type': 'application/json',
-        'WWW-Authenticate': params.join(', '),
+  return withCors(
+    origin,
+    new Response(
+      JSON.stringify({
+        error: 'unauthorized',
+        message: 'Bearer API key or OAuth access token required',
+      }),
+      {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'WWW-Authenticate': params.join(', '),
+        },
       },
-    },
+    ),
   );
 }
 
@@ -53,6 +84,7 @@ async function resolveMcpCredential(
   engine: KitsuneEngine,
   authorization: string | null,
   options: StreamableMcpOptions,
+  origin: string | null,
 ): Promise<CredentialContext | Response> {
   const token = extractBearer(authorization);
   if (!token) {
@@ -61,7 +93,7 @@ async function resolveMcpCredential(
       authorization ?? undefined,
       'missing bearer',
     );
-    return unauthorizedResponse(options.resourceMetadataUrl);
+    return unauthorizedResponse(origin, options.resourceMetadataUrl);
   }
 
   if (options.resolveOAuthCredential) {
@@ -77,7 +109,7 @@ async function resolveMcpCredential(
       authorization ?? undefined,
       error instanceof KitsuneError ? error.message : 'auth failed',
     );
-    return unauthorizedResponse(options.resourceMetadataUrl);
+    return unauthorizedResponse(origin, options.resourceMetadataUrl);
   }
 }
 
@@ -101,18 +133,24 @@ export async function handleStreamableMcpRequest(
       const host = request.headers.get('host');
       const originUrl = new URL(origin);
       if (!host || originUrl.host !== host) {
-        return new Response(
-          JSON.stringify({
-            error: 'forbidden',
-            message: 'Origin not allowed',
-          }),
-          { status: 403, headers: { 'Content-Type': 'application/json' } },
+        return withCors(
+          null,
+          new Response(
+            JSON.stringify({
+              error: 'forbidden',
+              message: 'Origin not allowed',
+            }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } },
+          ),
         );
       }
     } catch {
-      return new Response(
-        JSON.stringify({ error: 'forbidden', message: 'Origin not allowed' }),
-        { status: 403, headers: { 'Content-Type': 'application/json' } },
+      return withCors(
+        null,
+        new Response(
+          JSON.stringify({ error: 'forbidden', message: 'Origin not allowed' }),
+          { status: 403, headers: { 'Content-Type': 'application/json' } },
+        ),
       );
     }
   }
@@ -120,14 +158,7 @@ export async function handleStreamableMcpRequest(
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       status: 204,
-      headers: {
-        'Access-Control-Allow-Origin': origin ?? '*',
-        'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers':
-          'Authorization, Content-Type, Accept, MCP-Session-Id, MCP-Protocol-Version, Last-Event-ID',
-        'Access-Control-Expose-Headers': 'MCP-Session-Id, MCP-Protocol-Version',
-        'Access-Control-Max-Age': '86400',
-      },
+      headers: corsHeaders(origin),
     });
   }
 
@@ -135,6 +166,7 @@ export async function handleStreamableMcpRequest(
     engine,
     request.headers.get('authorization'),
     options,
+    origin,
   );
   if (credentialOrResponse instanceof Response) {
     return credentialOrResponse;
@@ -142,12 +174,15 @@ export async function handleStreamableMcpRequest(
   const credential = credentialOrResponse;
 
   if (!checkRateLimit(credential.keyId)) {
-    return new Response(
-      JSON.stringify({
-        error: 'rate_limited',
-        message: 'Too many requests',
-      }),
-      { status: 429, headers: { 'Content-Type': 'application/json' } },
+    return withCors(
+      origin,
+      new Response(
+        JSON.stringify({
+          error: 'rate_limited',
+          message: 'Too many requests',
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      ),
     );
   }
 
@@ -175,20 +210,7 @@ export async function handleStreamableMcpRequest(
         'mcp_streamable',
       ).catch(() => {});
     }
-    if (origin) {
-      const headers = new Headers(response.headers);
-      headers.set('Access-Control-Allow-Origin', origin);
-      headers.set(
-        'Access-Control-Expose-Headers',
-        'MCP-Session-Id, MCP-Protocol-Version',
-      );
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers,
-      });
-    }
-    return response;
+    return withCors(origin, response);
   } finally {
     await transport.close().catch(() => {});
     await server.close().catch(() => {});

@@ -37,6 +37,18 @@ export function jsonError(error: unknown): NextResponse {
   ) {
     return NextResponse.json({ error: message }, { status: 401 });
   }
+  // Schema drift (e.g. missing principals.created_at before migrate) should not
+  // look like a mysterious "Internal error" after Rotate key / Create agent.
+  if (/column ["'].+["'] does not exist/i.test(message)) {
+    console.error('Schema drift API error', error);
+    return NextResponse.json(
+      {
+        error:
+          'Database schema is out of date. Redeploy the app (or run migrate) and try again.',
+      },
+      { status: 503 },
+    );
+  }
   console.error('Unhandled API error', error);
   return NextResponse.json({ error: 'Internal error' }, { status: 500 });
 }
