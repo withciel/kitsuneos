@@ -41,7 +41,7 @@ The workaround is that every team building an agent-facing application reimpleme
 
 Two equal primaries. Both operate the same workspace, through different surfaces, under the same grants.
 
-**Primary — the human operator.** Uses the hosted console (`apps/app`) as a workspace: collections in a sidebar, table views, record create/edit, Inbox for change requests, Settings for account/people/access/AI, and database properties on the open database. May be a founder, operator, or reviewer on a small team. This person *is* a v1 user of KitsuneOS; they are not hidden behind a customer application.
+**Primary — the human operator.** Uses the hosted console (`apps/app`) as a workspace: sidebar **Workspace** then **Personal** databases; table (and addable) views; record create/edit; **Changes** for change requests; **Agents**; **Graph**; thinner **Settings** (account/people/teams/billing/webhooks). Database properties edit on the open database. May be a founder, operator, or reviewer on a small team. This person *is* a v1 user of KitsuneOS; they are not hidden behind a customer application.
 
 **Primary — the developer / agent operator.** Small team or solo connecting agents via MCP, GraphQL, REST, or the CLI. Chooses a backend at project start. Currently reaches for Supabase, Convex, or plain Postgres. Grants agents field- and row-scoped access; reviews proposals in the same console the human operator uses.
 
@@ -64,7 +64,7 @@ Two equal primaries. Both operate the same workspace, through different surfaces
 
 G1 is the make-or-break goal and it is deliberately unglamorous. If aggregates and relations are not genuinely good, a developer discovers it in week one and leaves, and none of the interesting primitives ever get exercised.
 
-G6 does not require every human write to go through Inbox. Humans with `write` or `admin` may create and update records in the collection table (direct write). Agents remain capped at `propose` unless an admin overrides (Q1). The point of G6 is shared occupancy of one system of record, not identical write paths.
+G6 does not require every human write to go through Changes. Humans with `write` or `admin` may create and update records in the collection table (direct write). Agents may hold `write` / `admin` like humans (Q1); `propose` remains the recommended default for agents, not a hard ceiling. The point of G6 is shared occupancy of one system of record, not identical write paths.
 
 ---
 
@@ -72,9 +72,9 @@ G6 does not require every human write to go through Inbox. Humans with `write` o
 
 **Not a general-purpose OLAP or analytics warehouse.** No columnar storage, no large scans, no BI workload. *Why:* it is a different engine and a different buyer, and chasing it compromises the transactional path we need.
 
-**Not a vertical CRM (or any other packaged line-of-business app).** Starter collections (accounts, contacts, opportunities) exist so the hosted console is usable on day one. They are a demo workspace, not a product we sell. *Why:* see the tripwire below.
+**Not a vertical CRM (or any other packaged line-of-business app).** Workspaces provision empty; optional templates may be offered in onboarding, but we do not auto-seed CRM (or any packaged LOB) databases as product. *Why:* see the tripwire below.
 
-**The hosted console is the human product.** Collections as a sidebar, table views, record peek create/update, Inbox for change requests, Settings for account/people/teams/access/AI connections, database properties on the open database. v1 is table view only — no board, calendar, gallery, or list database views. *Why:* humans and agents are equal users of the same workspace; a schema-only admin panel would leave operators in another tool.
+**The hosted console is the human product.** Sidebar: Workspace then Personal databases; **Changes**, **Agents**, **Graph**; thinner Settings. Record peek/create/update and database properties on the open database. Multi-views are in scope: every database always has an undeletable **Table** view; board / list / gallery / calendar are addable tabs; none besides Table by default. *Why:* humans and agents are equal users of the same workspace; a schema-only admin panel would leave operators in another tool.
 
 **No content delivery, rendering, or CDN.** *Why:* that is the headless CMS product, which is one application someone could build on KitsuneOS rather than something KitsuneOS is.
 
@@ -82,11 +82,11 @@ G6 does not require every human write to go through Inbox. Humans with `write` o
 
 **No migration tooling from other databases.** *Why:* v1 adopters start new projects. Migration matters at a stage we are not at.
 
-### Starter workspace, and when to stop
+### Empty provision and onboarding, and when to stop
 
-We seed a small CRM-shaped workspace to prove the platform: accounts, contacts, opportunities, with an agent that drafts opportunity updates from meeting notes and proposes them for review. It exercises every primitive that matters — relations, aggregates over money, prose fields, field-level permissions, human table edits, and agent-authored change sets.
+Workspaces provision with **no default databases**. Interactive empty-state onboarding guides create-first workspace DB / personal notes / connect agent. Optional templates offered in onboarding are fine; do not auto-seed CRM (or any LOB schema) as product.
 
-**Tripwire.** Starter collections in the console are expected. The moment we spend a sprint on CRM-only features that do not exercise a platform primitive (pipeline forecasts, email sequences, a sales methodology), or we package those collections as a separate product to sell, we stop. Every infrastructure company that built a platform and a flagship application did one of them badly. The starter workspace's job is to be believable, then to be boring.
+**Tripwire.** The moment we spend a sprint on CRM-only features that do not exercise a platform primitive (pipeline forecasts, email sequences, a sales methodology), auto-seed CRM as the default workspace, or package those collections as a separate product to sell, we stop. Every infrastructure company that built a platform and a flagship application did one of them badly.
 
 ---
 
@@ -94,11 +94,14 @@ We seed a small CRM-shaped workspace to prove the platform: accounts, contacts, 
 
 ### Human operator
 
-1. As an operator, I want databases (collections) listed in a sidebar so that I work with pages, not with tool screens named Schema and Query.
+1. As an operator, I want Workspace then Personal databases listed in a sidebar (with Changes, Agents, Graph, and thinner Settings) so that I work with pages, not with tool screens named Schema and Query.
 2. As an operator, I want a table view of a database I can search and hide columns on so that I can scan pages and open any row as a full page.
 3. As an operator with `write` or `admin`, I want to create and update a page (full page surface; quick-edit optional) so that routine human edits do not require a change-request queue.
-4. As an operator, I want Inbox to list open change requests as PR-style reviews — including proposals that touch multiple pages across databases — so that I can approve or reject agent work without leaving the workspace.
+4. As an operator, I want Changes to list open change requests as PR-style reviews — including proposals that touch multiple pages across databases — so that I can approve or reject agent work without leaving the workspace.
 5. As an operator, I want to add a property on the open database (and create a database from the sidebar/home) so that the schema lives next to the data, not in Settings.
+5a. As an operator, I want to add Board, List, Gallery, or Calendar view tabs on a database (Table always present; none of those created by default) so that I can work the same data in different layouts.
+5b. As an operator, I want an Agents page (workspace / team / personal) with profiles and unified access scopes so that agent identity and grants live next to People, not only in Settings.
+5c. As an operator with an empty workspace, I want interactive onboarding (create first DB / personal notes / connect agent; optional templates) so that I am not dropped into a pre-seeded CRM.
 
 > **UX direction (2026-09-05):** Pages + change requests — see `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md` and plan `docs/superpowers/plans/2026-09-05-pages-and-change-requests.md`. Engine terms remain record / collection / change set.
 
@@ -119,7 +122,7 @@ We seed a small CRM-shaped workspace to prove the platform: accounts, contacts, 
 
 ### Reviewer
 
-The reviewer is the human operator on the Inbox path, not a different product.
+The reviewer is the human operator on the Changes path, not a different product.
 
 15. As a reviewer, I want to see a field-level diff of a proposed change so that I can approve without reading the whole record.
 16. As a reviewer, I want to approve part of a change set and reject the rest so that one bad field does not discard good work.
@@ -217,15 +220,18 @@ Every read, write, denied attempt, grant change, and schema change, by principal
 - [x] Denied attempts included
 
 **R8. Console and CLI**
-The hosted console is a human workspace, not a set of developer tool pages. Sidebar lists databases (collections); opening one shows a table of pages. Opening a row lands on a full **page** (`/p/[pageId]`). Inbox is the **change-request** (PR) surface and supports proposals that touch multiple pages across databases. Settings owns account, people, teams, access, and AI connections; database properties edit on the open database. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`. Query, audit, and history remain engine/API surfaces even when they are not top-level nav. Direction: `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`.
+The hosted console is a human workspace, not a set of developer tool pages. Sidebar: **Workspace** then **Personal** databases; footer **Changes**, **Agents**, **Graph**; thinner **Settings**. Opening a database shows view tabs (Table always; board/list/gallery/calendar addable). Opening a row lands on a full **page** (`/p/[pageId]`). **Changes** is the **change-request** (PR) surface and supports proposals that touch multiple pages across databases. Settings keeps account, people/teams membership, billing, webhooks; access and agent CRUD move toward Agents / Share. Database properties edit on the open database. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`. Query, audit, and history remain engine/API surfaces even when they are not top-level nav. Direction: `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`.
 
 - [x] Collection table views (`/c/[collection]`) with column visibility and local search
+- [ ] Multi-view tabs: Table always present; Board / List / Gallery / Calendar addable (none besides Table by default)
 - [x] Record peek: create (`directWrite`) and update (auto-applied change set for `write`/`admin`) *(peek remains as New page / optional quick path; full page is primary)*
 - [x] Full page route `/p/[pageId]` as primary open surface (title, body, properties)
-- [x] Inbox lists open change sets; detail shows field-level diffs, partial approve/reject, apply
-- [x] Inbox detail groups diffs by page for multi-page / multi-collection change requests
-- [x] Settings: Account, People, Teams, Access, Connect AI
+- [x] Changes lists open change sets; detail shows field-level diffs, partial approve/reject, apply *(nav rename Inbox→Changes; PR shell polish in progress)*
+- [x] Changes detail groups diffs by page for multi-page / multi-collection change requests
+- [ ] Agents page (workspace / team / personal) with profiles and unified access UI
+- [x] Settings: Account, People, Teams, Access, Connect AI *(thinning; Agents/access move in-context)*
 - [x] Database properties editor on `/c/[collection]` (create database from sidebar/home)
+- [ ] Empty provision + interactive onboarding (no auto-seeded CRM databases)
 - [x] `export` produces the full workspace as portable data plus schema (grant-filtered for non-admins)
 
 Do not claim Playwright coverage. Engine-backed `console.test.ts` still covers schema mask, audit not-found, and partial review apply.
@@ -298,7 +304,7 @@ Reviewer load is the metric most likely to kill this quietly. If human review be
 
 | Q | Decision | Evidence |
 |---|---|---|
-| Q1 | Agent principals are capped at `propose` unless a workspace admin sets `adminOverrideAgentWrite`, which is audited. Direct agent writes are a deliberate, visible exception. | Acceptance test 20 |
+| Q1 | Agent principals may be granted `write` / `admin` like humans. `propose` is the recommended default for agents, not a hard ceiling. Grant create for agent `write` is audited. No `adminOverrideAgentWrite` requirement. | Acceptance test 20 (updated) |
 | Q2 | The reviewable unit is the operation; the atomic unit is the change set. Reviewers mark ops `approved` or `rejected`; apply processes approved ops in one transaction. Apply is refused while any op remains `proposed`. | Tests 11, console partial-apply; system design §6.3 |
 | Q3 | A row excluded by a predicate returns not-found, not forbidden. | Test 16 |
 | Q4 | Agents are first-class principals (`kind = 'agent'`). `acts_for` exists on `kitsune.principals` and is unused. | Principals table; no delegation API |
@@ -323,7 +329,7 @@ Ordered by damage if wrong.
 **A1 — Developers will adopt a new database for a new project.**
 The hardest assumption in the document. Database adoption is slow, conservative, and lock-in-averse, and the incumbents are excellent and free.
 *If wrong:* nothing else matters.
-*Cheapest test:* put the hosted console (starter collections) and a schema-to-running-app path in front of ten people who would otherwise use Notion/Airtable plus an agent. Measure whether a human edits a row and an agent proposes a change set in under an hour without help.
+*Cheapest test:* put the hosted console (empty provision + onboarding) and a schema-to-running-app path in front of ten people who would otherwise use Notion/Airtable plus an agent. Measure whether a human creates a DB, edits a row, and an agent authors a change set in under an hour without help.
 
 **A2 — Reviewable writes are the reason to switch, not a feature they would skip.**
 *If wrong:* we are a worse Supabase with extra concepts.
@@ -332,12 +338,12 @@ The hardest assumption in the document. Database adoption is slow, conservative,
 **A3 — Field-level conflict resolution is materially better than record-level for agent workloads.**
 This is our main technical differentiator over both git-style and row-locking approaches.
 *If wrong:* R14 stays a research problem and the concurrency story collapses.
-*Cheapest test:* instrument field-conflict rate from day one and simulate three concurrent agents against the starter workspace before beta.
+*Cheapest test:* instrument field-conflict rate from day one and simulate three concurrent agents against a sample multi-collection workspace before beta.
 
 **A4 — Relational query performance will be good enough that nobody notices we are not raw Postgres.**
 Every abstraction over a database eventually meets a query it serves badly.
 *If wrong:* developers hit the wall in week one and leave, and G1 fails.
-*Cheapest test:* benchmark the ten most common query shapes from the starter workspace against hand-written SQL. Publish the gap internally. Anything worse than 2x needs a fix before beta.
+*Cheapest test:* benchmark the ten most common query shapes from a representative multi-collection workspace against hand-written SQL. Publish the gap internally. Anything worse than 2x needs a fix before beta.
 
 **A5 — Permissions-as-data is worth the modelling burden it imposes on developers.**
 *If wrong:* developers grant `admin` to everything and our differentiator is unused.
@@ -351,9 +357,11 @@ Every abstraction over a database eventually meets a query it serves badly.
 
 **Phase 1 — Weeks 3–9.** R1, R2, R3, R4. The core: collections, revisions, change sets, grants. Nothing user-facing yet. Ends with A4's benchmark.
 
-**Phase 2 — Weeks 10–14.** R5, R6, R7, R8. MCP, generated API and client, audit, hosted console as a human workspace (collections, Inbox, Settings). Starter CRM collections live in that console on the public API only — if they need a private path, that is a missing product requirement.
+**Phase 2 — Weeks 10–14.** R5, R6, R7, R8. MCP, generated API and client, audit, hosted console as a human workspace (collections, Changes, Settings). Console proves the platform on the public API only — if operators need a private path, that is a missing product requirement.
 
-**Phase 2b — 2026-09-03.** Console IA: collection tables, record peek, Inbox, Settings. Humans and agents are equal primary users of the same workspace.
+**Phase 2b — 2026-09-03.** Console IA: collection tables, record peek, Changes (née Inbox), Settings. Humans and agents are equal primary users of the same workspace.
+
+**Phase 2c — Console Notion parity (approved).** Empty provision + interactive onboarding; Workspace/Personal sidebar; multi-view tabs; Changes PR UI; Agents page; force graph; Q1 reopened (agents may hold write/admin).
 
 **Phase 3 — Weeks 15–20.** R9, R10, R11 as pulled by design partners. Beta.
 
