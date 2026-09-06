@@ -33,6 +33,9 @@ const authkit = authkitMiddleware({
       '/api/billing/webhook',
       '/api/mcp/tools/call',
       '/api/mcp/tools',
+      // MCP OAuth discovery must be anonymous (RFC 8414 / 9728).
+      '/.well-known/oauth-authorization-server',
+      '/.well-known/oauth-protected-resource',
     ],
   },
   signUpPaths: ['/signup'],
@@ -58,6 +61,8 @@ export default function middleware(
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|health|api/mcp|api/billing/webhook).*)',
+    // Skip static assets, health, MCP transport/OAuth, billing webhooks, and
+    // RFC 8414/9728 discovery docs (must stay public for Claude/Cursor).
+    '/((?!_next/static|_next/image|favicon.ico|health|api/mcp|api/billing/webhook|\\.well-known).*)',
   ],
 };

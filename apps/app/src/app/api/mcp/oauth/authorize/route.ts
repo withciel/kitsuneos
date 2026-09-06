@@ -7,6 +7,7 @@ import {
   ensureMcpOAuthTables,
   newAuthCode,
 } from '@/lib/mcp-oauth';
+import { publicAppOrigin } from '@/lib/public-origin';
 import { requireWorkspace } from '@/lib/require-workspace';
 
 export const runtime = 'nodejs';
@@ -48,7 +49,7 @@ export async function GET(request: Request) {
   try {
     workspace = await requireWorkspace();
   } catch {
-    const login = new URL('/login', url.origin);
+    const login = new URL('/login', publicAppOrigin(request));
     login.searchParams.set('returnTo', `${url.pathname}${url.search}`);
     return NextResponse.redirect(login);
   }

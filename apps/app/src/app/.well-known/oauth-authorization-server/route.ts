@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
+import { publicAppOrigin } from '@/lib/public-origin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 /** RFC 8414 Authorization Server Metadata for the embedded MCP AS. */
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const issuer = url.origin;
+  const issuer = publicAppOrigin(request);
   return NextResponse.json(
     {
       issuer,

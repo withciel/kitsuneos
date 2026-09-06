@@ -1,13 +1,13 @@
 import { handleStreamableMcpRequest } from '@kitsuneos/server';
 import { engine } from '@/lib/engine';
 import { resolveMcpOAuthCredential } from '@/lib/mcp-oauth';
+import { publicAppOrigin } from '@/lib/public-origin';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function resourceMetadataUrl(request: Request): string {
-  const url = new URL(request.url);
-  return `${url.origin}/.well-known/oauth-protected-resource`;
+  return `${publicAppOrigin(request)}/.well-known/oauth-protected-resource`;
 }
 
 function allowedOriginsFromEnv(): string[] {
