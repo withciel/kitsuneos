@@ -33,6 +33,11 @@ const authkit = authkitMiddleware({
       '/api/billing/webhook',
       '/api/mcp/tools/call',
       '/api/mcp/tools',
+      // Authorize must run through AuthKit middleware (session for withAuth)
+      // but stay anonymous so Claude's browser handoff is not blocked.
+      '/api/mcp/oauth/authorize',
+      '/api/mcp/oauth/token',
+      '/api/mcp/oauth/register',
       // MCP OAuth discovery must be anonymous (RFC 8414 / 9728).
       '/.well-known/oauth-authorization-server',
       '/.well-known/oauth-protected-resource',
@@ -61,8 +66,9 @@ export default function middleware(
 
 export const config = {
   matcher: [
-    // Skip static assets, health, MCP transport/OAuth, billing webhooks, and
-    // RFC 8414/9728 discovery docs (must stay public for Claude/Cursor).
-    '/((?!_next/static|_next/image|favicon.ico|health|api/mcp|api/billing/webhook|\\.well-known).*)',
+    // Skip static assets, health, MCP transport (not oauth/authorize), billing
+    // webhooks, and RFC 8414/9728 discovery. Authorize is intentionally NOT
+    // skipped — withAuth requires AuthKit middleware on that path.
+    '/((?!_next/static|_next/image|favicon.ico|health|api/mcp(?!/oauth/authorize)|api/billing/webhook|\\.well-known).*)',
   ],
 };

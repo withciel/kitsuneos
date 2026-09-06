@@ -50,12 +50,16 @@ export async function GET(request: Request) {
   try {
     workspace = await requireWorkspace();
   } catch (err) {
-    // Only bounce unauthenticated browsers through AuthKit. Other failures
-    // (DB, provisioning) must not look like a successful Claude connect.
+    // Bounce unauthenticated browsers through AuthKit. Treat AuthKit middleware
+    // gaps the same as Unauthorized so Claude handoff never gets a bare 500.
+    const message = err instanceof Error ? err.message : String(err);
     const unauthorized =
-      err instanceof KitsuneError &&
-      err.code === 'forbidden' &&
-      err.message === 'Unauthorized';
+      (err instanceof KitsuneError &&
+        err.code === 'forbidden' &&
+        err.message === 'Unauthorized') ||
+      message === 'Unauthorized' ||
+      /AuthKit middleware/i.test(message) ||
+      /withAuth/i.test(message);
     if (!unauthorized) {
       console.error('mcp oauth authorize: workspace resolve failed', err);
       return NextResponse.json({ error: 'server_error' }, { status: 500 });
