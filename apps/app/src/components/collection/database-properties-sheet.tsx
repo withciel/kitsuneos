@@ -22,6 +22,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { isValidSchemaName } from '@/lib/schema-names';
 import { notifyWorkspaceChanged } from '@/lib/workspace-events';
 
+const PROTECTED_FIELDS = new Set(['name', 'title']);
+
 interface PropertyMeta {
   name: string;
   type: string;
@@ -173,6 +175,12 @@ export function DatabasePropertiesSheet({
   }
 
   async function removeProperty(name: string) {
+    if (PROTECTED_FIELDS.has(name)) {
+      setError(
+        `"${name}" is required for pages in this database and cannot be removed.`,
+      );
+      return;
+    }
     const ok = window.confirm(
       `Remove property "${name}" from ${collection}? This cannot be undone.`,
     );
@@ -231,7 +239,7 @@ export function DatabasePropertiesSheet({
                   <Button
                     size="sm"
                     variant="ghost"
-                    disabled={busy}
+                    disabled={busy || PROTECTED_FIELDS.has(property.name)}
                     onClick={() => void removeProperty(property.name)}
                   >
                     Remove

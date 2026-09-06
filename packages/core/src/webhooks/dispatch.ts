@@ -19,6 +19,7 @@ export interface WebhookDelivery {
   status: 'pending' | 'delivered' | 'failed';
   attemptCount: number;
   lastError: string | null;
+  createdAt?: string;
 }
 
 export function generateWebhookSecret(): string {
@@ -98,6 +99,45 @@ export async function deleteWebhookEndpoint(
     [workspaceId, endpointId],
   );
   return (result.rowCount ?? 0) > 0;
+}
+
+/** Recent deliveries for one endpoint (admin console). Secrets never included. */
+export async function listWebhookDeliveries(
+  client: PoolClient,
+  workspaceId: string,
+  endpointId: string,
+  limit = 50,
+): Promise<WebhookDelivery[]> {
+  const capped = Math.min(Math.max(limit, 1), 200);
+  const result = await client.query<{
+    id: string;
+    endpoint_id: string;
+    event_type: string;
+    status: 'pending' | 'delivered' | 'failed';
+    attempt_count: number;
+    last_error: string | null;
+    created_at: Date;
+  }>(
+    `SELECT d.id, d.endpoint_id, d.event_type, d.status, d.attempt_count,
+            d.last_error, d.created_at
+       FROM kitsune.webhook_deliveries d
+       JOIN kitsune.webhook_endpoints e ON e.id = d.endpoint_id
+      WHERE d.workspace_id = $1
+        AND d.endpoint_id = $2
+        AND e.workspace_id = $1
+      ORDER BY d.created_at DESC
+      LIMIT $3`,
+    [workspaceId, endpointId, capped],
+  );
+  return result.rows.map((row) => ({
+    id: row.id,
+    endpointId: row.endpoint_id,
+    eventType: row.event_type,
+    status: row.status,
+    attemptCount: row.attempt_count,
+    lastError: row.last_error,
+    createdAt: row.created_at.toISOString(),
+  }));
 }
 
 export async function dispatchChangeSetApplied(

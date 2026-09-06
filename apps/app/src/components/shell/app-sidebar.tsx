@@ -1,10 +1,18 @@
 'use client';
 
-import { Bell, Plus, Settings, Table2 } from 'lucide-react';
+import {
+  Bell,
+  Network,
+  Plus,
+  Settings,
+  StickyNote,
+  Table2,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { CreateDatabaseDialog } from '@/components/collection/create-database-dialog';
+import { WorkspaceSwitcher } from '@/components/shell/workspace-switcher';
 import { Badge } from '@/components/ui/badge';
 import {
   Sidebar,
@@ -27,10 +35,13 @@ interface SchemaCollection {
   capability: string;
 }
 
+const NOTES_HREF = '/c/notes';
+
 export function AppSidebar() {
   const pathname = usePathname();
   const [collections, setCollections] = useState<SchemaCollection[]>([]);
   const [inboxCount, setInboxCount] = useState(0);
+  const [hasNotes, setHasNotes] = useState(false);
 
   const reload = useCallback(() => {
     void fetch('/api/schema')
@@ -39,7 +50,12 @@ export function AppSidebar() {
         const body = (await response.json()) as {
           collections?: SchemaCollection[];
         };
-        setCollections(body.collections ?? []);
+        const next = body.collections ?? [];
+        setHasNotes(next.some((collection) => collection.name === 'notes'));
+        // Keep Notes pinned above; avoid duplicating it in the generic list.
+        setCollections(
+          next.filter((collection) => collection.name !== 'notes'),
+        );
       })
       .catch(() => undefined);
 
@@ -66,10 +82,13 @@ export function AppSidebar() {
     reload();
   }, [pathname, reload]);
 
+  const notesActive =
+    pathname === NOTES_HREF || pathname.startsWith(`${NOTES_HREF}/`);
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
-        <Link href="/" className="flex items-center gap-2 px-1">
+        <Link href="/" className="mb-2 flex items-center gap-2 px-1">
           <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-bold tracking-tight">
             K
           </div>
@@ -77,8 +96,30 @@ export function AppSidebar() {
             Kitsune<span className="text-primary">OS</span>
           </span>
         </Link>
+        <WorkspaceSwitcher />
       </SidebarHeader>
       <SidebarContent>
+        {hasNotes ? (
+          <SidebarGroup>
+            <SidebarGroupLabel>Personal</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={notesActive}
+                    tooltip="Notes"
+                  >
+                    <Link href={NOTES_HREF}>
+                      <StickyNote />
+                      <span>Notes</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null}
         <SidebarGroup>
           <SidebarGroupLabel>Databases</SidebarGroupLabel>
           <CreateDatabaseDialog
@@ -129,6 +170,18 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith('/graph')}
+              tooltip="Graph"
+            >
+              <Link href="/graph">
+                <Network />
+                <span>Graph</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild

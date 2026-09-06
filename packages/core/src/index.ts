@@ -32,6 +32,22 @@ export {
   statusGrantsWrite,
 } from './billing/entitlement.js';
 export type {
+  PlanId,
+  PlanLimitDimension,
+  PlanLimits,
+  PlanUsageSnapshot,
+} from './billing/plan-limits.js';
+export {
+  assertPlanLimit,
+  FREE_PLAN_LIMITS,
+  limitsForPlan,
+  loadPlanUsage,
+  loadWorkspacePlan,
+  PRO_PLAN_LIMITS,
+  planIdFromSubscriptionStatus,
+  userHasPaidWorkspace,
+} from './billing/plan-limits.js';
+export type {
   ProcessSubscriptionWebhookInput,
   SubscriptionWebhookResult,
 } from './billing/store.js';
@@ -71,6 +87,17 @@ export type {
   ParsedIngestBatch,
 } from './ingest/types.js';
 export type {
+  BacklinkNeighbor,
+  BacklinksResult,
+  ParsedWikiLink,
+  WikiLinkEdge,
+} from './links/wiki-links.js';
+export {
+  extractWikiLinks,
+  parseWikiLinkInner,
+  proseToPlainText,
+} from './links/wiki-links.js';
+export type {
   MergeQueueEntry,
   MergeQueueStatus,
 } from './merge/queue.js';
@@ -84,7 +111,30 @@ export {
   listMembershipsForWorkspace,
   listTeams,
   removeTeamMember,
+  switchActiveWorkspace,
 } from './org/memberships.js';
+export type { OAuthAppSummary, OAuthScope } from './org/oauth-apps.js';
+export {
+  createOAuthApp,
+  issueOAuthClientCredentialsToken,
+  listOAuthApps,
+  resolveOAuthAccessToken,
+  revokeOAuthApp,
+} from './org/oauth-apps.js';
+export type {
+  PageAccessState,
+  PageShareCapability,
+  PageVisibility,
+} from './org/page-access.js';
+export {
+  canViewPage,
+  effectivePrincipalIds,
+  filterVisibleRecordIds,
+  getPageAccess,
+  sharePageWithPrincipal,
+  unsharePage,
+  upsertPageVisibility,
+} from './org/page-access.js';
 export {
   type SweepCollectionResult,
   type SweepRevisionsResult,
@@ -134,6 +184,7 @@ export {
 } from './vfs/paths.js';
 export {
   generateWebhookSecret,
+  listWebhookDeliveries,
   signWebhookPayload,
   type WebhookDelivery,
   type WebhookEndpoint,

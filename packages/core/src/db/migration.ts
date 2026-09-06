@@ -408,4 +408,100 @@ CREATE INDEX IF NOT EXISTS team_members_principal_idx
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.workspace_memberships TO kitsune_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.teams TO kitsune_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.team_members TO kitsune_app;
+
+-- ---------------------------------------------------------------------------
+-- Page visibility + shares (Notion-like private / workspace / shared)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS kitsune.page_access (
+  workspace_id        uuid NOT NULL REFERENCES kitsune.workspaces(id) ON DELETE CASCADE,
+  collection_id       uuid NOT NULL REFERENCES kitsune.collections(id) ON DELETE CASCADE,
+  record_id           uuid NOT NULL,
+  visibility          text NOT NULL CHECK (visibility IN ('private', 'workspace', 'shared')),
+  owner_principal_id  uuid NOT NULL REFERENCES kitsune.principals(id),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (workspace_id, collection_id, record_id)
+);
+CREATE INDEX IF NOT EXISTS page_access_owner_idx
+  ON kitsune.page_access (workspace_id, owner_principal_id);
+
+CREATE TABLE IF NOT EXISTS kitsune.page_shares (
+  id                  uuid PRIMARY KEY,
+  workspace_id        uuid NOT NULL REFERENCES kitsune.workspaces(id) ON DELETE CASCADE,
+  collection_id       uuid NOT NULL REFERENCES kitsune.collections(id) ON DELETE CASCADE,
+  record_id           uuid NOT NULL,
+  grantee_principal_id uuid NOT NULL REFERENCES kitsune.principals(id),
+  capability          text NOT NULL CHECK (capability IN ('read', 'write', 'full')),
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (workspace_id, collection_id, record_id, grantee_principal_id)
+);
+CREATE INDEX IF NOT EXISTS page_shares_grantee_idx
+  ON kitsune.page_shares (workspace_id, grantee_principal_id);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.page_access TO kitsune_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.page_shares TO kitsune_app;
+
+-- ---------------------------------------------------------------------------
+-- OAuth applications (third parties using Kitsune as their database)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS kitsune.oauth_apps (
+  id                  uuid PRIMARY KEY,
+  workspace_id        uuid NOT NULL REFERENCES kitsune.workspaces(id) ON DELETE CASCADE,
+  name                text NOT NULL,
+  client_id           text NOT NULL UNIQUE,
+  client_secret_hash  text NOT NULL,
+  redirect_uris       text[] NOT NULL DEFAULT '{}',
+  scopes              text[] NOT NULL DEFAULT '{databases:create,records:read,records:write}',
+  principal_id        uuid NOT NULL REFERENCES kitsune.principals(id),
+  created_by          uuid NOT NULL REFERENCES kitsune.principals(id),
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  revoked_at          timestamptz
+);
+CREATE INDEX IF NOT EXISTS oauth_apps_workspace_idx
+  ON kitsune.oauth_apps (workspace_id)
+  WHERE revoked_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS kitsune.oauth_access_tokens (
+  id                  uuid PRIMARY KEY,
+  app_id              uuid NOT NULL REFERENCES kitsune.oauth_apps(id) ON DELETE CASCADE,
+  workspace_id        uuid NOT NULL REFERENCES kitsune.workspaces(id) ON DELETE CASCADE,
+  principal_id        uuid NOT NULL REFERENCES kitsune.principals(id),
+  token_hash          text NOT NULL UNIQUE,
+  scopes              text[] NOT NULL,
+  expires_at          timestamptz NOT NULL,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  revoked_at          timestamptz
+);
+CREATE INDEX IF NOT EXISTS oauth_access_tokens_app_idx
+  ON kitsune.oauth_access_tokens (app_id)
+  WHERE revoked_at IS NULL;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.oauth_apps TO kitsune_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.oauth_access_tokens TO kitsune_app;
+
+-- ---------------------------------------------------------------------------
+-- Wiki-links extracted from prose (Obsidian-style [[Title]] / [[col:id]])
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS kitsune.page_links (
+  id                 uuid PRIMARY KEY,
+  workspace_id       uuid NOT NULL REFERENCES kitsune.workspaces(id) ON DELETE CASCADE,
+  from_collection_id uuid NOT NULL REFERENCES kitsune.collections(id) ON DELETE CASCADE,
+  from_record_id     uuid NOT NULL,
+  to_collection_id   uuid REFERENCES kitsune.collections(id) ON DELETE SET NULL,
+  to_record_id       uuid,
+  raw_target         text NOT NULL,
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (workspace_id, from_collection_id, from_record_id, raw_target)
+);
+CREATE INDEX IF NOT EXISTS page_links_from_idx
+  ON kitsune.page_links (workspace_id, from_collection_id, from_record_id);
+CREATE INDEX IF NOT EXISTS page_links_to_idx
+  ON kitsune.page_links (workspace_id, to_collection_id, to_record_id)
+  WHERE to_record_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS page_links_raw_idx
+  ON kitsune.page_links (workspace_id, raw_target);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.page_links TO kitsune_app;
 `;

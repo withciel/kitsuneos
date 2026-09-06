@@ -1,6 +1,7 @@
 'use client';
 
 import type { JsonValue } from '@kitsuneos/core';
+import { ProseEditor } from '@/components/page/prose-editor';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -18,6 +19,7 @@ export interface FieldMeta {
   type: string;
   writable: boolean;
   relationTarget?: string | null;
+  enumValues?: string[];
 }
 
 export interface RelationOption {
@@ -44,12 +46,10 @@ export function FieldControl({
 
   if (field.type === 'prose') {
     return (
-      <Textarea
-        id={id}
+      <ProseEditor
         value={value}
         disabled={!field.writable}
-        rows={rows}
-        onChange={(event) => onChange(event.target.value)}
+        onChange={onChange}
       />
     );
   }
@@ -57,16 +57,39 @@ export function FieldControl({
   if (field.type === 'boolean') {
     return (
       <Select
-        value={value === 'true' ? 'true' : 'false'}
+        value={value === '' ? NONE_VALUE : value === 'true' ? 'true' : 'false'}
         disabled={!field.writable}
-        onValueChange={onChange}
+        onValueChange={(next) => onChange(next === NONE_VALUE ? '' : next)}
       >
         <SelectTrigger id={id} className="w-full">
-          <SelectValue />
+          <SelectValue placeholder="Select" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="true">true</SelectItem>
-          <SelectItem value="false">false</SelectItem>
+          <SelectItem value={NONE_VALUE}>Not set</SelectItem>
+          <SelectItem value="true">Yes</SelectItem>
+          <SelectItem value="false">No</SelectItem>
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  if (field.type === 'enum') {
+    return (
+      <Select
+        value={value || NONE_VALUE}
+        disabled={!field.writable}
+        onValueChange={(next) => onChange(next === NONE_VALUE ? '' : next)}
+      >
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue placeholder="Select a choice" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value={NONE_VALUE}>None</SelectItem>
+          {(field.enumValues ?? []).map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
         </SelectContent>
       </Select>
     );
@@ -124,8 +147,12 @@ export function draftToPayload(
         payload[field.name] = n;
       }
     } else if (field.type === 'boolean') {
-      payload[field.name] = raw === 'true';
-    } else if (field.type === 'relation') {
+      if (raw === '') {
+        payload[field.name] = null;
+      } else {
+        payload[field.name] = raw === 'true';
+      }
+    } else if (field.type === 'enum' || field.type === 'relation') {
       payload[field.name] = raw === '' || raw === NONE_VALUE ? null : raw;
     } else {
       payload[field.name] = raw;

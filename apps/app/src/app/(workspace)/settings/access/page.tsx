@@ -80,7 +80,11 @@ export default function SettingsAccessPage() {
       error?: string;
     };
     if (!response.ok) {
-      setError(body.error ?? 'Could not load access settings');
+      setError(
+        response.status === 403
+          ? 'Only workspace owners and admins can manage Access. Ask an owner to promote you or make the change.'
+          : (body.error ?? 'Could not load access'),
+      );
       return;
     }
     setError('');
@@ -196,7 +200,8 @@ export default function SettingsAccessPage() {
                     colSpan={4}
                     className="py-8 text-center text-sm text-muted-foreground"
                   >
-                    No access rules yet. Add one below.
+                    No access rules yet. Add a person or AI helper, pick a
+                    database, and choose what they can do. Add one below.
                   </TableCell>
                 </TableRow>
               ) : (

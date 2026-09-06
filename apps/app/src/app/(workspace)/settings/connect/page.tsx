@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AgentsPanel } from '@/components/settings/agents-panel';
+import { OAuthAppsPanel } from '@/components/settings/oauth-apps-panel';
 import { SettingsNav } from '@/components/settings/settings-nav';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -177,7 +179,9 @@ export default function SettingsConnectPage() {
         <section className="space-y-3 rounded-lg border border-border p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-medium">1. Your connection key</h3>
+              <h3 className="text-sm font-medium">
+                1. Assistant connection key
+              </h3>
               <p className="text-xs text-muted-foreground">
                 Needed for Cursor remote and REST. Claude connectors use OAuth
                 instead. Treat the key like a password; it is shown once.
@@ -211,8 +215,9 @@ export default function SettingsConnectPage() {
             </div>
           ) : hasApiKey ? (
             <p className="text-sm text-muted-foreground">
-              A key is already active. It is only shown once when created — use
-              the key you saved, or rotate to mint a new one.
+              A key is already active for this workspace. It is only shown once
+              when created — use the guides below with the key you saved, or
+              rotate to mint a new one (this revokes the old key).
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
@@ -309,7 +314,24 @@ export default function SettingsConnectPage() {
               onCopy={() => void copyText('rest', restSnippet)}
             />
           ) : null}
+
+          {!apiKey && !hasApiKey ? (
+            <p className="text-xs text-amber-700 dark:text-amber-400">
+              Create a key first — the samples above still say YOUR_API_KEY
+              until you do.
+            </p>
+          ) : null}
+          {!apiKey && hasApiKey ? (
+            <p className="text-xs text-muted-foreground">
+              Paste the key you saved earlier into the config (replace
+              YOUR_API_KEY), or rotate above to reveal a new one.
+            </p>
+          ) : null}
         </section>
+
+        <AgentsPanel />
+
+        <OAuthAppsPanel />
 
         <section className="space-y-3 rounded-lg border border-border p-4">
           <h3 className="text-sm font-medium">3. Decide what the AI can do</h3>

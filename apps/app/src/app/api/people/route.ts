@@ -5,29 +5,21 @@ import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import {
   requireWorkspace,
-  type WorkspaceContext,
+  requireWorkspaceAdmin,
 } from '@/lib/require-workspace';
-
-async function requireAdmin(ctx: WorkspaceContext): Promise<void> {
-  const schema = await engine.describeSchema(ctx.workspaceId, ctx.principalId);
-  if (
-    !schema.collections.some((collection) => collection.capability === 'admin')
-  ) {
-    throw new Error('Only workspace admins can manage people');
-  }
-}
 
 export async function GET() {
   try {
     const ctx = await requireWorkspace();
-    await requireAdmin(ctx);
+    requireWorkspaceAdmin(ctx);
     const people = await engine.listWorkspaceMemberships(ctx.workspaceId);
     return NextResponse.json({ people });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status = message.includes('Unauthorized')
       ? 401
-      : message.includes('Only workspace admins')
+      : message.includes('Only workspace owners and admins') ||
+          message.includes('forbidden')
         ? 403
         : 400;
     return NextResponse.json({ error: message }, { status });
@@ -37,7 +29,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const ctx = await requireWorkspace();
-    await requireAdmin(ctx);
+    requireWorkspaceAdmin(ctx);
     const body = (await request.json()) as {
       email?: string;
       role?: WorkspaceRole;
@@ -56,7 +48,12 @@ export async function POST(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes('Unauthorized') ? 401 : 400;
+    const status = message.includes('Unauthorized')
+      ? 401
+      : message.includes('Only workspace owners and admins') ||
+          message.includes('forbidden')
+        ? 403
+        : 400;
     return NextResponse.json({ error: message }, { status });
   }
 }

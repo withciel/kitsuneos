@@ -50,7 +50,11 @@ export default function SettingsPeoplePage() {
       error?: string;
     };
     if (!response.ok) {
-      setError(body.error ?? 'Could not load people');
+      setError(
+        response.status === 403
+          ? 'Only workspace owners and admins can manage People.'
+          : (body.error ?? 'Could not load people'),
+      );
       return;
     }
     setError('');
@@ -95,8 +99,9 @@ export default function SettingsPeoplePage() {
         <div className="space-y-2">
           <h2 className="text-lg font-medium">People</h2>
           <p className="text-sm text-muted-foreground">
-            Invite coworkers to this workspace. They sign in with the same email
-            and can then be given access to specific databases.
+            Add coworkers to this workspace by email. No email is sent — they
+            must sign in with that address, then you grant database access under
+            Access.
           </p>
         </div>
 
@@ -148,9 +153,11 @@ export default function SettingsPeoplePage() {
 
         <div className="space-y-4 rounded-lg border border-border p-4">
           <div>
-            <h3 className="text-sm font-medium">Invite someone</h3>
+            <h3 className="text-sm font-medium">Add a person</h3>
             <p className="text-xs text-muted-foreground">
-              They’ll appear as Invited until they sign in with that email.
+              They appear as Invited until they sign in with that email. Share
+              the app link yourself — we do not send an invite email yet. Then
+              open Access to share databases with them.
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-3">
@@ -183,7 +190,7 @@ export default function SettingsPeoplePage() {
               </Select>
             </div>
             <Button disabled={busy} onClick={() => void invite()}>
-              {busy ? 'Inviting…' : 'Send invite'}
+              {busy ? 'Adding…' : 'Add person'}
             </Button>
           </div>
         </div>

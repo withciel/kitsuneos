@@ -1,11 +1,11 @@
 import type { QueryRequest } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
-import { requireWorkspace } from '@/lib/require-workspace';
+import { resolveRequestAuth } from '@/lib/request-auth';
 
 export async function POST(request: Request) {
   try {
-    const ctx = await requireWorkspace();
+    const ctx = await resolveRequestAuth(request);
     const body = (await request.json()) as QueryRequest;
     const rows = await engine.query(ctx.workspaceId, ctx.principalId, body);
     return NextResponse.json({ rows });

@@ -9,6 +9,7 @@ describe('SETTINGS_TABS', () => {
       'People',
       'Teams',
       'Access',
+      'Webhooks',
       'Connect AI',
     ]);
     assert.equal(

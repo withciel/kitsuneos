@@ -11,7 +11,8 @@ export function SettingsNav() {
     <div className="border-b border-border px-6 pt-4">
       <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Workspace account, people, access, and AI connections.
+        Workspace account, billing, people, access, webhooks, and AI
+        connections.
       </p>
       <nav className="mt-3 flex flex-wrap gap-4" aria-label="Settings">
         {SETTINGS_TABS.map((tab) => {

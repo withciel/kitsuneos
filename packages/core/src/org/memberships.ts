@@ -77,6 +77,31 @@ export async function listMembershipsForWorkspace(
   }));
 }
 
+/**
+ * Point the user's active workspace at a membership they already hold.
+ * Console resolution reads users.workspace_id as the preferred membership.
+ */
+export async function switchActiveWorkspace(
+  pool: Pool,
+  input: { userId: string; workspaceId: string },
+): Promise<WorkspaceMembership> {
+  const memberships = await listMembershipsForUser(pool, input.userId);
+  const target = memberships.find((m) => m.workspaceId === input.workspaceId);
+  if (!target) {
+    throw new KitsuneError(
+      'You are not a member of that workspace',
+      'forbidden',
+    );
+  }
+  await pool.query(
+    `UPDATE kitsune.users
+        SET workspace_id = $2, principal_id = $3
+      WHERE id = $1`,
+    [input.userId, target.workspaceId, target.principalId],
+  );
+  return target;
+}
+
 export async function ensureOwnerMembership(
   pool: Pool,
   input: {

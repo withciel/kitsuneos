@@ -19,6 +19,14 @@ export async function invokeMcpTool(
       return handlers.read_record(args as never);
     case 'search':
       return handlers.search(args as never);
+    case 'memory_search':
+      return handlers.memory_search(args as never);
+    case 'memory_get':
+      return handlers.memory_get(args as never);
+    case 'memory_related':
+      return handlers.memory_related(args as never);
+    case 'memory_remember':
+      return handlers.memory_remember(args as never);
     case 'read_related':
       return handlers.read_related(args as never);
     case 'ls':

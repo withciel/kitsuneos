@@ -296,6 +296,41 @@ export const TOOL_DEFINITIONS = [
     },
   },
   {
+    name: 'memory_search',
+    description:
+      'Supermemory-style recall: search grant-visible workspace prose and return cited snippets the agent can use as memory.',
+    inputSchema: searchSchema,
+  },
+  {
+    name: 'memory_get',
+    description:
+      'Fetch one memory page/record by collection + id after memory_search.',
+    inputSchema: readRecordSchema,
+  },
+  {
+    name: 'memory_related',
+    description:
+      'Expand memory neighborhood — relation graph around a page the agent can see.',
+    inputSchema: readRelatedSchema,
+  },
+  {
+    name: 'memory_remember',
+    description:
+      'Persist a note into an agent_memory database (created on first use when permitted). Use for durable agent notes within grant scope.',
+    inputSchema: {
+      type: 'object',
+      required: ['title', 'body'],
+      properties: {
+        collection: {
+          type: 'string',
+          description: 'Defaults to agent_memory',
+        },
+        title: { type: 'string' },
+        body: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'read_related',
     description:
       'List outgoing and incoming relation neighbors of a record that you are allowed to see. Invisible targets are omitted.',

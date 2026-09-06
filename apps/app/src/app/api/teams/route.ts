@@ -4,16 +4,12 @@ import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import {
   requireWorkspace,
+  requireWorkspaceAdmin,
   type WorkspaceContext,
 } from '@/lib/require-workspace';
 
-async function requireAdmin(ctx: WorkspaceContext): Promise<void> {
-  const schema = await engine.describeSchema(ctx.workspaceId, ctx.principalId);
-  if (
-    !schema.collections.some((collection) => collection.capability === 'admin')
-  ) {
-    throw new Error('Only workspace admins can manage teams');
-  }
+function requireAdmin(ctx: WorkspaceContext): void {
+  requireWorkspaceAdmin(ctx);
 }
 
 export async function GET() {

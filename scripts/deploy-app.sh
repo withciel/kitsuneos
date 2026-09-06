@@ -52,9 +52,17 @@ else
     ln -sfn "${HOME}/.docker/cli-plugins/docker-buildx" "$DOCKER_CONFIG/cli-plugins/docker-buildx"
   elif [[ -x /tmp/docker-cli-plugins/docker-buildx ]]; then
     ln -sfn /tmp/docker-cli-plugins/docker-buildx "$DOCKER_CONFIG/cli-plugins/docker-buildx"
+  elif [[ -x /usr/libexec/docker/cli-plugins/docker-buildx ]]; then
+    ln -sfn /usr/libexec/docker/cli-plugins/docker-buildx "$DOCKER_CONFIG/cli-plugins/docker-buildx"
   fi
 fi
-export DOCKER_BUILDKIT=1
+# Use BuildKit when buildx is available; otherwise fall back to the legacy builder.
+if docker buildx version >/dev/null 2>&1; then
+  export DOCKER_BUILDKIT=1
+else
+  echo "docker buildx missing — falling back to DOCKER_BUILDKIT=0"
+  export DOCKER_BUILDKIT=0
+fi
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "${ECR_URL%%/*}"
 # BuildKit: compile Next on host arch, emit TARGETPLATFORM (amd64) runtime for App Runner.
 docker build \
@@ -146,7 +154,9 @@ fi
 
 WEBHOOK_URL="https://${APP_DOMAIN}/api/billing/webhook"
 if [[ -n "${DODO_PAYMENTS_API_KEY:-}" ]]; then
-  node "$ROOT/scripts/register-dodo-webhook.mjs" "$WEBHOOK_URL" "$STACK"
+  # Billing webhook sync is best-effort; do not fail the app deploy on Dodo API drift.
+  node "$ROOT/scripts/register-dodo-webhook.mjs" "$WEBHOOK_URL" "$STACK" \
+    || echo "warn: Dodo webhook registration failed (app deploy still OK)" >&2
 fi
 
 echo "App image pushed: $IMAGE_TAG and ${ECR_URL}:latest"

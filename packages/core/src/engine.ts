@@ -20,6 +20,7 @@ import {
   matchesMinApprovalsScope,
 } from './automation/policies.js';
 import { assertWriteEntitlement } from './billing/entitlement.js';
+import { assertPlanLimit } from './billing/plan-limits.js';
 import {
   type BranchFieldMeta,
   copyRelationTable,
@@ -51,6 +52,12 @@ import {
 import { assertFieldAllowed, loadResolvedGrant } from './grants/resolve.js';
 import type { IngestRequest, IngestResult } from './ingest/types.js';
 import {
+  type BacklinksResult,
+  listBacklinks,
+  listVisibleWikiLinkEdges,
+  syncPageWikiLinks,
+} from './links/wiki-links.js';
+import {
   claimNextMergeQueueEntry,
   completeMergeQueueEntry,
   insertMergeQueueEntry,
@@ -67,6 +74,7 @@ import {
   listTeams as listTeamRows,
   removeTeamMember,
 } from './org/memberships.js';
+import { canViewPage, filterVisibleRecordIds } from './org/page-access.js';
 import {
   type SweepRevisionsResult,
   sweepExpiredRevisions,
@@ -138,6 +146,7 @@ import {
   dispatchChangeSetApplied,
   generateWebhookSecret,
   insertWebhookEndpoint,
+  listWebhookDeliveries,
   listWebhookEndpoints,
 } from './webhooks/dispatch.js';
 
@@ -562,6 +571,12 @@ export class KitsuneEngine {
         'validation',
       );
     }
+    if (kind === 'agent') {
+      await assertPlanLimit(this.ownerPool, {
+        workspaceId,
+        dimension: 'agentsPerWorkspace',
+      });
+    }
     await withOwner(this.ownerPool, async (client) => {
       await client.query(
         `INSERT INTO kitsune.principals
@@ -699,6 +714,10 @@ export class KitsuneEngine {
     definition: CollectionDefinition,
   ): Promise<string> {
     await assertWriteEntitlement(this.ownerPool, workspaceId);
+    await assertPlanLimit(this.ownerPool, {
+      workspaceId,
+      dimension: 'collectionsPerWorkspace',
+    });
     validateCollectionDefinition(definition);
     const schemaName = schemaNameForWorkspace(workspaceId);
     const collectionId = uuidv4();
@@ -919,9 +938,10 @@ export class KitsuneEngine {
           name: string;
           type: string;
           relation_target: string | null;
+          enum_values: string[] | null;
         }>(
           client,
-          `SELECT f.name, f.type, target.name AS relation_target
+          `SELECT f.name, f.type, target.name AS relation_target, f.enum_values
              FROM kitsune.fields f
              LEFT JOIN kitsune.collections target ON target.id = f.relation_target
             WHERE f.collection_id = $1
@@ -941,15 +961,18 @@ export class KitsuneEngine {
             name: f.name,
             type: f.type,
             relationTarget: f.relation_target,
+            enumValues: f.enum_values ?? undefined,
             readable: true,
+            // Console direct edit requires write/admin. Propose-only reviews via Inbox.
             writable:
               grant.fieldMask === null || grant.fieldMask.includes(f.name)
                 ? CAPABILITY_ORDER.indexOf(grant.capability) >=
-                  CAPABILITY_ORDER.indexOf('propose')
+                  CAPABILITY_ORDER.indexOf('write')
                 : false,
           })),
         });
       }
+
       await client.query('COMMIT');
       return { collections: result };
     } catch (error) {
@@ -982,6 +1005,11 @@ export class KitsuneEngine {
         compiled.sql,
         compiled.params,
       );
+      const meta = await getCollectionMeta(
+        client,
+        workspaceId,
+        request.collection,
+      );
       await writeAuditInTxn(client, {
         workspaceId,
         principalId,
@@ -990,7 +1018,27 @@ export class KitsuneEngine {
         detail: { collection: request.collection },
       });
       await client.query('COMMIT');
-      return rows;
+      // Aggregate result rows have no record id; page_access post-filtering
+      // only applies to row-level queries.
+      if (request.aggregates?.length) {
+        return rows;
+      }
+      const ids = rows
+        .map((row) => row.id)
+        .filter((id): id is string => typeof id === 'string');
+      // TODO(compiler-acl): compile page_access into row predicates instead of
+      // post-filtering after grant-scoped SELECT.
+      const visible = new Set(
+        await filterVisibleRecordIds(this.ownerPool, {
+          workspaceId,
+          collectionId: meta.id,
+          recordIds: ids,
+          principalId,
+        }),
+      );
+      return rows.filter(
+        (row) => typeof row.id === 'string' && visible.has(row.id),
+      );
     } catch (error) {
       await client.query('ROLLBACK');
       if (error instanceof KitsuneError && error.code === 'forbidden') {
@@ -1035,6 +1083,7 @@ export class KitsuneEngine {
         compiled.sql,
         compiled.params,
       );
+      const meta = await getCollectionMeta(client, workspaceId, collection);
       await writeAuditInTxn(client, {
         workspaceId,
         principalId,
@@ -1043,7 +1092,14 @@ export class KitsuneEngine {
         outcome: row ? 'allowed' : 'denied',
       });
       await client.query('COMMIT');
-      return row;
+      if (!row) return null;
+      const allowed = await canViewPage(this.ownerPool, {
+        workspaceId,
+        collectionId: meta.id,
+        recordId,
+        principalId,
+      });
+      return allowed ? row : null;
     } catch (error) {
       await client.query('ROLLBACK');
       if (error instanceof KitsuneError) {
@@ -1094,7 +1150,23 @@ export class KitsuneEngine {
         },
       });
       await client.query('COMMIT');
-      return result;
+      const visibleHits = [];
+      for (const hit of result.hits) {
+        const meta = await withOwner(this.ownerPool, async (ownerClient) =>
+          getCollectionMeta(ownerClient, workspaceId, hit.collection),
+        );
+        if (
+          await canViewPage(this.ownerPool, {
+            workspaceId,
+            collectionId: meta.id,
+            recordId: hit.recordId,
+            principalId,
+          })
+        ) {
+          visibleHits.push(hit);
+        }
+      }
+      return { hits: visibleHits };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -1131,7 +1203,33 @@ export class KitsuneEngine {
         detail: { collection },
       });
       await client.query('COMMIT');
-      return result;
+      // TODO(compiler-acl): page_access should compile into neighbor SQL.
+      // Until then, post-filter related edges with canViewPage.
+      const filterNeighbors = async (
+        neighbors: typeof result.outgoing,
+      ): Promise<typeof result.outgoing> => {
+        const visible = [];
+        for (const neighbor of neighbors) {
+          const meta = await withOwner(this.ownerPool, async (ownerClient) =>
+            getCollectionMeta(ownerClient, workspaceId, neighbor.collection),
+          );
+          if (
+            await canViewPage(this.ownerPool, {
+              workspaceId,
+              collectionId: meta.id,
+              recordId: neighbor.recordId,
+              principalId,
+            })
+          ) {
+            visible.push(neighbor);
+          }
+        }
+        return visible;
+      };
+      return {
+        outgoing: await filterNeighbors(result.outgoing),
+        incoming: await filterNeighbors(result.incoming),
+      };
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -1491,6 +1589,11 @@ export class KitsuneEngine {
         'validation',
       );
     }
+    await assertPlanLimit(this.ownerPool, {
+      workspaceId,
+      dimension: 'storageBytesPerWorkspace',
+      delta: bytes.length,
+    });
     const contentType = input.contentType?.trim() || 'application/octet-stream';
     const contentHash = sha256Hex(bytes);
 
@@ -1900,6 +2003,131 @@ export class KitsuneEngine {
       client.release();
     }
     await this.reindexRecord(workspaceId, collection, recordId);
+  }
+
+  /** Extract and store [[wiki-links]] from prose after a successful write. */
+  private async maybeSyncWikiLinksAfterWrite(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    recordId: string,
+  ): Promise<void> {
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, { schemaName, principalId });
+      const meta = await getCollectionMeta(client, workspaceId, collection);
+      if (!meta.fieldMeta.some((f) => f.type === 'prose')) {
+        await client.query('ROLLBACK');
+        return;
+      }
+      await syncPageWikiLinks(
+        client,
+        this.ownerPool,
+        workspaceId,
+        principalId,
+        schemaName,
+        collection,
+        recordId,
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // ignore
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** Public re-sync for smoke / repair. */
+  async syncWikiLinks(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    recordId: string,
+  ): Promise<void> {
+    await this.maybeSyncWikiLinksAfterWrite(
+      workspaceId,
+      principalId,
+      collection,
+      recordId,
+    );
+  }
+
+  async listBacklinks(
+    workspaceId: string,
+    principalId: string,
+    collection: string,
+    recordId: string,
+  ): Promise<BacklinksResult> {
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, { schemaName, principalId });
+      const result = await listBacklinks(
+        client,
+        this.ownerPool,
+        workspaceId,
+        principalId,
+        schemaName,
+        collection,
+        recordId,
+      );
+      await writeAuditInTxn(client, {
+        workspaceId,
+        principalId,
+        action: 'list_backlinks',
+        recordIds: [recordId],
+        outcome: 'allowed',
+        detail: { collection },
+      });
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async listWikiLinkEdges(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      fromCollection: string;
+      fromRecordId: string;
+      toCollection: string;
+      toRecordId: string;
+      rawTarget: string;
+    }>
+  > {
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const client = await this.appPool.connect();
+    try {
+      await client.query('BEGIN');
+      await setSessionContext(client, { schemaName, principalId });
+      const edges = await listVisibleWikiLinkEdges(
+        client,
+        this.ownerPool,
+        workspaceId,
+        principalId,
+      );
+      await client.query('COMMIT');
+      return edges;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   /**
@@ -2658,6 +2886,19 @@ export class KitsuneEngine {
             reindexError,
           );
         }
+        try {
+          await this.maybeSyncWikiLinksAfterWrite(
+            workspaceId,
+            changeSet.author_id,
+            collectionName,
+            recordId,
+          );
+        } catch (linkError) {
+          console.error(
+            'Wiki-link sync failed after applyChangeSet',
+            linkError,
+          );
+        }
       }
       try {
         await dispatchChangeSetApplied(this.ownerPool, {
@@ -2822,6 +3063,16 @@ export class KitsuneEngine {
           'Embedding reindex failed after directWrite',
           reindexError,
         );
+      }
+      try {
+        await this.maybeSyncWikiLinksAfterWrite(
+          workspaceId,
+          principalId,
+          collection,
+          recordIdOut,
+        );
+      } catch (linkError) {
+        console.error('Wiki-link sync failed after directWrite', linkError);
       }
       return recordIdOut;
     } catch (error) {
@@ -3983,6 +4234,31 @@ export class KitsuneEngine {
     });
   }
 
+  async listWebhookDeliveries(
+    workspaceId: string,
+    principalId: string,
+    endpointId: string,
+    limit = 50,
+  ): Promise<
+    Array<{
+      id: string;
+      endpointId: string;
+      eventType: string;
+      status: 'pending' | 'delivered' | 'failed';
+      attemptCount: number;
+      lastError: string | null;
+      createdAt?: string;
+    }>
+  > {
+    const admin = await this.hasAdminOnAnyCollection(workspaceId, principalId);
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    return withOwner(this.ownerPool, async (client) =>
+      listWebhookDeliveries(client, workspaceId, endpointId, limit),
+    );
+  }
+
   /**
    * Enqueue a fully reviewed change set for ordered apply (R14).
    * Disjoint field sets apply automatically as the queue drains; overlapping
@@ -4543,6 +4819,10 @@ export class KitsuneEngine {
     actorUserId: string,
     input: { email: string; role: WorkspaceRole; displayName?: string },
   ): Promise<{ membershipId: string; principalId: string }> {
+    await assertPlanLimit(this.ownerPool, {
+      workspaceId,
+      dimension: 'membersPerWorkspace',
+    });
     const principalId = await this.createPrincipal(
       workspaceId,
       'human',

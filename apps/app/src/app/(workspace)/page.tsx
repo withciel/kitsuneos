@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 export default function WorkspaceHomePage() {
   const router = useRouter();
   const [empty, setEmpty] = useState(false);
+  const [memberOnlyEmpty, setMemberOnlyEmpty] = useState(false);
   const [bootError, setBootError] = useState('');
 
   useEffect(() => {
@@ -37,6 +38,15 @@ export default function WorkspaceHomePage() {
           router.replace(`/c/${first}`);
         } else {
           setEmpty(true);
+          try {
+            const meRes = await fetch('/api/me');
+            const meBody = (await meRes.json()) as { role?: string };
+            setMemberOnlyEmpty(
+              meBody.role === 'member' || meBody.role === 'viewer',
+            );
+          } catch {
+            setMemberOnlyEmpty(false);
+          }
         }
       })
       .catch(() =>
@@ -74,15 +84,17 @@ export default function WorkspaceHomePage() {
             Step 1 of 4 · First win
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Create your first database
+            {memberOnlyEmpty
+              ? 'No databases shared with you yet'
+              : 'Create your first database'}
           </h1>
           <p className="max-w-lg text-sm text-muted-foreground">
-            A database is a shared table for you and your AI helpers. Start here
-            — next you will add a page, connect an agent, and review proposals
-            in Inbox. You can add properties after you open the database.
+            {memberOnlyEmpty
+              ? 'This workspace may already have databases, but none are shared with your account yet. Ask a workspace owner or admin to grant you access under Settings → Access.'
+              : 'A database is a shared table for you and your AI helpers. Start here — next you will add a page, connect an agent, and review proposals in Inbox. You can add properties after you open the database.'}
           </p>
         </div>
-        <CreateDatabaseDialog />
+        {memberOnlyEmpty ? null : <CreateDatabaseDialog />}
       </div>
     );
   }

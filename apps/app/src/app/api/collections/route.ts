@@ -2,11 +2,20 @@ import type { CollectionDefinition } from '@kitsuneos/core';
 import { validateCollectionDefinition } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
-import { requireWorkspace } from '@/lib/require-workspace';
+import { resolveRequestAuth } from '@/lib/request-auth';
 
 export async function POST(request: Request) {
   try {
-    const ctx = await requireWorkspace();
+    const ctx = await resolveRequestAuth(request);
+    if (
+      ctx.authKind === 'oauth' &&
+      !(ctx.scopes ?? []).includes('databases:create')
+    ) {
+      return NextResponse.json(
+        { error: 'OAuth token missing databases:create scope' },
+        { status: 403 },
+      );
+    }
     const body = (await request.json()) as CollectionDefinition;
     validateCollectionDefinition(body);
     const collectionId = await engine.defineCollection(ctx.workspaceId, body);

@@ -1,4 +1,8 @@
-import type { KitsuneEngine, WorkspaceMembership } from '@kitsuneos/core';
+import type {
+  KitsuneEngine,
+  WorkspaceMembership,
+  WorkspaceRole,
+} from '@kitsuneos/core';
 import {
   claimInvitesForUser,
   KitsuneError,
@@ -11,7 +15,21 @@ export interface WorkspaceContext {
   userId: string;
   workspaceId: string;
   principalId: string;
+  role: WorkspaceRole;
   apiKeyPlaintext?: string;
+}
+
+export function isWorkspaceAdmin(role: WorkspaceRole): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+export function requireWorkspaceAdmin(ctx: WorkspaceContext): void {
+  if (!isWorkspaceAdmin(ctx.role)) {
+    throw new KitsuneError(
+      'Only workspace owners and admins can manage people, teams, and access',
+      'forbidden',
+    );
+  }
 }
 
 let sharedEngine: KitsuneEngine | null = null;
@@ -112,6 +130,7 @@ async function resolveMembershipContext(
     userId: user.userId,
     workspaceId: active.workspaceId,
     principalId: active.principalId,
+    role: active.role,
     apiKeyPlaintext,
   };
 }

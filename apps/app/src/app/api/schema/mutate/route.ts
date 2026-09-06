@@ -2,11 +2,11 @@ import type { FieldDefinition, SchemaChangeOp } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { jsonError } from '@/lib/http-error';
-import { requireWorkspace } from '@/lib/require-workspace';
+import { resolveRequestAuth } from '@/lib/request-auth';
 
 export async function POST(request: Request) {
   try {
-    const ctx = await requireWorkspace();
+    const ctx = await resolveRequestAuth(request);
     const body = (await request.json()) as {
       collection?: string;
       op?: SchemaChangeOp;

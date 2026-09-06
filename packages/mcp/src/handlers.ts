@@ -51,6 +51,89 @@ export function createMcpHandlers(
       return engine.search(ctx.workspaceId, ctx.principalId, args);
     },
 
+    /** Supermemory-style: semantic recall across grant-visible workspace prose. */
+    async memory_search(args: {
+      query: string;
+      collections?: string[];
+      limit?: number;
+    }) {
+      const ctx = getContext();
+      const result = await engine.search(
+        ctx.workspaceId,
+        ctx.principalId,
+        args,
+      );
+      return {
+        memories: result.hits.map((hit) => ({
+          collection: hit.collection,
+          recordId: hit.recordId,
+          field: hit.fieldName,
+          snippet: hit.excerpt,
+          score: hit.score,
+        })),
+      };
+    },
+
+    async memory_get(args: {
+      collection: string;
+      recordId: string;
+      fields?: string[];
+    }) {
+      const ctx = getContext();
+      return engine.readRecord(
+        ctx.workspaceId,
+        ctx.principalId,
+        args.collection,
+        args.recordId,
+        args.fields,
+      );
+    },
+
+    async memory_related(args: { collection: string; recordId: string }) {
+      const ctx = getContext();
+      return engine.listRelated(
+        ctx.workspaceId,
+        ctx.principalId,
+        args.collection,
+        args.recordId,
+      );
+    },
+
+    async memory_remember(args: {
+      collection?: string;
+      title: string;
+      body: string;
+    }) {
+      const ctx = getContext();
+      const collection = args.collection ?? 'agent_memory';
+      const schema = await engine.describeSchema(
+        ctx.workspaceId,
+        ctx.principalId,
+      );
+      const exists = schema.collections.some((c) => c.name === collection);
+      if (!exists) {
+        try {
+          await engine.defineCollection(ctx.workspaceId, {
+            name: collection,
+            fields: [
+              { name: 'title', type: 'text', nullable: false },
+              { name: 'body', type: 'prose' },
+            ],
+          });
+        } catch (error) {
+          return {
+            error:
+              'agent_memory database is missing and this agent cannot create it. Ask a workspace admin to create an agent profile (Connect → Agent profiles) or grant define access.',
+            detail: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+      return engine.directWrite(ctx.workspaceId, ctx.principalId, collection, {
+        title: args.title,
+        body: args.body,
+      });
+    },
+
     async read_related(args: { collection: string; recordId: string }) {
       const ctx = getContext();
       return engine.listRelated(

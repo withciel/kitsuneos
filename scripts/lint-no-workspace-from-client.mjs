@@ -29,6 +29,11 @@ for (const file of walk(ROOT)) {
   fileCount += 1;
   const base = file.split('/').pop() ?? '';
   if (ALLOWED_FILES.has(base)) continue;
+  // Server route handlers may reference workspace_id in SQL; this lint is for
+  // client/shared UI code that must not take workspace from the request.
+  if (/[/\\]app[/\\]api[/\\]/.test(file)) {
+    continue;
+  }
   const text = readFileSync(file, 'utf8');
   if (text.includes('// workspace-lint: ignore')) continue;
   for (const pattern of FORBIDDEN_PATTERNS) {

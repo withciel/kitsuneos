@@ -18,7 +18,7 @@ export default function LandingPage() {
           </p>
           <div className="hero-actions">
             <a className="cta cta-primary" href={signUpUrl}>
-              Get early access
+              Start free
             </a>
             <a className="cta cta-secondary" href={signInUrl}>
               Sign in
@@ -119,15 +119,15 @@ export default function LandingPage() {
       </section>
 
       <section className="band band-close" id="join">
-        <h2>Get early access</h2>
+        <h2>Start free</h2>
         <p>
-          Create an account to start. After you get in: create a database, add a
-          page, connect an AI helper, and review its first proposal in Inbox —
-          usually in one sitting. Free during early access.
+          Create an account and start building. Free tier includes one
+          workspace, notes, agents, and review — with clear limits. Upgrade to
+          Pro when you need more seats, agents, and automation.
         </p>
         <div className="hero-actions">
           <a className="cta cta-primary" href={signUpUrl}>
-            Create account
+            Create free account
           </a>
           <a className="cta cta-secondary" href={signInUrl}>
             Sign in

@@ -4,7 +4,7 @@ import { pageMetadata } from '@/lib/site-metadata';
 
 export const metadata: Metadata = pageMetadata(
   'Terms of Service',
-  'Early access terms for KitsuneOS — the knowledge home for AI-native companies.',
+  'Terms for KitsuneOS — the knowledge home for AI-native companies.',
   '/terms/',
 );
 
@@ -14,26 +14,27 @@ export default function TermsPage() {
       <h1>Terms of Service</h1>
       <p>Last updated: September 2026</p>
 
-      <h2>Early access</h2>
+      <h2>Service</h2>
       <p>
-        KitsuneOS is in early access. The product may change as we learn. We do
-        not guarantee uptime or data retention during this period. The hosted
-        service is intended for evaluation and non-production work until we
-        announce general availability.
+        KitsuneOS is available to everyone with a free tier and paid Pro plans.
+        Free workspaces are subject to published usage limits (workspaces,
+        people, agents, databases, storage, and agent operations). Paid plans
+        unlock higher limits via Dodo Payments. The hosted service may still
+        change as we improve it; we will communicate material limit or pricing
+        changes in advance when practical.
       </p>
 
       <h2>How Ciel uses KitsuneOS</h2>
       <p>
         Ciel uses KitsuneOS for its own work. That internal use does not change
-        the early-access status of the hosted product at app.kitsuneos.com,
-        which remains under these Terms until general availability.
+        the terms that apply to the hosted product at app.kitsuneos.com.
       </p>
 
       <h2>Security</h2>
       <p>
-        KitsuneOS has not undergone an independent security review. Use at your
-        own risk for non-production workloads until we announce general
-        availability.
+        KitsuneOS has not undergone an independent security review. Evaluate
+        suitability for your workloads carefully and contact us for enterprise
+        requirements.
       </p>
 
       <h2>Changes</h2>

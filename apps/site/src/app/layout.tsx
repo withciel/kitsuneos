@@ -42,7 +42,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                 Sign in
               </a>
               <a className="site-cta" href={signUpUrl}>
-                Get early access
+                Start free
               </a>
             </nav>
           </header>

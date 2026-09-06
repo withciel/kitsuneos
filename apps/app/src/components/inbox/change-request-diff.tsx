@@ -19,9 +19,29 @@ export interface DiffOperation {
 
 function renderValue(value: unknown): string {
   if (value === undefined) return '(empty)';
-  if (value === null) return 'null';
-  if (typeof value === 'string') return value;
+  if (value === null) return '—';
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (typeof value === 'string') return value === '' ? '(empty)' : value;
+  if (typeof value === 'number') return String(value);
   return JSON.stringify(value);
+}
+
+function opLabel(op: string): string {
+  switch (op) {
+    case 'insert':
+      return 'Create page';
+    case 'update':
+      return 'Update field';
+    case 'delete':
+      return 'Delete page';
+    default:
+      return op;
+  }
+}
+
+function shortId(id: string | null | undefined): string {
+  if (!id) return 'new page';
+  return id.length > 8 ? `${id.slice(0, 8)}…` : id;
 }
 
 export function ChangeRequestDiff({
@@ -48,13 +68,14 @@ export function ChangeRequestDiff({
                   href={group.href}
                   className="font-medium text-primary underline-offset-4 hover:underline"
                 >
-                  {group.recordId?.slice(0, 8) ?? 'new page'}
+                  {shortId(group.recordId)}
                 </Link>
               ) : (
                 <span className="font-medium">New page</span>
               )}
               <span className="text-xs text-muted-foreground">
-                {group.ops.length} {group.ops.length === 1 ? 'op' : 'ops'}
+                {group.ops.length}{' '}
+                {group.ops.length === 1 ? 'change' : 'changes'}
               </span>
             </li>
           ))}
@@ -70,7 +91,7 @@ export function ChangeRequestDiff({
                 href={group.href}
                 className="text-sm font-semibold text-primary underline-offset-4 hover:underline"
               >
-                Page {group.recordId?.slice(0, 8)}
+                Page {shortId(group.recordId)}
               </Link>
             ) : (
               <span className="text-sm font-semibold">New page</span>
@@ -83,23 +104,26 @@ export function ChangeRequestDiff({
                 className="rounded-md border border-border bg-card p-3"
               >
                 <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{op.op}</Badge>
+                  <Badge variant="outline">{opLabel(op.op)}</Badge>
                   {op.fieldName ? (
-                    <span className="font-mono text-xs">{op.fieldName}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Field:{' '}
+                      <span className="text-foreground">{op.fieldName}</span>
+                    </span>
                   ) : null}
                 </div>
-                <div className="grid gap-2 text-xs sm:grid-cols-2">
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
                   <div>
-                    <p className="mb-1 text-muted-foreground">Before</p>
-                    <pre className="overflow-auto rounded bg-muted/50 p-2 font-mono">
+                    <p className="mb-1 text-xs text-muted-foreground">Before</p>
+                    <div className="overflow-auto rounded bg-muted/50 p-2 whitespace-pre-wrap">
                       {renderValue(op.before)}
-                    </pre>
+                    </div>
                   </div>
                   <div>
-                    <p className="mb-1 text-muted-foreground">After</p>
-                    <pre className="overflow-auto rounded bg-muted/50 p-2 font-mono">
+                    <p className="mb-1 text-xs text-muted-foreground">After</p>
+                    <div className="overflow-auto rounded bg-muted/50 p-2 whitespace-pre-wrap">
                       {renderValue(op.newValue)}
-                    </pre>
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 flex gap-2">

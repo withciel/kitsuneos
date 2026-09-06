@@ -4,7 +4,7 @@ import { pageMetadata } from '@/lib/site-metadata';
 
 export const metadata: Metadata = pageMetadata(
   'Refund Policy',
-  'Refund terms for paid KitsuneOS subscriptions during early access.',
+  'Refund terms for paid KitsuneOS Pro subscriptions.',
   '/refund/',
 );
 

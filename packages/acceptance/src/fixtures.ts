@@ -4,6 +4,7 @@ import {
   DEFAULT_CONFIG,
   KitsuneEngine,
   migrate,
+  upsertSubscription,
 } from '@kitsuneos/core';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -37,10 +38,21 @@ export interface Fixture {
 
 export async function createStandardFixture(
   engine: KitsuneEngine,
+  options?: { plan?: 'free' | 'pro' },
 ): Promise<Fixture> {
   const { workspaceId, schemaName } = await engine.createWorkspace(
     `test-${uuidv4().slice(0, 8)}`,
   );
+  // Suite fixtures default to Pro so free-tier agent/collection caps do not
+  // interfere with authorization and query coverage. Pass plan: 'free' when
+  // testing plan limits themselves.
+  if (options?.plan !== 'free') {
+    await upsertSubscription(engine.ownerPool, {
+      workspaceId,
+      dodoSubscriptionId: `sub_fixture_${workspaceId}`,
+      status: 'active',
+    });
+  }
   const adminId = await engine.createPrincipal(workspaceId, 'human', 'Admin');
   const agentId = await engine.createPrincipal(workspaceId, 'agent', 'Agent');
   const readerId = await engine.createPrincipal(workspaceId, 'human', 'Reader');

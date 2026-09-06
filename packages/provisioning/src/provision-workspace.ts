@@ -1,10 +1,16 @@
 import type { KitsuneEngine } from '@kitsuneos/core';
 import {
+  assertPlanLimit,
   claimInvitesForUser,
   createApiKey,
   ensureOwnerMembership,
 } from '@kitsuneos/core';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  defineStarterCollections,
+  grantAssistantOnStarters,
+  grantOwnerOnStarters,
+} from './seed-collections.js';
 
 export interface ProvisionUserInput {
   workosId: string;
@@ -80,57 +86,12 @@ export async function provisionUserWorkspace(
       );
       created.push('principal');
 
-      const accountsId = await engine.defineCollection(workspaceId, {
-        name: 'accounts',
-        fields: [
-          { name: 'name', type: 'text', nullable: false },
-          { name: 'industry', type: 'text' },
-        ],
-      });
+      const ids = await defineStarterCollections(engine, workspaceId);
       created.push('collection:accounts');
-
-      const contactsId = await engine.defineCollection(workspaceId, {
-        name: 'contacts',
-        fields: [
-          {
-            name: 'account_id',
-            type: 'relation',
-            relationTarget: 'accounts',
-            nullable: false,
-          },
-          { name: 'name', type: 'text', nullable: false },
-          { name: 'email', type: 'text' },
-        ],
-      });
       created.push('collection:contacts');
-
-      const opportunitiesId = await engine.defineCollection(workspaceId, {
-        name: 'opportunities',
-        fields: [
-          {
-            name: 'account_id',
-            type: 'relation',
-            relationTarget: 'accounts',
-            nullable: false,
-          },
-          { name: 'name', type: 'text', nullable: false },
-          { name: 'amount', type: 'number' },
-          {
-            name: 'stage',
-            type: 'enum',
-            nullable: false,
-            enumValues: [
-              'prospecting',
-              'negotiation',
-              'closed_won',
-              'closed_lost',
-            ],
-            indexed: true,
-          },
-          { name: 'next_step', type: 'prose' },
-        ],
-      });
       created.push('collection:opportunities');
+      created.push('collection:notes');
+      created.push('collection:posts');
 
       const assistantId = await engine.createPrincipal(
         workspaceId,
@@ -139,33 +100,21 @@ export async function provisionUserWorkspace(
       );
       created.push('principal:assistant');
 
-      for (const [collectionId, collectionName] of [
-        [accountsId, 'accounts'],
-        [contactsId, 'contacts'],
-        [opportunitiesId, 'opportunities'],
-      ] as const) {
-        await engine.createGrant(
-          workspaceId,
-          principalId,
-          collectionId,
-          'admin',
-          null,
-          null,
-          { actorId: principalId },
-        );
-        created.push(`grant:owner:${collectionName}`);
-      }
-
-      await engine.createGrant(
+      await grantOwnerOnStarters(
+        engine,
         workspaceId,
-        assistantId,
-        opportunitiesId,
-        'propose',
-        ['name', 'stage', 'next_step'],
-        null,
-        { actorId: principalId },
+        principalId,
+        ids,
+        created,
       );
-      created.push('grant:assistant:opportunities');
+      await grantAssistantOnStarters(
+        engine,
+        workspaceId,
+        principalId,
+        assistantId,
+        ids,
+      );
+      created.push('grant:assistant:collections');
 
       const accountId = uuidv4();
       await engine.directWrite(
@@ -184,7 +133,8 @@ export async function provisionUserWorkspace(
       });
       created.push('seed');
 
-      const apiKey = await createApiKey(engine.ownerPool, principalId);
+      // Connect keys belong to the assistant agent (propose-only), not the human.
+      const apiKey = await createApiKey(engine.ownerPool, assistantId);
       created.push('api_key');
 
       // Persist one-time reveal: /api/schema often provisions first and drops
@@ -238,3 +188,134 @@ export async function provisionUserWorkspace(
     lockClient.release();
   }
 }
+
+export interface CreateAdditionalWorkspaceInput {
+  userId: string;
+  email: string;
+  name?: string;
+  /** When true (default), set users.workspace_id to the new workspace. */
+  activate?: boolean;
+}
+
+export interface CreateAdditionalWorkspaceResult {
+  workspaceId: string;
+  principalId: string;
+  schemaName: string;
+  workspaceName: string;
+  apiKeyPlaintext: string | null;
+  created: string[];
+}
+
+/**
+ * Create another workspace for an existing user (multi-workspace accounts).
+ * Seeds the same starter databases + assistant as first-time provision.
+ */
+export async function createAdditionalWorkspaceForUser(
+  engine: KitsuneEngine,
+  input: CreateAdditionalWorkspaceInput,
+): Promise<CreateAdditionalWorkspaceResult> {
+  await assertPlanLimit(engine.ownerPool, {
+    dimension: 'workspacesPerUser',
+    userId: input.userId,
+  });
+
+  const created: string[] = [];
+  const activate = input.activate !== false;
+  const displayName =
+    input.name?.trim() || `Workspace ${new Date().toISOString().slice(0, 10)}`;
+
+  const slug = `ws-${uuidv4().replace(/-/g, '').slice(0, 16)}`;
+  const { workspaceId, schemaName } = await engine.createWorkspace(slug);
+  created.push('workspace');
+
+  await engine.ownerPool.query(
+    `UPDATE kitsune.workspaces SET name = $2 WHERE id = $1`,
+    [workspaceId, displayName],
+  );
+
+  const principalId = await engine.createPrincipal(
+    workspaceId,
+    'human',
+    input.email,
+  );
+  created.push('principal');
+
+  const ids = await defineStarterCollections(engine, workspaceId);
+  created.push('collection:accounts');
+  created.push('collection:contacts');
+  created.push('collection:opportunities');
+  created.push('collection:notes');
+  created.push('collection:posts');
+
+  const assistantId = await engine.createPrincipal(
+    workspaceId,
+    'agent',
+    'assistant',
+  );
+  created.push('principal:assistant');
+
+  await grantOwnerOnStarters(engine, workspaceId, principalId, ids, created);
+  await grantAssistantOnStarters(
+    engine,
+    workspaceId,
+    principalId,
+    assistantId,
+    ids,
+  );
+  created.push('grant:assistant:collections');
+
+  const accountId = uuidv4();
+  await engine.directWrite(
+    workspaceId,
+    principalId,
+    'accounts',
+    { name: 'Starter Account', industry: 'software' },
+    { recordId: accountId },
+  );
+  await engine.directWrite(workspaceId, principalId, 'opportunities', {
+    account_id: accountId,
+    name: 'Starter Opportunity',
+    amount: 1000,
+    stage: 'prospecting',
+    next_step: 'Review KitsuneOS docs',
+  });
+  created.push('seed');
+
+  const apiKey = await createApiKey(engine.ownerPool, assistantId);
+  created.push('api_key');
+
+  await ensureOwnerMembership(engine.ownerPool, {
+    userId: input.userId,
+    workspaceId,
+    principalId,
+    email: input.email,
+  });
+  created.push('membership:owner');
+
+  if (activate) {
+    await engine.ownerPool.query(
+      `UPDATE kitsune.users
+          SET workspace_id = $2,
+              principal_id = $3,
+              pending_api_key = $4
+        WHERE id = $1`,
+      [input.userId, workspaceId, principalId, apiKey.plaintext],
+    );
+    created.push('activated');
+  }
+
+  return {
+    workspaceId,
+    principalId,
+    schemaName,
+    workspaceName: displayName,
+    apiKeyPlaintext: apiKey.plaintext,
+    created,
+  };
+}
+
+export {
+  ensureNotesCollection,
+  NOTES_COLLECTION,
+  NOTES_DEFINITION,
+} from './seed-collections.js';
