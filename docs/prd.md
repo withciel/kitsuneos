@@ -41,7 +41,7 @@ The workaround is that every team building an agent-facing application reimpleme
 
 Two equal primaries. Both operate the same workspace, through different surfaces, under the same grants.
 
-**Primary — the human operator.** Uses the hosted console (`apps/app`) as a workspace: collections in a sidebar, table views, record create/edit, Inbox for change requests, Settings for schema and grants. May be a founder, operator, or reviewer on a small team. This person *is* a v1 user of KitsuneOS; they are not hidden behind a customer application.
+**Primary — the human operator.** Uses the hosted console (`apps/app`) as a workspace: collections in a sidebar, table views, record create/edit, Inbox for change requests, Settings for account/people/access/AI, and database properties on the open database. May be a founder, operator, or reviewer on a small team. This person *is* a v1 user of KitsuneOS; they are not hidden behind a customer application.
 
 **Primary — the developer / agent operator.** Small team or solo connecting agents via MCP, GraphQL, REST, or the CLI. Chooses a backend at project start. Currently reaches for Supabase, Convex, or plain Postgres. Grants agents field- and row-scoped access; reviews proposals in the same console the human operator uses.
 
@@ -74,7 +74,7 @@ G6 does not require every human write to go through Inbox. Humans with `write` o
 
 **Not a vertical CRM (or any other packaged line-of-business app).** Starter collections (accounts, contacts, opportunities) exist so the hosted console is usable on day one. They are a demo workspace, not a product we sell. *Why:* see the tripwire below.
 
-**The hosted console is the human product.** Collections as a sidebar, table views, record peek create/update, Inbox for change requests, Settings for schema/grants/workspace. v1 is table view only — no board, calendar, gallery, or list database views. *Why:* humans and agents are equal users of the same workspace; a schema-only admin panel would leave operators in another tool.
+**The hosted console is the human product.** Collections as a sidebar, table views, record peek create/update, Inbox for change requests, Settings for account/people/teams/access/AI connections, database properties on the open database. v1 is table view only — no board, calendar, gallery, or list database views. *Why:* humans and agents are equal users of the same workspace; a schema-only admin panel would leave operators in another tool.
 
 **No content delivery, rendering, or CDN.** *Why:* that is the headless CMS product, which is one application someone could build on KitsuneOS rather than something KitsuneOS is.
 
@@ -98,7 +98,7 @@ We seed a small CRM-shaped workspace to prove the platform: accounts, contacts, 
 2. As an operator, I want a table view of a database I can search and hide columns on so that I can scan pages and open any row as a full page.
 3. As an operator with `write` or `admin`, I want to create and update a page (full page surface; quick-edit optional) so that routine human edits do not require a change-request queue.
 4. As an operator, I want Inbox to list open change requests as PR-style reviews — including proposals that touch multiple pages across databases — so that I can approve or reject agent work without leaving the workspace.
-5. As an operator, I want Settings to add a property or create a database so that the schema lives next to the data, not in a separate admin app.
+5. As an operator, I want to add a property on the open database (and create a database from the sidebar/home) so that the schema lives next to the data, not in Settings.
 
 > **UX direction (2026-09-05):** Pages + change requests — see `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md` and plan `docs/superpowers/plans/2026-09-05-pages-and-change-requests.md`. Engine terms remain record / collection / change set.
 
@@ -217,14 +217,15 @@ Every read, write, denied attempt, grant change, and schema change, by principal
 - [x] Denied attempts included
 
 **R8. Console and CLI**
-The hosted console is a human workspace, not a set of developer tool pages. Sidebar lists databases (collections); opening one shows a table of pages. Opening a row lands on a full **page** (`/p/[pageId]`). Inbox is the **change-request** (PR) surface and supports proposals that touch multiple pages across databases. Settings owns schema, grants, and workspace metadata. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`. Query, audit, and history remain engine/API surfaces even when they are not top-level nav. Direction: `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`.
+The hosted console is a human workspace, not a set of developer tool pages. Sidebar lists databases (collections); opening one shows a table of pages. Opening a row lands on a full **page** (`/p/[pageId]`). Inbox is the **change-request** (PR) surface and supports proposals that touch multiple pages across databases. Settings owns account, people, teams, access, and AI connections; database properties edit on the open database. CLI: `init`, `schema push`, `schema diff`, `query`, `changesets`, `export`. Query, audit, and history remain engine/API surfaces even when they are not top-level nav. Direction: `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`.
 
 - [x] Collection table views (`/c/[collection]`) with column visibility and local search
 - [x] Record peek: create (`directWrite`) and update (auto-applied change set for `write`/`admin`) *(peek remains as New page / optional quick path; full page is primary)*
 - [x] Full page route `/p/[pageId]` as primary open surface (title, body, properties)
 - [x] Inbox lists open change sets; detail shows field-level diffs, partial approve/reject, apply
 - [x] Inbox detail groups diffs by page for multi-page / multi-collection change requests
-- [x] Settings: schema editor, grants, workspace
+- [x] Settings: Account, People, Teams, Access, Connect AI
+- [x] Database properties editor on `/c/[collection]` (create database from sidebar/home)
 - [x] `export` produces the full workspace as portable data plus schema (grant-filtered for non-admins)
 
 Do not claim Playwright coverage. Engine-backed `console.test.ts` still covers schema mask, audit not-found, and partial review apply.

@@ -1,10 +1,11 @@
 'use client';
 
 import type { JsonValue } from '@kitsuneos/core';
-import { Columns3, Plus, Search } from 'lucide-react';
+import { Columns3, Plus, Search, SlidersHorizontal } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DatabasePropertiesSheet } from '@/components/collection/database-properties-sheet';
 import {
   cellText,
   draftToPayload,
@@ -152,6 +153,7 @@ export function CollectionView({ collection }: { collection: string }) {
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [propertiesOpen, setPropertiesOpen] = useState(false);
   const collectionRef = useRef(collection);
   collectionRef.current = collection;
 
@@ -349,6 +351,14 @@ export function CollectionView({ collection }: { collection: string }) {
             })}
           </DropdownMenuContent>
         </DropdownMenu>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPropertiesOpen(true)}
+        >
+          <SlidersHorizontal />
+          Properties
+        </Button>
         <Button size="sm" onClick={openCreate}>
           <Plus />
           New page
@@ -484,6 +494,14 @@ export function CollectionView({ collection }: { collection: string }) {
           </SheetFooter>
         </SheetContent>
       </Sheet>
+      <DatabasePropertiesSheet
+        collection={collection}
+        open={propertiesOpen}
+        onOpenChange={setPropertiesOpen}
+        onChanged={() => {
+          void reload();
+        }}
+      />
     </div>
   );
 }

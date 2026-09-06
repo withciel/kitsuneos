@@ -59,6 +59,15 @@ import {
   type MergeQueueStatus,
 } from './merge/queue.js';
 import {
+  addTeamMember,
+  createTeamRow,
+  inviteWorkspaceMember,
+  listMembershipsForUser,
+  listMembershipsForWorkspace,
+  listTeams as listTeamRows,
+  removeTeamMember,
+} from './org/memberships.js';
+import {
   type SweepRevisionsResult,
   sweepExpiredRevisions,
 } from './revisions/sweep.js';
@@ -106,6 +115,9 @@ import type {
   RevisionSummary,
   RollupDefinition,
   SchemaChangeInput,
+  TeamSummary,
+  WorkspaceMembership,
+  WorkspaceRole,
 } from './types.js';
 import {
   CAPABILITY_ORDER,
@@ -533,7 +545,7 @@ export class KitsuneEngine {
 
   async createPrincipal(
     workspaceId: string,
-    kind: 'human' | 'agent' | 'service',
+    kind: 'human' | 'agent' | 'service' | 'team',
     displayName: string,
     options?: {
       principalId?: string;
@@ -4513,6 +4525,117 @@ export class KitsuneEngine {
           );
         }
       }
+    });
+  }
+
+  async listWorkspaceMemberships(
+    workspaceId: string,
+  ): Promise<WorkspaceMembership[]> {
+    return listMembershipsForWorkspace(this.ownerPool, workspaceId);
+  }
+
+  async listUserMemberships(userId: string): Promise<WorkspaceMembership[]> {
+    return listMembershipsForUser(this.ownerPool, userId);
+  }
+
+  async invitePerson(
+    workspaceId: string,
+    actorUserId: string,
+    input: { email: string; role: WorkspaceRole; displayName?: string },
+  ): Promise<{ membershipId: string; principalId: string }> {
+    const principalId = await this.createPrincipal(
+      workspaceId,
+      'human',
+      input.displayName?.trim() || input.email.trim(),
+    );
+    try {
+      return await inviteWorkspaceMember(this.ownerPool, {
+        workspaceId,
+        email: input.email,
+        role: input.role,
+        principalId,
+        actorUserId,
+      });
+    } catch (error) {
+      await this.ownerPool.query(
+        `UPDATE kitsune.principals SET disabled_at = now() WHERE id = $1`,
+        [principalId],
+      );
+      throw error;
+    }
+  }
+
+  async createTeam(
+    workspaceId: string,
+    actorPrincipalId: string,
+    name: string,
+  ): Promise<TeamSummary> {
+    const admin = await this.hasAdminOnAnyCollection(
+      workspaceId,
+      actorPrincipalId,
+    );
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    const principalId = await this.createPrincipal(
+      workspaceId,
+      'team',
+      name.trim(),
+    );
+    try {
+      return await createTeamRow(this.ownerPool, {
+        workspaceId,
+        name,
+        principalId,
+      });
+    } catch (error) {
+      await this.ownerPool.query(
+        `UPDATE kitsune.principals SET disabled_at = now() WHERE id = $1`,
+        [principalId],
+      );
+      throw error;
+    }
+  }
+
+  async listTeams(workspaceId: string): Promise<TeamSummary[]> {
+    return listTeamRows(this.ownerPool, workspaceId);
+  }
+
+  async addPersonToTeam(
+    workspaceId: string,
+    actorPrincipalId: string,
+    input: { teamId: string; principalId: string },
+  ): Promise<void> {
+    const admin = await this.hasAdminOnAnyCollection(
+      workspaceId,
+      actorPrincipalId,
+    );
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    await addTeamMember(this.ownerPool, {
+      workspaceId,
+      teamId: input.teamId,
+      principalId: input.principalId,
+    });
+  }
+
+  async removePersonFromTeam(
+    workspaceId: string,
+    actorPrincipalId: string,
+    input: { teamId: string; principalId: string },
+  ): Promise<void> {
+    const admin = await this.hasAdminOnAnyCollection(
+      workspaceId,
+      actorPrincipalId,
+    );
+    if (!admin) {
+      throw new KitsuneError('Not found', 'not_found');
+    }
+    await removeTeamMember(this.ownerPool, {
+      workspaceId,
+      teamId: input.teamId,
+      principalId: input.principalId,
     });
   }
 }

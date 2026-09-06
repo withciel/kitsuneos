@@ -4,6 +4,7 @@ import { Bell, Database, Settings, Table2 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
+import { CreateDatabaseDialog } from '@/components/collection/create-database-dialog';
 import { Badge } from '@/components/ui/badge';
 import {
   Sidebar,
@@ -83,12 +84,14 @@ export function AppSidebar() {
             <SidebarMenu>
               {collections.length === 0 ? (
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild tooltip="Create a database">
-                    <Link href="/settings/schema">
-                      <Table2 />
-                      <span>Create a database</span>
-                    </Link>
-                  </SidebarMenuButton>
+                  <CreateDatabaseDialog
+                    trigger={
+                      <SidebarMenuButton tooltip="Create a database">
+                        <Table2 />
+                        <span>Create a database</span>
+                      </SidebarMenuButton>
+                    }
+                  />
                 </SidebarMenuItem>
               ) : (
                 collections.map((collection) => {

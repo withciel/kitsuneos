@@ -1,7 +1,7 @@
 # KitsuneOS Console — Notion-like Workspace UI
 
 **Date:** 2026-09-03  
-**Status:** Shipped for IA (sidebar / table / peek / inbox). **Partially superseded (2026-09-05)** for product ontology: peek-as-primary record surface → full **pages** + PR-shaped multi-page change requests. See `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`. Sidebar + table + settings IA from this doc still apply.  
+**Status:** Shipped for IA (sidebar / table / peek / inbox). **Partially superseded (2026-09-05)** for product ontology: peek-as-primary record surface → full **pages** + PR-shaped multi-page change requests. See `docs/superpowers/specs/2026-09-05-pages-and-change-requests-design.md`. Sidebar + table IA from this doc still apply. **Settings IA updated 2026-09-06:** schema/properties edit on the database (`/c/[collection]`); Settings is Account · People · Teams · Access · Connect AI only.  
 **Scope:** `apps/app` console + shared `packages/ui` (shadcn monorepo). Landing (`apps/site`) is out of scope.
 
 ## Problem
@@ -14,7 +14,7 @@ We want a workspace UI closer to **Notion databases + GitBook density + GitHub P
 
 1. Sidebar navigation is **collections**, not tool routes.
 2. Opening a collection shows a **customizable table view** of records.
-3. **Settings** owns schema customization (and related workspace controls).
+3. **Settings** owns account, people, teams, access, and AI connections — not pages or databases.
 4. **Inbox / Notifications** is the change-request surface (GitHub PR analogue).
 5. Shared design system via **shadcn in a monorepo layout** (`packages/ui`).
 6. Visual language: near-black surfaces, orange accent, quiet chrome.
@@ -53,10 +53,14 @@ We want a workspace UI closer to **Notion databases + GitBook density + GitHub P
 | `/c/[collection]` | Collection table view |
 | `/inbox` | Change-request inbox |
 | `/inbox/[changeSetId]` | Review detail for one change set |
-| `/settings` | Schema, grants, workspace/API key |
-| `/settings/schema` | Default settings landing (schema) |
-| `/settings/grants` | Principals & grants |
-| `/settings/workspace` | API key / workspace meta |
+| `/settings` | Redirects to Account |
+| `/settings/workspace` | Account (default settings landing) |
+| `/settings/people` | People |
+| `/settings/teams` | Teams |
+| `/settings/access` | Access (who can use which database) |
+| `/settings/connect` | Connect AI |
+| `/c/[collection]` Properties | Edit database properties on the open database |
+| Sidebar / home | Create database |
 
 **Removed as top-level nav:** `/schema`, `/query`, `/review`, `/grants`, `/audit`, `/history` (and home tool-link grid). Existing API routes remain. Advanced/debug query/audit/history may return later under Settings → Advanced; not in v1 chrome.
 
@@ -140,19 +144,20 @@ Subtle only: sidebar active state, sheet open/close, toast. No decorative motion
 
 ### 5. Settings
 
-**Schema**
+Settings is workspace chrome only (Account, People, Teams, Access, Connect AI). Database properties and create-database live on the database surface / sidebar — not in Settings.
 
-- List collections; select one to edit fields
-- Add field / drop field / set indexed — maps to existing schema evolution APIs (`addField`, `dropField`, `setIndexed`)
-- Create collection entry point (defineCollection)
+**Database properties**
+
+- Edit properties on `/c/[collection]` through the Properties sheet (maps to schema evolution APIs: `addField`, `dropField`)
+- Create databases from the sidebar or home empty state
 - UX patterned after Notion property config (type picker, name), not a raw JSON form
 
-**Grants**
+**Access**
 
 - Table of grants + create/revoke (existing grants APIs)
-- Secondary to schema; still reachable
+- Who can use which database; reachable from Settings → Access
 
-**Workspace**
+**Account**
 
 - Show workspace id; API key reveal when provisioned (existing `/api/me` behavior)
 
@@ -218,7 +223,7 @@ No new control-plane tables required for v1 UI persistence.
 
 - Keep acceptance coverage for engine/review/grants behavior.
 - Add console UI acceptance or Playwright smoke later if present in repo; minimum: API-backed flows still pass (`console.test.ts` may need route updates).
-- Manual walkthrough: sidebar collections → table → peek → settings schema → inbox review.
+- Manual walkthrough: sidebar databases → table → Properties → page → inbox review → Settings (Account/People/Access).
 
 ## Phased delivery (for planning)
 
@@ -226,7 +231,7 @@ No new control-plane tables required for v1 UI persistence.
 2. **Collection table:** list/query, column visibility, filter/sort, local view state.
 3. **Record peek + writes.**
 4. **Inbox** list + detail (ActionConsent restyle).
-5. **Settings** schema + grants + workspace; remove old nav pages.
+5. **Settings** Account/People/Teams/Access/Connect AI; properties on the database; remove old nav pages.
 
 ## Open decisions (resolved)
 
@@ -237,7 +242,7 @@ No new control-plane tables required for v1 UI persistence.
 | Theme | Dark only, black + orange |
 | Primary nav | Collections |
 | Views v1 | Table only |
-| Schema home | Settings |
+| Database properties | `/c/[collection]` Properties sheet |
 | Change requests | Inbox (PR-style) |
 | Landing | Out of scope for now |
 | View persistence v1 | `localStorage` per user/collection |
@@ -246,6 +251,6 @@ No new control-plane tables required for v1 UI persistence.
 
 - Operator can browse records by collection without visiting tool pages.
 - Operator can customize visible columns / filter / sort on a table view.
-- Operator can edit schema from Settings.
+- Operator can edit database properties from the open database.
 - Operator can process agent proposals from Inbox like a PR queue.
 - UI reads as a dark Notion-like workspace with orange accent, implemented with shadcn components (not hand-rolled BEM panels).

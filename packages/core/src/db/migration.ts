@@ -336,4 +336,76 @@ CREATE UNIQUE INDEX IF NOT EXISTS attachments_dedupe_idx
   ON kitsune.attachments (workspace_id, collection_id, record_id, field_name, content_hash);
 
 GRANT SELECT, INSERT, UPDATE ON kitsune.attachments TO kitsune_app;
+
+-- ---------------------------------------------------------------------------
+-- Accounts, workspace memberships, and teams
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE kitsune.workspaces
+  ADD COLUMN IF NOT EXISTS name text;
+
+UPDATE kitsune.workspaces
+   SET name = slug
+ WHERE name IS NULL;
+
+-- Team principals share the principals table so grants stay principal-scoped.
+ALTER TABLE kitsune.principals DROP CONSTRAINT IF EXISTS principals_kind_check;
+ALTER TABLE kitsune.principals DROP CONSTRAINT IF EXISTS kitsune_principals_kind_check;
+ALTER TABLE kitsune.principals
+  ADD CONSTRAINT principals_kind_check
+  CHECK (kind IN ('human', 'agent', 'service', 'team'));
+
+-- users = login account (WorkOS). workspace_id/principal_id remain the
+-- last-active workspace pointers (nullable after backfill).
+CREATE TABLE IF NOT EXISTS kitsune.workspace_memberships (
+  id            uuid PRIMARY KEY,
+  workspace_id  uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  principal_id  uuid NOT NULL REFERENCES kitsune.principals(id),
+  user_id       uuid REFERENCES kitsune.users(id),
+  email         text NOT NULL,
+  role          text NOT NULL CHECK (role IN ('owner', 'admin', 'member')),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (principal_id),
+  UNIQUE (workspace_id, email)
+);
+CREATE INDEX IF NOT EXISTS workspace_memberships_user_idx
+  ON kitsune.workspace_memberships (user_id)
+  WHERE user_id IS NOT NULL;
+
+INSERT INTO kitsune.workspace_memberships
+  (id, workspace_id, principal_id, user_id, email, role)
+SELECT u.id, u.workspace_id, u.principal_id, u.id, u.email, 'owner'
+  FROM kitsune.users u
+ WHERE u.workspace_id IS NOT NULL
+   AND u.principal_id IS NOT NULL
+   AND NOT EXISTS (
+     SELECT 1 FROM kitsune.workspace_memberships m
+      WHERE m.workspace_id = u.workspace_id AND m.email = u.email
+   );
+
+ALTER TABLE kitsune.users ALTER COLUMN workspace_id DROP NOT NULL;
+ALTER TABLE kitsune.users ALTER COLUMN principal_id DROP NOT NULL;
+
+CREATE TABLE IF NOT EXISTS kitsune.teams (
+  id            uuid PRIMARY KEY,
+  workspace_id  uuid NOT NULL REFERENCES kitsune.workspaces(id),
+  name          text NOT NULL,
+  principal_id  uuid NOT NULL REFERENCES kitsune.principals(id),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (workspace_id, name),
+  UNIQUE (principal_id)
+);
+
+CREATE TABLE IF NOT EXISTS kitsune.team_members (
+  team_id       uuid NOT NULL REFERENCES kitsune.teams(id) ON DELETE CASCADE,
+  principal_id  uuid NOT NULL REFERENCES kitsune.principals(id),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (team_id, principal_id)
+);
+CREATE INDEX IF NOT EXISTS team_members_principal_idx
+  ON kitsune.team_members (principal_id);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.workspace_memberships TO kitsune_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.teams TO kitsune_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.team_members TO kitsune_app;
 `;

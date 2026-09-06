@@ -11,7 +11,10 @@
       "**",
       "!**/dist",
       "!**/infra/bin",
-      "!**/apps/app/src/components/ui/**"
+      "!**/apps/app/src/components/ui/**",
+      "!**/agent/**",
+      "!**/skills/**",
+      "!**/.agents/**"
     ]
   },
   "formatter": {

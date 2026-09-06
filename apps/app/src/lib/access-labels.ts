@@ -50,5 +50,6 @@ export function accessDescription(capability: string): string {
 export function personKindLabel(kind: string): string {
   if (kind === 'agent') return 'AI';
   if (kind === 'human') return 'Person';
+  if (kind === 'team') return 'Team';
   return kind;
 }

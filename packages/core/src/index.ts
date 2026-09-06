@@ -75,6 +75,17 @@ export type {
   MergeQueueStatus,
 } from './merge/queue.js';
 export {
+  addTeamMember,
+  claimInvitesForUser,
+  createTeamRow,
+  ensureOwnerMembership,
+  inviteWorkspaceMember,
+  listMembershipsForUser,
+  listMembershipsForWorkspace,
+  listTeams,
+  removeTeamMember,
+} from './org/memberships.js';
+export {
   type SweepCollectionResult,
   type SweepRevisionsResult,
   sweepExpiredRevisions,

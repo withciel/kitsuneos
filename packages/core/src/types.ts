@@ -25,7 +25,27 @@ export type FieldType =
   | 'relation'
   | 'prose';
 
-export type PrincipalKind = 'human' | 'agent' | 'service';
+export type PrincipalKind = 'human' | 'agent' | 'service' | 'team';
+
+export type WorkspaceRole = 'owner' | 'admin' | 'member';
+
+export interface WorkspaceMembership {
+  id: string;
+  workspaceId: string;
+  workspaceName: string;
+  principalId: string;
+  userId: string | null;
+  email: string;
+  role: WorkspaceRole;
+}
+
+export interface TeamSummary {
+  id: string;
+  workspaceId: string;
+  name: string;
+  principalId: string;
+  memberPrincipalIds: string[];
+}
 
 export type ChangeSetStatus =
   | 'open'

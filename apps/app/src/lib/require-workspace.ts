@@ -1,5 +1,9 @@
-import type { KitsuneEngine } from '@kitsuneos/core';
-import { KitsuneError } from '@kitsuneos/core';
+import type { KitsuneEngine, WorkspaceMembership } from '@kitsuneos/core';
+import {
+  claimInvitesForUser,
+  KitsuneError,
+  listMembershipsForUser,
+} from '@kitsuneos/core';
 import { provisionUserWorkspace } from '@kitsuneos/provisioning';
 import { headers } from 'next/headers';
 
@@ -23,16 +27,23 @@ function getEngine(): KitsuneEngine {
   return sharedEngine;
 }
 
-async function lookupUser(
+async function lookupUserRow(
   engine: KitsuneEngine,
   workosId: string,
-): Promise<WorkspaceContext | null> {
+): Promise<{
+  userId: string;
+  email: string;
+  workspaceId: string | null;
+  principalId: string | null;
+} | null> {
   const row = await engine.ownerPool.query<{
     id: string;
-    workspace_id: string;
-    principal_id: string;
+    email: string;
+    workspace_id: string | null;
+    principal_id: string | null;
   }>(
-    `SELECT id, workspace_id, principal_id FROM kitsune.users WHERE workos_id = $1`,
+    `SELECT id, email, workspace_id, principal_id
+       FROM kitsune.users WHERE workos_id = $1`,
     [workosId],
   );
   if (!row.rows[0]) {
@@ -40,8 +51,68 @@ async function lookupUser(
   }
   return {
     userId: row.rows[0].id,
+    email: row.rows[0].email,
     workspaceId: row.rows[0].workspace_id,
     principalId: row.rows[0].principal_id,
+  };
+}
+
+function pickMembership(
+  memberships: WorkspaceMembership[],
+  preferredWorkspaceId: string | null,
+): WorkspaceMembership {
+  if (memberships.length === 0) {
+    throw new KitsuneError('No workspace membership found', 'forbidden');
+  }
+  if (preferredWorkspaceId) {
+    const preferred = memberships.find(
+      (m) => m.workspaceId === preferredWorkspaceId,
+    );
+    if (preferred) {
+      return preferred;
+    }
+  }
+  return memberships[0]!;
+}
+
+async function resolveMembershipContext(
+  engine: KitsuneEngine,
+  user: {
+    userId: string;
+    email: string;
+    workspaceId: string | null;
+    principalId: string | null;
+  },
+  apiKeyPlaintext?: string,
+): Promise<WorkspaceContext> {
+  await claimInvitesForUser(engine.ownerPool, {
+    userId: user.userId,
+    email: user.email,
+  });
+
+  const memberships = await listMembershipsForUser(
+    engine.ownerPool,
+    user.userId,
+  );
+  const active = pickMembership(memberships, user.workspaceId);
+
+  if (
+    active.workspaceId !== user.workspaceId ||
+    active.principalId !== user.principalId
+  ) {
+    await engine.ownerPool.query(
+      `UPDATE kitsune.users
+          SET workspace_id = $2, principal_id = $3
+        WHERE id = $1`,
+      [user.userId, active.workspaceId, active.principalId],
+    );
+  }
+
+  return {
+    userId: user.userId,
+    workspaceId: active.workspaceId,
+    principalId: active.principalId,
+    apiKeyPlaintext,
   };
 }
 
@@ -51,8 +122,9 @@ export async function requireWorkspace(): Promise<WorkspaceContext> {
   const testUser = headerStore.get('x-kitsune-test-user');
   if (testUser && process.env.KITSUNE_ALLOW_TEST_USER_HEADER === '1') {
     const engine = getEngine();
-    let ctx = await lookupUser(engine, testUser);
-    if (!ctx) {
+    let user = await lookupUserRow(engine, testUser);
+    let apiKeyPlaintext: string | undefined;
+    if (!user) {
       // Local demo / eval: provision on first request instead of requiring seed.
       const email =
         process.env.KITSUNE_DEMO_EMAIL?.trim() || `${testUser}@localhost`;
@@ -60,37 +132,40 @@ export async function requireWorkspace(): Promise<WorkspaceContext> {
         workosId: testUser,
         email,
       });
-      ctx = {
+      user = {
         userId: provisioned.userId,
+        email,
         workspaceId: provisioned.workspaceId,
         principalId: provisioned.principalId,
-        apiKeyPlaintext: provisioned.apiKeyPlaintext ?? undefined,
       };
+      apiKeyPlaintext = provisioned.apiKeyPlaintext ?? undefined;
     }
-    return ctx;
+    return resolveMembershipContext(engine, user, apiKeyPlaintext);
   }
 
   const { withAuth } = await import('@workos-inc/authkit-nextjs');
-  const { user } = await withAuth();
-  if (!user) {
+  const { user: authUser } = await withAuth();
+  if (!authUser) {
     throw new KitsuneError('Unauthorized', 'forbidden');
   }
 
   const engine = getEngine();
-  let ctx = await lookupUser(engine, user.id);
-  if (!ctx) {
+  let user = await lookupUserRow(engine, authUser.id);
+  let apiKeyPlaintext: string | undefined;
+  if (!user) {
     const provisioned = await provisionUserWorkspace(engine, {
-      workosId: user.id,
-      email: user.email,
+      workosId: authUser.id,
+      email: authUser.email,
     });
-    ctx = {
+    user = {
       userId: provisioned.userId,
+      email: authUser.email,
       workspaceId: provisioned.workspaceId,
       principalId: provisioned.principalId,
-      apiKeyPlaintext: provisioned.apiKeyPlaintext ?? undefined,
     };
+    apiKeyPlaintext = provisioned.apiKeyPlaintext ?? undefined;
   }
-  return ctx;
+  return resolveMembershipContext(engine, user, apiKeyPlaintext);
 }
 
 /** Read and clear the one-time API key reveal stored at provision time. */

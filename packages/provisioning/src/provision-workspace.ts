@@ -1,5 +1,9 @@
 import type { KitsuneEngine } from '@kitsuneos/core';
-import { createApiKey } from '@kitsuneos/core';
+import {
+  claimInvitesForUser,
+  createApiKey,
+  ensureOwnerMembership,
+} from '@kitsuneos/core';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface ProvisionUserInput {
@@ -199,6 +203,22 @@ export async function provisionUserWorkspace(
         ],
       );
       created.push('user');
+
+      await ensureOwnerMembership(engine.ownerPool, {
+        userId,
+        workspaceId,
+        principalId,
+        email: input.email,
+      });
+      created.push('membership:owner');
+
+      const claimed = await claimInvitesForUser(engine.ownerPool, {
+        userId,
+        email: input.email,
+      });
+      if (claimed > 0) {
+        created.push(`membership:claimed:${claimed}`);
+      }
 
       return {
         userId,

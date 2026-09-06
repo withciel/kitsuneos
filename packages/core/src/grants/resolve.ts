@@ -64,10 +64,21 @@ export async function loadResolvedGrant(
   principalId: string,
   collectionId: string,
 ): Promise<ResolvedGrant | null> {
+  // Union direct grants with grants on teams this principal belongs to.
   const rows = await client.query<GrantRow>(
     `SELECT capability, field_mask, row_predicate
-     FROM kitsune.grants
-     WHERE principal_id = $1 AND collection_id = $2 AND revoked_at IS NULL`,
+       FROM kitsune.grants
+      WHERE collection_id = $2
+        AND revoked_at IS NULL
+        AND (
+          principal_id = $1
+          OR principal_id IN (
+            SELECT t.principal_id
+              FROM kitsune.team_members tm
+              JOIN kitsune.teams t ON t.id = tm.team_id
+             WHERE tm.principal_id = $1
+          )
+        )`,
     [principalId, collectionId],
   );
   return resolveGrantRows(rows.rows);
