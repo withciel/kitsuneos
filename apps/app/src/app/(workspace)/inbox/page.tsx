@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -13,6 +14,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { summarizePagesTouched } from '@/lib/group-ops-by-page';
+import { markInboxSeen } from '@/lib/onboarding';
 
 interface ChangeSetSummary {
   id: string;
@@ -30,6 +32,7 @@ export default function InboxPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
+    markInboxSeen();
     void fetch('/api/review')
       .then(async (response) => {
         const body = (await response.json()) as {
@@ -63,10 +66,26 @@ export default function InboxPage() {
             <Skeleton className="h-10 w-full" />
           </div>
         ) : items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Nothing to review. When someone (or an AI helper) suggests a change,
-            it will show up here for you to approve or reject.
-          </p>
+          <div className="mx-auto flex max-w-md flex-col items-start gap-4 py-6">
+            <div className="space-y-2">
+              <p className="text-sm font-medium tracking-tight">
+                Inbox is where agent proposals land
+              </p>
+              <p className="text-sm text-muted-foreground">
+                When an AI helper suggests a change, it shows up here for you to
+                approve or reject — nothing writes until you say so. Empty is
+                normal until you connect a helper and ask it to update a page.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm">
+                <Link href="/settings/connect">Connect an AI helper</Link>
+              </Button>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/">Open a database</Link>
+              </Button>
+            </div>
+          </div>
         ) : (
           <Table>
             <TableHeader>

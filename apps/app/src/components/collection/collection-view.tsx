@@ -400,11 +400,30 @@ export function CollectionView({ collection }: { collection: string }) {
                 <TableRow>
                   <TableCell
                     colSpan={Math.max(visibleFields.length, 1)}
-                    className="h-24 text-center text-muted-foreground"
+                    className="h-32 text-center"
                   >
-                    {rows.length === 0
-                      ? 'No pages yet. Create the first one.'
-                      : 'No matching pages'}
+                    {rows.length === 0 ? (
+                      <div className="mx-auto flex max-w-sm flex-col items-center gap-3 py-2">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">
+                            Add your first page
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            A page is one row in this database — your first
+                            human write. After that, connect an AI helper so it
+                            can propose updates here.
+                          </p>
+                        </div>
+                        <Button size="sm" onClick={openCreate}>
+                          <Plus />
+                          Create first page
+                        </Button>
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        No matching pages
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (

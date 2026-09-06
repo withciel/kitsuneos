@@ -68,14 +68,18 @@ export default function WorkspaceHomePage() {
 
   if (empty) {
     return (
-      <div className="flex flex-1 flex-col items-start gap-4 p-8">
+      <div className="flex flex-1 flex-col items-start gap-6 p-8">
         <div className="space-y-2">
+          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+            Step 1 of 4 · First win
+          </p>
           <h1 className="text-2xl font-semibold tracking-tight">
             Create your first database
           </h1>
-          <p className="max-w-md text-sm text-muted-foreground">
-            A database is a shared table for you and your AI helpers. Start with
-            a simple name — you can add properties after you open it.
+          <p className="max-w-lg text-sm text-muted-foreground">
+            A database is a shared table for you and your AI helpers. Start here
+            — next you will add a page, connect an agent, and review proposals
+            in Inbox. You can add properties after you open the database.
           </p>
         </div>
         <CreateDatabaseDialog />

@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 import { SITE_ORIGIN } from './urls';
 
-const defaultTitle = 'KitsuneOS — Everything your company knows, close at hand';
+const defaultTitle =
+  'KitsuneOS — The application database humans and agents share';
 const defaultDescription =
-  'KitsuneOS is the knowledge home for AI-native companies — where what you know lives, stays close, and is easy to find while your helpers keep working.';
+  'Field-level grants, propose/review change sets, and a console where operators and agents work the same workspace — without a second system of record.';
 
 export const siteMetadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),
@@ -27,7 +28,7 @@ export const siteMetadata: Metadata = {
         url: '/kitsune-agents-ad-poster.jpg',
         width: 1280,
         height: 720,
-        alt: 'KitsuneOS — company knowledge, close at hand',
+        alt: 'KitsuneOS — shared workspace for humans and agents',
       },
     ],
   },

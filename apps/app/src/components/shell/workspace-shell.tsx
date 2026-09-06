@@ -1,5 +1,6 @@
 'use client';
 
+import { SetupChecklist } from '@/components/onboarding/setup-checklist';
 import { AppSidebar } from '@/components/shell/app-sidebar';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -18,6 +19,7 @@ export function WorkspaceShell({ children }: { children: React.ReactNode }) {
           <Separator orientation="vertical" className="mr-1 h-4" />
           <span className="text-xs text-muted-foreground">Workspace</span>
         </header>
+        <SetupChecklist />
         <div className="flex flex-1 flex-col">{children}</div>
       </SidebarInset>
     </SidebarProvider>

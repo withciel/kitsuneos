@@ -128,7 +128,7 @@ button:focus-visible {
 .site-signin {
   display: inline-flex;
   padding: 0.55rem 0.9rem;
-  color: var(--k-ink) !important;
+  color: var(--k-ink);
   border: 1px solid var(--k-line);
   border-radius: 999px;
   transition:
@@ -146,7 +146,7 @@ button:focus-visible {
   padding: 0.55rem 1rem;
   border-radius: 999px;
   background: var(--k-orange);
-  color: #140700 !important;
+  color: #140700;
   font-weight: 650;
   text-decoration: none;
 }
@@ -173,20 +173,31 @@ button:focus-visible {
   }
 }
 
+.hero-eyebrow {
+  margin: 0 0 var(--k-space-3);
+  color: var(--k-orange);
+  font-family: var(--k-font-sans);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .hero-copy h1 {
   margin: 0 0 var(--k-space-4);
-  max-width: 11ch;
+  max-width: 16ch;
   color: var(--k-ink);
   font-family: var(--k-font-display);
-  font-size: clamp(2.4rem, 6vw, 3.6rem);
+  font-size: clamp(2.25rem, 5.4vw, 3.35rem);
   font-weight: 520;
   letter-spacing: -0.035em;
   line-height: 1.08;
+  text-wrap: balance;
 }
 
 .hero-lede {
   margin: 0 0 var(--k-space-6);
-  max-width: 34rem;
+  max-width: 36rem;
   color: var(--k-muted);
   font-size: 1.125rem;
 }
@@ -327,6 +338,18 @@ button:focus-visible {
   margin-top: var(--k-space-6);
 }
 
+.band-note {
+  margin-top: var(--k-space-4);
+  font-size: 0.875rem;
+  color: var(--k-muted);
+}
+
+.band-note a {
+  color: var(--k-ink);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 .site-footer {
   width: min(68rem, calc(100% - 2rem));
   margin: 0 auto;
@@ -443,7 +466,7 @@ button:focus-visible {
   }
 
   .hero-copy h1 {
-    max-width: 14ch;
+    max-width: 18ch;
   }
 }
 

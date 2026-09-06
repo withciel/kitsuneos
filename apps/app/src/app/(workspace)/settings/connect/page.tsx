@@ -128,10 +128,14 @@ export default function SettingsConnectPage() {
       <SettingsNav />
       <div className="mx-auto w-full max-w-3xl space-y-10 p-6">
         <div className="space-y-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Step 3 of 4 · Activation
+          </p>
           <h2 className="text-lg font-medium">Connect an AI helper</h2>
           <p className="text-sm text-muted-foreground">
-            Three steps: create a key, paste a config into your AI app, then
-            decide what the AI is allowed to do under Access.
+            Create a key, paste MCP config into Cursor or Claude, then ask the
+            helper to propose a change. Proposals land in Inbox — that is your
+            first agent review.
           </p>
         </div>
 

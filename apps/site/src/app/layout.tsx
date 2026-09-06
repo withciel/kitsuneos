@@ -36,13 +36,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               Kitsune<span>OS</span>
             </Link>
             <nav className="site-header-nav" aria-label="Primary">
-              <a href="/#place">The place</a>
-              <a href="/#how">How it feels</a>
+              <a href="/#problem">Why</a>
+              <a href="/#how">How it works</a>
               <a className="site-signin" href={signInUrl}>
                 Sign in
               </a>
               <a className="site-cta" href={earlyAccessMailto}>
-                Join early access
+                Request early access
               </a>
             </nav>
           </header>
