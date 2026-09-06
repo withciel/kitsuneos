@@ -61,6 +61,18 @@ aws s3 sync "$ROOT/apps/site/out" "s3://${BUCKET}" \
   --region "$REGION" \
   --delete
 
+# Cloudflare currently terminates kitsuneos.com (NS at Cloudflare) and serves
+# from domain-named S3 buckets. Keep those in sync so deploys are visible live.
+DOMAIN_FOR_MIRROR=$(pulumi stack output domainName -s "$STACK" 2>/dev/null || echo "kitsuneos.com")
+for MIRROR_BUCKET in "$DOMAIN_FOR_MIRROR" "www.${DOMAIN_FOR_MIRROR}"; do
+  if aws s3api head-bucket --bucket "$MIRROR_BUCKET" --region "$REGION" >/dev/null 2>&1; then
+    echo "Syncing apps/site/out → s3://${MIRROR_BUCKET} (Cloudflare origin mirror)"
+    aws s3 sync "$ROOT/apps/site/out" "s3://${MIRROR_BUCKET}" \
+      --region "$REGION" \
+      --delete
+  fi
+done
+
 HOSTING=$(pulumi stack output siteHosting -s "$STACK" 2>/dev/null || echo "unknown")
 ENDPOINT=$(pulumi stack output siteWebsiteEndpoint -s "$STACK" 2>/dev/null || true)
 DIST_ID=$(pulumi stack output siteDistributionId -s "$STACK" 2>/dev/null || true)
@@ -78,6 +90,7 @@ echo "  bucket:         ${BUCKET}"
 if [[ -n "$ENDPOINT" ]]; then
   echo "  website:        http://${ENDPOINT}"
 fi
+echo "  live:           https://${DOMAIN}"
 if [[ -n "$DIST_ID" ]]; then
   echo "  distribution:   ${DIST_ID}"
   echo "  domains:        https://${DOMAIN}  https://www.${DOMAIN}"

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "kitsuneos": {
+      "url": "https://$APP_HOST/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${KITSUNE_API_KEY}"
+      }
+    }
+  }
+}

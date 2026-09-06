@@ -4,6 +4,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "kitsuneos-mcp": "./dist/stdio.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -19,7 +22,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs=require('fs');const p='dist/stdio.js';const t=fs.readFileSync(p,'utf8');if(!t.startsWith('#!'))fs.writeFileSync(p,'#!/usr/bin/env node\\n'+t);\"",
     "typecheck": "tsc --noEmit",
     "start": "node dist/stdio.js"
   },

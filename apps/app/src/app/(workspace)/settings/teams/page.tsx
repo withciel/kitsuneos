@@ -209,7 +209,11 @@ export default function SettingsTeamsPage() {
           <div>
             <h3 className="text-sm font-medium">Manage team members</h3>
             <p className="text-xs text-muted-foreground">
-              After adding people, give the team access under Access.
+              After adding people, give the team access under{' '}
+              <a href="/settings/access" className="text-primary underline">
+                Access
+              </a>
+              .
             </p>
           </div>
           <div className="space-y-1">

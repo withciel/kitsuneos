@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 
 export default function SettingsAccountPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [email, setEmail] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const load = useCallback(() => {
@@ -13,6 +14,7 @@ export default function SettingsAccountPage() {
       .then(async (response) => {
         const body = (await response.json()) as {
           workspaceId?: string;
+          email?: string | null;
           error?: string;
         };
         if (!response.ok) {
@@ -20,6 +22,7 @@ export default function SettingsAccountPage() {
           return;
         }
         setWorkspaceId(body.workspaceId ?? null);
+        setEmail(body.email ?? null);
       })
       .catch(() => setError('Could not load account'));
   }, []);
@@ -35,23 +38,32 @@ export default function SettingsAccountPage() {
         <div className="space-y-2">
           <h2 className="text-lg font-medium">Account</h2>
           <p className="text-sm text-muted-foreground">
-            Your workspace details. To connect AI helpers, use the Connect AI
-            tab.
+            Your signed-in identity and workspace. Connect AI helpers from the
+            Connect AI tab.
           </p>
         </div>
         {error ? (
           <p className="text-sm text-destructive">{error}</p>
         ) : (
-          <div className="space-y-3 rounded-lg border border-border p-4">
+          <div className="space-y-4 rounded-lg border border-border p-4">
+            <div>
+              <p className="text-xs text-muted-foreground">Signed in as</p>
+              <p className="mt-1 text-sm">{email ?? '…'}</p>
+            </div>
             <div>
               <p className="text-xs text-muted-foreground">Workspace</p>
               <p className="mt-1 font-mono text-xs break-all">
                 {workspaceId ?? '…'}
               </p>
             </div>
-            <Button asChild size="sm" variant="outline">
-              <a href="/settings/connect">Connect an AI helper</a>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm" variant="outline">
+                <a href="/settings/connect">Connect an AI helper</a>
+              </Button>
+              <Button asChild size="sm" variant="ghost">
+                <a href="/logout">Sign out</a>
+              </Button>
+            </div>
           </div>
         )}
       </div>

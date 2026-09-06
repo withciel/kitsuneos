@@ -3,8 +3,8 @@
   --k-elev: #0c0c0c;
   --k-panel: #111111;
   --k-ink: #f5f5f5;
-  --k-muted: #a3a3a3;
-  --k-dim: #6b6b6b;
+  --k-muted: #c4c4c4;
+  --k-dim: #8a8a8a;
   --k-line: #1f1f1f;
   --k-orange: #f54e00;
   --k-orange-soft: rgba(245, 78, 0, 0.16);
@@ -55,16 +55,21 @@ body::before {
   z-index: 0;
   background:
     radial-gradient(
-      56rem 40rem at 82% -8%,
-      var(--k-orange-glow),
-      transparent 58%
+      64rem 44rem at 78% -12%,
+      rgba(245, 78, 0, 0.28),
+      transparent 60%
     ),
     radial-gradient(
-      36rem 28rem at 8% 110%,
-      rgba(245, 78, 0, 0.08),
+      40rem 32rem at 6% 108%,
+      rgba(245, 78, 0, 0.12),
       transparent 55%
     ),
-    linear-gradient(165deg, #090909 0%, var(--k-bg) 42%, #0a0a0a 100%);
+    radial-gradient(
+      28rem 20rem at 50% 40%,
+      rgba(255, 255, 255, 0.03),
+      transparent 70%
+    ),
+    linear-gradient(165deg, #0c0c0c 0%, var(--k-bg) 42%, #080808 100%);
 }
 
 .site-shell {
@@ -270,6 +275,29 @@ button:focus-visible {
   background: #050505;
 }
 
+.band-trust {
+  width: min(42rem, calc(100% - 2rem));
+  padding-top: var(--k-space-8);
+  padding-bottom: var(--k-space-8);
+  border-top: none;
+}
+
+.band-trust p {
+  margin: 0;
+  color: var(--k-dim);
+  font-size: 0.95rem;
+}
+
+.band-trust a {
+  color: var(--k-muted);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.band-trust a:hover {
+  color: var(--k-ink);
+}
+
 .band {
   width: min(42rem, calc(100% - 2rem));
   margin: 0 auto;
@@ -312,15 +340,27 @@ button:focus-visible {
 }
 
 .triad article {
-  padding: var(--k-space-6) 0 0;
-  border-top: 1px solid var(--k-line);
+  padding: var(--k-space-6);
+  border: 1px solid var(--k-line);
+  border-radius: var(--k-radius);
+  background: color-mix(in srgb, var(--k-elev) 88%, transparent);
+  transition:
+    border-color 0.2s var(--k-ease),
+    background-color 0.2s var(--k-ease),
+    transform 0.2s var(--k-ease);
+}
+
+.triad article:hover {
+  border-color: color-mix(in srgb, var(--k-orange) 45%, var(--k-line));
+  background: var(--k-orange-soft);
+  transform: translateY(-2px);
 }
 
 .triad h3 {
   margin: 0 0 var(--k-space-3);
   color: var(--k-orange);
   font-family: var(--k-font-display);
-  font-size: 1.35rem;
+  font-size: 1.4rem;
   font-weight: 520;
   letter-spacing: -0.02em;
 }
@@ -328,6 +368,7 @@ button:focus-visible {
 .triad p {
   margin: 0;
   color: var(--k-muted);
+  line-height: 1.55;
 }
 
 .band-close {

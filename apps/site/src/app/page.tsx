@@ -1,4 +1,4 @@
-import { contactMailto, earlyAccessMailto, signUpUrl } from '@/lib/urls';
+import { contactMailto, signInUrl, signUpUrl } from '@/lib/urls';
 
 export default function LandingPage() {
   return (
@@ -17,11 +17,11 @@ export default function LandingPage() {
             anything lands. One console — not a second system of record.
           </p>
           <div className="hero-actions">
-            <a className="cta cta-primary" href={earlyAccessMailto}>
-              Request early access
+            <a className="cta cta-primary" href={signUpUrl}>
+              Get early access
             </a>
-            <a className="cta cta-secondary" href={contactMailto}>
-              Talk to us
+            <a className="cta cta-secondary" href={signInUrl}>
+              Sign in
             </a>
           </div>
         </div>
@@ -49,6 +49,17 @@ export default function LandingPage() {
             />
           </video>
         </div>
+      </section>
+
+      <section className="band band-trust" id="trust" aria-label="Trust">
+        <p>
+          Built by{' '}
+          <a href="https://withciel.com" rel="noopener noreferrer">
+            Ciel
+          </a>
+          . Same data plane for people and agents — grants, proposals, and
+          history in one console.
+        </p>
       </section>
 
       <section className="band" id="problem">
@@ -110,17 +121,16 @@ export default function LandingPage() {
       <section className="band band-close" id="join">
         <h2>Get early access</h2>
         <p>
-          We’re onboarding carefully. Tell us about your team and the agents
-          you’re shipping. After you get in: create a database, add a page,
-          connect an AI helper, and review its first proposal in Inbox — usually
-          in one sitting.
+          Create an account to start. After you get in: create a database, add a
+          page, connect an AI helper, and review its first proposal in Inbox —
+          usually in one sitting. Free during early access.
         </p>
         <div className="hero-actions">
-          <a className="cta cta-primary" href={earlyAccessMailto}>
-            Request early access
+          <a className="cta cta-primary" href={signUpUrl}>
+            Create account
           </a>
-          <a className="cta cta-secondary" href={signUpUrl}>
-            Have an invite? Sign up
+          <a className="cta cta-secondary" href={signInUrl}>
+            Sign in
           </a>
         </div>
         <p className="band-note">

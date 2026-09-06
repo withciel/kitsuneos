@@ -77,6 +77,13 @@ export default function InboxDetailPage() {
 
   async function submit(apply: boolean) {
     if (!item) return;
+    const undecided = item.operations.filter((op) => !decisions[op.id]);
+    if (apply && undecided.length > 0) {
+      const ok = window.confirm(
+        `${undecided.length} change${undecided.length === 1 ? '' : 's'} still undecided will be rejected. Continue applying?`,
+      );
+      if (!ok) return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -165,8 +172,23 @@ export default function InboxDetailPage() {
           Save decisions
         </Button>
         <Button disabled={busy || !item} onClick={() => void submit(true)}>
-          Apply / Merge
+          Apply approved
         </Button>
+        {item ? (
+          <p className="ml-auto self-center text-xs text-muted-foreground">
+            {
+              item.operations.filter((op) => decisions[op.id] === 'approved')
+                .length
+            }{' '}
+            approved ·{' '}
+            {
+              item.operations.filter((op) => decisions[op.id] === 'rejected')
+                .length
+            }{' '}
+            rejected ·{' '}
+            {item.operations.filter((op) => !decisions[op.id]).length} undecided
+          </p>
+        ) : null}
       </div>
     </div>
   );

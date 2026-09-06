@@ -102,11 +102,12 @@ export default function InboxPage() {
                 const databases = [
                   ...new Set(item.operations.map((op) => op.collection)),
                 ];
+                const href = `/inbox/${item.id}`;
                 return (
-                  <TableRow key={item.id} className="cursor-pointer">
+                  <TableRow key={item.id} className="group">
                     <TableCell>
                       <Link
-                        href={`/inbox/${item.id}`}
+                        href={href}
                         className="font-medium text-foreground hover:text-primary"
                       >
                         {item.title ?? 'Untitled change request'}
@@ -116,18 +117,27 @@ export default function InboxPage() {
                         {item.rationale ? ` · ${item.rationale}` : ''}
                       </p>
                     </TableCell>
-                    <TableCell className="text-sm">{item.author}</TableCell>
+                    <TableCell className="text-sm">
+                      <Link
+                        href={href}
+                        className="block text-foreground hover:text-primary"
+                      >
+                        {item.author}
+                      </Link>
+                    </TableCell>
                     <TableCell>
-                      <div className="flex flex-wrap gap-1">
+                      <Link href={href} className="flex flex-wrap gap-1">
                         {databases.map((name) => (
                           <Badge key={name} variant="secondary">
                             {name}
                           </Badge>
                         ))}
-                      </div>
+                      </Link>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {new Date(item.createdAt).toLocaleString()}
+                      <Link href={href} className="block hover:text-foreground">
+                        {new Date(item.createdAt).toLocaleString()}
+                      </Link>
                     </TableCell>
                   </TableRow>
                 );

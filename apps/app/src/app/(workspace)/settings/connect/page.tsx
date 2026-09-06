@@ -5,15 +5,16 @@ import { SettingsNav } from '@/components/settings/settings-nav';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
-type GuideId = 'cursor' | 'claude' | 'custom';
+type GuideId = 'local' | 'cursor-remote' | 'claude-remote' | 'rest';
 
 export default function SettingsConnectPage() {
   const [origin, setOrigin] = useState('');
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const [hasApiKey, setHasApiKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState('');
-  const [guide, setGuide] = useState<GuideId>('cursor');
+  const [guide, setGuide] = useState<GuideId>('local');
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -21,6 +22,7 @@ export default function SettingsConnectPage() {
       .then(async (response) => {
         const body = (await response.json()) as {
           apiKeyPlaintext?: string | null;
+          hasApiKey?: boolean;
           error?: string;
         };
         if (!response.ok) {
@@ -30,19 +32,43 @@ export default function SettingsConnectPage() {
         if (body.apiKeyPlaintext) {
           setApiKey(body.apiKeyPlaintext);
         }
+        setHasApiKey(Boolean(body.hasApiKey || body.apiKeyPlaintext));
       })
       .catch(() => setError('Could not load your account'));
   }, []);
 
   const keyForConfig = apiKey ?? 'YOUR_API_KEY';
 
-  const cursorConfig = useMemo(
+  const localStdioConfig = useMemo(
     () =>
       JSON.stringify(
         {
           mcpServers: {
             kitsuneos: {
-              url: `${origin}/api/mcp/tools`,
+              command: 'npx',
+              args: ['-y', 'kitsuneos-mcp'],
+              env: {
+                KITSUNE_WORKSPACE_ID: 'YOUR_WORKSPACE_ID',
+                KITSUNE_PRINCIPAL_ID: 'YOUR_PRINCIPAL_ID',
+                KITSUNE_APP_URL: 'postgresql://…',
+                KITSUNE_OWNER_URL: 'postgresql://…',
+              },
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    [],
+  );
+
+  const cursorRemoteConfig = useMemo(
+    () =>
+      JSON.stringify(
+        {
+          mcpServers: {
+            kitsuneos: {
+              url: `${origin}/api/mcp`,
               headers: {
                 Authorization: `Bearer ${keyForConfig}`,
               },
@@ -55,28 +81,24 @@ export default function SettingsConnectPage() {
     [origin, keyForConfig],
   );
 
-  const claudeConfig = useMemo(
-    () =>
-      JSON.stringify(
-        {
-          mcpServers: {
-            kitsuneos: {
-              url: `${origin}/api/mcp/tools`,
-              headers: {
-                Authorization: `Bearer ${keyForConfig}`,
-              },
-            },
-          },
-        },
-        null,
-        2,
-      ),
-    [origin, keyForConfig],
-  );
-
-  const customSnippet = useMemo(
+  const claudeRemoteSteps = useMemo(
     () =>
       [
+        'In Claude (web or desktop), open Settings → Connectors.',
+        'Add a custom connector.',
+        `Remote MCP URL: ${origin}/api/mcp`,
+        'Complete the OAuth consent when prompted (no API key paste).',
+        'Enable tools for the conversation, then ask Claude to describe your schema.',
+      ].join('\n'),
+    [origin],
+  );
+
+  const restSnippet = useMemo(
+    () =>
+      [
+        `# Legacy REST helper API — NOT the MCP protocol.`,
+        `# Prefer /api/mcp (Streamable HTTP) for Cursor / Claude.`,
+        ``,
         `# List tools`,
         `curl -s ${origin}/api/mcp/tools \\`,
         `  -H "Authorization: Bearer ${keyForConfig}"`,
@@ -91,6 +113,12 @@ export default function SettingsConnectPage() {
   );
 
   const generateKey = useCallback(async () => {
+    if (hasApiKey) {
+      const ok = window.confirm(
+        'Creating a new key revokes your existing key. AI helpers using the old key will stop working until you update their config. Continue?',
+      );
+      if (!ok) return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -106,12 +134,13 @@ export default function SettingsConnectPage() {
         throw new Error('No key returned');
       }
       setApiKey(body.apiKeyPlaintext);
+      setHasApiKey(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create a key');
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [hasApiKey]);
 
   async function copyText(label: string, text: string) {
     try {
@@ -133,9 +162,9 @@ export default function SettingsConnectPage() {
           </p>
           <h2 className="text-lg font-medium">Connect an AI helper</h2>
           <p className="text-sm text-muted-foreground">
-            Create a key, paste MCP config into Cursor or Claude, then ask the
-            helper to propose a change. Proposals land in Inbox — that is your
-            first agent review.
+            KitsuneOS speaks real MCP over local stdio and remote Streamable
+            HTTP. Pick the guide that matches your client — do not paste the
+            legacy REST URL into Claude Desktop or Cursor as if it were MCP.
           </p>
         </div>
 
@@ -150,8 +179,8 @@ export default function SettingsConnectPage() {
             <div>
               <h3 className="text-sm font-medium">1. Your connection key</h3>
               <p className="text-xs text-muted-foreground">
-                Treat this like a password. Anyone with it can act as you in
-                KitsuneOS. It is shown once when created.
+                Needed for Cursor remote and REST. Claude connectors use OAuth
+                instead. Treat the key like a password; it is shown once.
               </p>
             </div>
             <Button
@@ -160,7 +189,11 @@ export default function SettingsConnectPage() {
               disabled={busy}
               onClick={() => void generateKey()}
             >
-              {busy ? 'Creating…' : apiKey ? 'Create a new key' : 'Create key'}
+              {busy
+                ? 'Creating…'
+                : apiKey || hasApiKey
+                  ? 'Rotate key'
+                  : 'Create key'}
             </Button>
           </div>
           {apiKey ? (
@@ -176,9 +209,15 @@ export default function SettingsConnectPage() {
                 {copied === 'key' ? 'Copied' : 'Copy key'}
               </Button>
             </div>
+          ) : hasApiKey ? (
+            <p className="text-sm text-muted-foreground">
+              A key is already active. It is only shown once when created — use
+              the key you saved, or rotate to mint a new one.
+            </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              No key on screen yet. Create one to unlock the guides below.
+              No key on screen yet. Create one before copying remote Cursor
+              config.
             </p>
           )}
         </section>
@@ -187,16 +226,17 @@ export default function SettingsConnectPage() {
           <div>
             <h3 className="text-sm font-medium">2. Pick your AI app</h3>
             <p className="text-xs text-muted-foreground">
-              Copy the block for your tool and paste it where that app stores
-              MCP / connector settings.
+              Local stdio works offline. Remote MCP uses{' '}
+              <code className="font-mono text-[11px]">{origin}/api/mcp</code>.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             {(
               [
-                ['cursor', 'Cursor'],
-                ['claude', 'Claude Desktop'],
-                ['custom', 'Other / HTTP'],
+                ['local', 'Local stdio'],
+                ['cursor-remote', 'Cursor remote'],
+                ['claude-remote', 'Claude connector'],
+                ['rest', 'Legacy REST'],
               ] as const
             ).map(([id, label]) => (
               <Button
@@ -210,64 +250,72 @@ export default function SettingsConnectPage() {
             ))}
           </div>
 
-          {guide === 'cursor' ? (
+          {guide === 'local' ? (
             <GuideBlock
-              title="Cursor"
+              title="Claude Desktop / Cursor (local stdio)"
+              steps={[
+                'Build the MCP package (`pnpm --filter @kitsuneos/mcp build`) or use the npx bin after publish.',
+                'Paste this into Claude Desktop Developer config or Cursor MCP settings.',
+                'Fill workspace/principal IDs and Postgres URLs (pnpm quickstart prints a ready block).',
+                'Restart the client and ask it to describe your KitsuneOS schema.',
+                'Troubleshooting: a Cursor log id like mcp-server-user-…-empty-window is Cursor’s internal id, not a missing Kitsune workspace UUID — open a folder and use a valid MCP config.',
+              ]}
+              value={localStdioConfig}
+              copied={copied === 'local'}
+              onCopy={() => void copyText('local', localStdioConfig)}
+            />
+          ) : null}
+
+          {guide === 'cursor-remote' ? (
+            <GuideBlock
+              title="Cursor (remote Streamable HTTP)"
               steps={[
                 'In Cursor, open Settings → MCP.',
-                'Add a new server (or edit ~/.cursor/mcp.json).',
-                'Paste the JSON below, save, and restart Cursor if needed.',
-                'Ask Cursor to “describe my KitsuneOS schema” to confirm it connected.',
+                'Add a server with a url (not command).',
+                `Use ${origin}/api/mcp — this is real MCP, not /api/mcp/tools.`,
+                'Send Authorization: Bearer with your API key.',
+                'Ask Cursor to describe your schema to confirm initialize + tools/call work.',
               ]}
-              value={cursorConfig}
-              copied={copied === 'cursor'}
-              onCopy={() => void copyText('cursor', cursorConfig)}
+              value={cursorRemoteConfig}
+              copied={copied === 'cursor-remote'}
+              onCopy={() => void copyText('cursor-remote', cursorRemoteConfig)}
             />
           ) : null}
 
-          {guide === 'claude' ? (
+          {guide === 'claude-remote' ? (
             <GuideBlock
-              title="Claude Desktop"
+              title="Claude Web / Desktop custom connector"
               steps={[
-                'Open Claude Desktop → Settings → Developer.',
-                'Edit the config file (claude_desktop_config.json).',
-                'Paste the JSON below inside mcpServers and restart Claude.',
-                'Start a chat and ask Claude to list your KitsuneOS databases.',
+                'Requires the remote OAuth MCP endpoint (already at /api/mcp).',
+                'Do not paste a url block into claude_desktop_config.json — Desktop local configs are stdio only.',
+                'Use Connectors → Add custom connector with the URL below and finish OAuth.',
               ]}
-              value={claudeConfig}
-              copied={copied === 'claude'}
-              onCopy={() => void copyText('claude', claudeConfig)}
+              value={claudeRemoteSteps}
+              copied={copied === 'claude-remote'}
+              onCopy={() => void copyText('claude-remote', claudeRemoteSteps)}
             />
           ) : null}
 
-          {guide === 'custom' ? (
+          {guide === 'rest' ? (
             <GuideBlock
-              title="Any tool that can call HTTPS"
+              title="Legacy REST (scripts / curl only)"
               steps={[
-                'Send your key as an Authorization: Bearer header.',
-                'GET /api/mcp/tools lists available actions.',
-                'POST /api/mcp/tools/call runs an action with JSON { tool, arguments }.',
+                'This is NOT MCP. Claude Desktop and Cursor remote configs must not use these URLs.',
+                'Sunset: prefer /api/mcp. REST remains until the next major release.',
+                'Send Authorization: Bearer with your API key.',
               ]}
-              value={customSnippet}
-              copied={copied === 'custom'}
-              onCopy={() => void copyText('custom', customSnippet)}
+              value={restSnippet}
+              copied={copied === 'rest'}
+              onCopy={() => void copyText('rest', restSnippet)}
             />
-          ) : null}
-
-          {!apiKey ? (
-            <p className="text-xs text-amber-700 dark:text-amber-400">
-              Create a key first — the samples above still say YOUR_API_KEY
-              until you do.
-            </p>
           ) : null}
         </section>
 
         <section className="space-y-3 rounded-lg border border-border p-4">
           <h3 className="text-sm font-medium">3. Decide what the AI can do</h3>
           <p className="text-sm text-muted-foreground">
-            By default, AI helpers should only <strong>suggest changes</strong>.
-            Those suggestions land in Inbox so you can approve or reject them.
-            Open Access to adjust permissions per database.
+            Mutating tools should land as proposals in Inbox unless you grant
+            write/admin. Open Access to adjust permissions per collection.
           </p>
           <Button asChild size="sm" variant="outline">
             <a href="/settings/access">Open Access settings</a>

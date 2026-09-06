@@ -2,7 +2,7 @@ import { Fraunces, Outfit } from 'next/font/google';
 import Link from 'next/link';
 import type { CSSProperties, ReactNode } from 'react';
 import { siteMetadata } from '@/lib/site-metadata';
-import { contactMailto, earlyAccessMailto, signInUrl } from '@/lib/urls';
+import { contactMailto, signInUrl, signUpUrl } from '@/lib/urls';
 import './globals.css';
 
 const display = Fraunces({
@@ -41,8 +41,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <a className="site-signin" href={signInUrl}>
                 Sign in
               </a>
-              <a className="site-cta" href={earlyAccessMailto}>
-                Request early access
+              <a className="site-cta" href={signUpUrl}>
+                Get early access
               </a>
             </nav>
           </header>
@@ -53,7 +53,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <a href="https://withciel.com" rel="noopener noreferrer">
                 Ciel
               </a>
-              .
+              — the data layer under their own work.
             </p>
             <nav aria-label="Legal and support">
               <Link href="/terms/">Terms</Link>

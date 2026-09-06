@@ -1,0 +1,21 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/server.schema.json",
+  "name": "io.kitsuneos/mcp",
+  "title": "KitsuneOS",
+  "description": "Application database for humans and agents — grants, change sets, Inbox.",
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@kitsuneos/mcp",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" }
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://$APP_HOST/api/mcp"
+    }
+  ]
+}
