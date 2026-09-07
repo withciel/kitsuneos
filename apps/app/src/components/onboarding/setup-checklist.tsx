@@ -19,7 +19,7 @@ const INITIAL: OnboardingProgress = {
   'create-database': false,
   'add-page': false,
   'connect-agent': false,
-  'review-inbox': false,
+  'review-changes': false,
   firstCollection: null,
 };
 
@@ -47,7 +47,7 @@ export function SetupChecklist() {
   }, [refresh]);
 
   useEffect(() => {
-    // Recompute after route changes (e.g. first database or Inbox visit).
+    // Recompute after route changes (e.g. first database or Changes visit).
     void pathname;
     refresh();
   }, [pathname, refresh]);
@@ -74,7 +74,7 @@ export function SetupChecklist() {
             </p>
             <p className="text-xs text-muted-foreground">
               {completedCount} of {ONBOARDING_STEPS.length} done — create a
-              database, add a page, connect an AI helper, then watch Inbox.
+              database, add a page, connect an AI helper, then watch Changes.
             </p>
             <div
               className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-border"

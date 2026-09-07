@@ -14,10 +14,11 @@
 | Data model | Soft properties + blocks | Relational collections + field grants + change sets | Kitsune stronger for agents/DB |
 | AuthZ | Page ACL + workspace | Collection grants + teams; weak page ACL | **Gap** |
 | Multi-workspace | First-class switcher | Memberships in DB; no switcher UX | **Gap** |
-| Agents | Integrations / AI | MCP + default agent key | Partial — need profiles |
+| Agents | Integrations / AI | MCP + agents API; sidebar Agents page + Claude-style access labels | **In progress** — profiles exist; first-class sidebar + unified access |
 | API | Notion Public API | REST + MCP + read GraphQL | Strong; need OAuth apps |
 | Editor | Blocks WYSIWYG | Prose textarea | **Gap** |
-| Graph | Limited | Relation neighbors API only | **Gap** UI |
+| Graph | Limited | Relation neighbors API + `/graph` MVP | **In progress** — force-directed interactive |
+| Views | Board/list/gallery/calendar/table | Table shipped; multi-view tabs planned | **In progress** — Table always; others addable |
 | Memory | AI connectors | Grant-aware `search` | Need Supermemory-shaped tools |
 
 Kitsune should **not** abandon change sets / field grants. Extend them with Notion-class sharing, editor, multi-ws, agents, OAuth, graph, and memory tools.
@@ -34,9 +35,12 @@ Kitsune should **not** abandon change sets / field grants. Extend them with Noti
 | N4 | General fetch/change API | REST (`/api/query`, `/api/records`, …) + MCP; **Bearer API key + OAuth** on data routes | — | **Shipped** |
 | N4b | OAuth apps create databases | `oauth_apps` + `/api/oauth/apps` + `/api/oauth/token` + `databases:create` | — | **Shipped** |
 | N5 | WYSIWYG prose | TipTap `ProseEditor` on prose fields | — | **Shipped** |
-| N6 | Obsidian-like graph | `/graph` UI + `/api/graph` distribution JSON | Link extraction from prose still shallow | **MVP shipped** |
+| N6 | Obsidian-like graph | `/graph` UI + `/api/graph` distribution JSON | Force-directed interactive (drag/zoom/click) | **In progress** |
 | N7 | Supermemory-like tools | MCP `memory_search|get|related|remember` over grant-visible pages | — | **Shipped** |
 | N8 | Kitsune-as-database for apps | OAuth service principal + `POST /api/collections` with bearer token | Full OAuth authorize UI (auth code) deferred | **MVP shipped** |
+| N9 | Multi-view DB tabs | Table view on collections | Board / list / gallery / calendar addable; Table always, none else by default | **In progress** |
+| N10 | Changes PR UI (née Inbox) | Change-set list + field diffs + partial apply | Nav rename + GitHub-style PR shell (tree, checks, merge) | **In progress** |
+| N11 | Agents sidebar + Claude-style labels | Connect Agents panel; capability ladder | First-class Agents page; No Access / Read Only / Change Request / Full write labels | **In progress** |
 
 ---
 
@@ -47,7 +51,7 @@ From existing Kitsune PRD / system design — still binding:
 - Field-level change ops with base revision / change sets for agents.
 - Single authorization path through the query compiler (extend predicates for page ACL).
 - No `SELECT *`; compiled row predicates.
-- Agents as first-class principals; propose ceiling unless admin grants write.
+- Agents as first-class principals; may hold `write` / `admin` like humans (`propose` recommended default, not a ceiling).
 - Postgres schema-per-workspace tenancy.
 
 Page ACL and agent tokens must compile into the **same** grant/query path, not a second ad-hoc filter in the Next.js app only.

@@ -16,7 +16,7 @@
 | **Headless CMS** | Content models, draft/publish, CRUD API, webhooks, media | Typed collections, change sets, engine webhooks/attachments | Publish lifecycle UX; webhook console; media library UI |
 | **Notes apps** | Instant capture, folders/tags, search, simple editor | Notes collection, private-by-default, ⌘K New note | Tags polish; mobile |
 | **Supermemory** | Grant-aware search/get/related/remember | MCP `memory_*` + page ACL post-filter | Compiler ACL in search; human memory UI (⌘K covers part) |
-| **Adjacent** | Wiki tree, Airtable views, Linear-lite | CRM seed, relations/rollups | Boards/calendars deferred |
+| **Adjacent** | Wiki tree, Airtable views, Linear-lite | Relations/rollups; empty provision | Multi-views (board/list/gallery/calendar) in progress; no default DBs |
 
 ---
 
@@ -36,6 +36,11 @@
 | 10 | Remote MCP Streamable HTTP honesty | Partial (prior work) |
 | 11 | OAuth authorization-code UI | Deferred (client_credentials MVP exists) |
 | 12 | Backlinks chrome on page | **Shipped** |
+| 13 | Empty provision (no default DBs) + interactive onboarding | **In progress** |
+| 14 | Multi-view tabs (Table always; Board/List/Gallery/Calendar addable) | **In progress** |
+| 15 | Changes PR UI (Inbox→Changes) | **In progress** |
+| 16 | Agents sidebar + Claude-style access labels | **In progress** |
+| 17 | Force-directed interactive graph | **In progress** |
 
 ---
 
@@ -43,11 +48,13 @@
 
 - Local-first Obsidian vault sync / FUSE  
 - Real-time CRDT multiplayer  
-- Board/calendar/timeline DB views  
 - Public anonymous page CDN  
 - Native mobile  
 - Full Linear product  
-- Second search stack (Pinecone)
+- Second search stack (Pinecone)  
+- Packaging a sold CRM product / auto-seeding CRM as default workspace  
+
+Board / list / gallery / calendar DB views are **in scope** (Console Notion parity): Table always exists; other views are addable tabs, none created by default.
 
 ---
 

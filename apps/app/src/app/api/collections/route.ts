@@ -16,9 +16,17 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     }
-    const body = (await request.json()) as CollectionDefinition;
+    const body = (await request.json()) as CollectionDefinition & {
+      scope?: 'workspace' | 'personal';
+    };
     validateCollectionDefinition(body);
-    const collectionId = await engine.defineCollection(ctx.workspaceId, body);
+    const scope = body.scope === 'personal' ? 'personal' : 'workspace';
+    const collectionId = await engine.defineCollection(ctx.workspaceId, {
+      ...body,
+      scope,
+      ownerPrincipalId:
+        scope === 'personal' ? ctx.principalId : body.ownerPrincipalId,
+    });
     // Creator must see the collection — defineCollection only creates DDL/metadata.
     await engine.createGrant(
       ctx.workspaceId,

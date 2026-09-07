@@ -510,4 +510,91 @@ CREATE INDEX IF NOT EXISTS page_links_raw_idx
   ON kitsune.page_links (workspace_id, raw_target);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.page_links TO kitsune_app;
+
+-- ---------------------------------------------------------------------------
+-- Collection scope (workspace vs personal) + Notion-like views
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE kitsune.collections
+  ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'workspace';
+ALTER TABLE kitsune.collections
+  DROP CONSTRAINT IF EXISTS collections_scope_check;
+ALTER TABLE kitsune.collections
+  ADD CONSTRAINT collections_scope_check
+  CHECK (scope IN ('workspace', 'personal'));
+ALTER TABLE kitsune.collections
+  ADD COLUMN IF NOT EXISTS owner_principal_id uuid
+    REFERENCES kitsune.principals(id);
+CREATE INDEX IF NOT EXISTS collections_workspace_scope_idx
+  ON kitsune.collections (workspace_id, scope);
+
+CREATE TABLE IF NOT EXISTS kitsune.collection_views (
+  id                 uuid PRIMARY KEY,
+  collection_id      uuid NOT NULL REFERENCES kitsune.collections(id) ON DELETE CASCADE,
+  name               text NOT NULL,
+  type               text NOT NULL CHECK (
+                       type IN ('table', 'board', 'list', 'gallery', 'calendar')
+                     ),
+  config             jsonb NOT NULL DEFAULT '{}',
+  position           int NOT NULL DEFAULT 0,
+  is_default_table   boolean NOT NULL DEFAULT false,
+  created_at         timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS collection_views_collection_idx
+  ON kitsune.collection_views (collection_id, position, id);
+CREATE UNIQUE INDEX IF NOT EXISTS collection_views_one_default_table_idx
+  ON kitsune.collection_views (collection_id)
+  WHERE is_default_table = true;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.collection_views TO kitsune_app;
+
+-- Backfill a Table view for every existing collection.
+INSERT INTO kitsune.collection_views
+  (id, collection_id, name, type, config, position, is_default_table)
+SELECT gen_random_uuid(), c.id, 'Table', 'table', '{}'::jsonb, 0, true
+  FROM kitsune.collections c
+ WHERE NOT EXISTS (
+   SELECT 1 FROM kitsune.collection_views v
+    WHERE v.collection_id = c.id AND v.is_default_table = true
+ );
+
+-- ---------------------------------------------------------------------------
+-- Agent membership (workspace / team / personal)
+-- ---------------------------------------------------------------------------
+
+ALTER TABLE kitsune.principals
+  ADD COLUMN IF NOT EXISTS agent_membership text;
+ALTER TABLE kitsune.principals
+  DROP CONSTRAINT IF EXISTS principals_agent_membership_check;
+ALTER TABLE kitsune.principals
+  ADD CONSTRAINT principals_agent_membership_check
+  CHECK (
+    agent_membership IS NULL
+    OR agent_membership IN ('workspace', 'team', 'personal')
+  );
+ALTER TABLE kitsune.principals
+  ADD COLUMN IF NOT EXISTS agent_team_id uuid REFERENCES kitsune.teams(id);
+ALTER TABLE kitsune.principals
+  ADD COLUMN IF NOT EXISTS agent_owner_principal_id uuid
+    REFERENCES kitsune.principals(id);
+
+UPDATE kitsune.principals
+   SET agent_membership = 'workspace'
+ WHERE kind = 'agent' AND agent_membership IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- Change-set conversation comments (GitHub-PR style Changes UI)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS kitsune.change_set_comments (
+  id             uuid PRIMARY KEY,
+  change_set_id  uuid NOT NULL REFERENCES kitsune.change_sets(id) ON DELETE CASCADE,
+  author_id      uuid NOT NULL REFERENCES kitsune.principals(id),
+  body           text NOT NULL,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS change_set_comments_set_idx
+  ON kitsune.change_set_comments (change_set_id, created_at);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.change_set_comments TO kitsune_app;
 `;

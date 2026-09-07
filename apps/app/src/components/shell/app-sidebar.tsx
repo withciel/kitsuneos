@@ -1,7 +1,8 @@
 'use client';
 
 import {
-  Bell,
+  Bot,
+  GitPullRequest,
   Network,
   Plus,
   Settings,
@@ -33,15 +34,14 @@ import { WORKSPACE_CHANGED_EVENT } from '@/lib/workspace-events';
 interface SchemaCollection {
   name: string;
   capability: string;
+  scope?: 'workspace' | 'personal';
 }
-
-const NOTES_HREF = '/c/notes';
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const [collections, setCollections] = useState<SchemaCollection[]>([]);
-  const [inboxCount, setInboxCount] = useState(0);
-  const [hasNotes, setHasNotes] = useState(false);
+  const [workspaceDbs, setWorkspaceDbs] = useState<SchemaCollection[]>([]);
+  const [personalDbs, setPersonalDbs] = useState<SchemaCollection[]>([]);
+  const [changesCount, setChangesCount] = useState(0);
 
   const reload = useCallback(() => {
     void fetch('/api/schema')
@@ -51,10 +51,11 @@ export function AppSidebar() {
           collections?: SchemaCollection[];
         };
         const next = body.collections ?? [];
-        setHasNotes(next.some((collection) => collection.name === 'notes'));
-        // Keep Notes pinned above; avoid duplicating it in the generic list.
-        setCollections(
-          next.filter((collection) => collection.name !== 'notes'),
+        setWorkspaceDbs(
+          next.filter((collection) => (collection.scope ?? 'workspace') !== 'personal'),
+        );
+        setPersonalDbs(
+          next.filter((collection) => collection.scope === 'personal'),
         );
       })
       .catch(() => undefined);
@@ -65,7 +66,7 @@ export function AppSidebar() {
         const body = (await response.json()) as {
           changeSets?: unknown[];
         };
-        setInboxCount(body.changeSets?.length ?? 0);
+        setChangesCount(body.changeSets?.length ?? 0);
       })
       .catch(() => undefined);
   }, []);
@@ -82,8 +83,42 @@ export function AppSidebar() {
     reload();
   }, [pathname, reload]);
 
-  const notesActive =
-    pathname === NOTES_HREF || pathname.startsWith(`${NOTES_HREF}/`);
+  function renderDbList(
+    items: SchemaCollection[],
+    emptyLabel: string,
+    scope: 'workspace' | 'personal',
+  ) {
+    if (items.length === 0) {
+      return (
+        <SidebarMenuItem>
+          <CreateDatabaseDialog
+            defaultScope={scope}
+            trigger={
+              <SidebarMenuButton tooltip={emptyLabel}>
+                <Table2 />
+                <span>{emptyLabel}</span>
+              </SidebarMenuButton>
+            }
+          />
+        </SidebarMenuItem>
+      );
+    }
+    return items.map((collection) => {
+      const href = `/c/${collection.name}`;
+      const active = pathname === href || pathname.startsWith(`${href}/`);
+      const Icon = collection.name === 'notes' ? StickyNote : Table2;
+      return (
+        <SidebarMenuItem key={collection.name}>
+          <SidebarMenuButton asChild isActive={active} tooltip={collection.name}>
+            <Link href={href}>
+              <Icon />
+              <span>{collection.name}</span>
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      );
+    });
+  }
 
   return (
     <Sidebar collapsible="icon">
@@ -99,71 +134,37 @@ export function AppSidebar() {
         <WorkspaceSwitcher />
       </SidebarHeader>
       <SidebarContent>
-        {hasNotes ? (
-          <SidebarGroup>
-            <SidebarGroupLabel>Personal</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={notesActive}
-                    tooltip="Notes"
-                  >
-                    <Link href={NOTES_HREF}>
-                      <StickyNote />
-                      <span>Notes</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        ) : null}
         <SidebarGroup>
-          <SidebarGroupLabel>Databases</SidebarGroupLabel>
+          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <CreateDatabaseDialog
+            defaultScope="workspace"
             trigger={
-              <SidebarGroupAction title="New database">
+              <SidebarGroupAction title="New workspace database">
                 <Plus />
-                <span className="sr-only">New database</span>
+                <span className="sr-only">New workspace database</span>
               </SidebarGroupAction>
             }
           />
           <SidebarGroupContent>
             <SidebarMenu>
-              {collections.length === 0 ? (
-                <SidebarMenuItem>
-                  <CreateDatabaseDialog
-                    trigger={
-                      <SidebarMenuButton tooltip="Create a database">
-                        <Table2 />
-                        <span>Create a database</span>
-                      </SidebarMenuButton>
-                    }
-                  />
-                </SidebarMenuItem>
-              ) : (
-                collections.map((collection) => {
-                  const href = `/c/${collection.name}`;
-                  const active =
-                    pathname === href || pathname.startsWith(`${href}/`);
-                  return (
-                    <SidebarMenuItem key={collection.name}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={active}
-                        tooltip={collection.name}
-                      >
-                        <Link href={href}>
-                          <Table2 />
-                          <span>{collection.name}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })
-              )}
+              {renderDbList(workspaceDbs, 'Create a database', 'workspace')}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Personal</SidebarGroupLabel>
+          <CreateDatabaseDialog
+            defaultScope="personal"
+            trigger={
+              <SidebarGroupAction title="New personal database">
+                <Plus />
+                <span className="sr-only">New personal database</span>
+              </SidebarGroupAction>
+            }
+          />
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {renderDbList(personalDbs, 'Create personal DB', 'personal')}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -173,32 +174,46 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              isActive={pathname.startsWith('/graph')}
-              tooltip="Graph"
+              isActive={
+                pathname.startsWith('/changes') || pathname.startsWith('/inbox')
+              }
+              tooltip="Changes"
             >
-              <Link href="/graph">
-                <Network />
-                <span>Graph</span>
+              <Link href="/changes">
+                <GitPullRequest />
+                <span>Changes</span>
+                {changesCount > 0 ? (
+                  <Badge
+                    variant="default"
+                    className="ml-auto h-5 min-w-5 justify-center rounded-full px-1.5 text-[10px]"
+                  >
+                    {changesCount}
+                  </Badge>
+                ) : null}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
               asChild
-              isActive={pathname.startsWith('/inbox')}
-              tooltip="Inbox"
+              isActive={pathname.startsWith('/agents')}
+              tooltip="Agents"
             >
-              <Link href="/inbox">
-                <Bell />
-                <span>Inbox</span>
-                {inboxCount > 0 ? (
-                  <Badge
-                    variant="default"
-                    className="ml-auto h-5 min-w-5 justify-center rounded-full px-1.5 text-[10px]"
-                  >
-                    {inboxCount}
-                  </Badge>
-                ) : null}
+              <Link href="/agents">
+                <Bot />
+                <span>Agents</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith('/graph')}
+              tooltip="Graph"
+            >
+              <Link href="/graph">
+                <Network />
+                <span>Graph</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>

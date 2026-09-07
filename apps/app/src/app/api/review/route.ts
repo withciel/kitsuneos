@@ -11,9 +11,16 @@ interface ChangeSetSummary {
   rationale: string | null;
   status: string;
   createdAt: string;
+  decidedAt: string | null;
+  expiresAt: string;
   author: string;
+  authorId: string;
+  conflictCount: number;
+  conflictedFields: string[];
   operations: OperationSummary[];
 }
+
+const CLOSED_STATUSES = ['applied', 'rejected', 'expired', 'stale', 'blocked'];
 
 interface OperationSummary {
   id: string;
@@ -27,24 +34,48 @@ interface OperationSummary {
   seq: number;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ctx = await requireWorkspace();
+    const url = new URL(request.url);
+    const scope = url.searchParams.get('scope') ?? 'open';
+    const authorId = url.searchParams.get('authorId');
+
+    let statusClause = `cs.status = 'open'`;
+    const params: unknown[] = [ctx.workspaceId];
+    if (scope === 'all') {
+      statusClause = '1=1';
+    } else if (scope === 'closed') {
+      params.push(CLOSED_STATUSES);
+      statusClause = `cs.status = ANY($${params.length})`;
+    }
+    let authorClause = '';
+    if (authorId) {
+      params.push(authorId);
+      authorClause = `AND cs.author_id = $${params.length}`;
+    }
+
     const changeSets = await engine.ownerPool.query<{
       id: string;
       title: string | null;
       rationale: string | null;
       status: string;
       created_at: Date;
+      decided_at: Date | null;
+      expires_at: Date;
       author: string;
+      author_id: string;
+      conflict_count: number;
+      conflicted_fields: string[];
     }>(
       `SELECT cs.id, cs.title, cs.rationale, cs.status, cs.created_at,
-              p.display_name AS author
+              cs.decided_at, cs.expires_at, cs.conflict_count,
+              cs.conflicted_fields, cs.author_id, p.display_name AS author
          FROM kitsune.change_sets cs
          JOIN kitsune.principals p ON p.id = cs.author_id
-        WHERE cs.workspace_id = $1 AND cs.status = 'open'
-        ORDER BY cs.created_at`,
-      [ctx.workspaceId],
+        WHERE cs.workspace_id = $1 AND ${statusClause} ${authorClause}
+        ORDER BY cs.created_at DESC`,
+      params,
     );
 
     const summaries: ChangeSetSummary[] = [];
@@ -98,7 +129,12 @@ export async function GET() {
         rationale: cs.rationale,
         status: cs.status,
         createdAt: cs.created_at.toISOString(),
+        decidedAt: cs.decided_at ? cs.decided_at.toISOString() : null,
+        expiresAt: cs.expires_at.toISOString(),
         author: cs.author,
+        authorId: cs.author_id,
+        conflictCount: cs.conflict_count,
+        conflictedFields: cs.conflicted_fields,
         operations,
       });
     }

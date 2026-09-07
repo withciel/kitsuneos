@@ -22,16 +22,19 @@ export function CreateDatabaseDialog({
   trigger,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
+  defaultScope = 'workspace',
 }: {
   trigger?: ReactNode;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  defaultScope?: 'workspace' | 'personal';
 }) {
   const router = useRouter();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
   const setOpen = controlledOnOpenChange ?? setUncontrolledOpen;
   const [name, setName] = useState('');
+  const [scope, setScope] = useState<'workspace' | 'personal'>(defaultScope);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
@@ -49,6 +52,7 @@ export function CreateDatabaseDialog({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: trimmed,
+          scope,
           fields: [{ name: 'name', type: 'text', nullable: false }],
         }),
       });
@@ -73,6 +77,9 @@ export function CreateDatabaseDialog({
         if (!next) {
           setError('');
           setName('');
+          setScope(defaultScope);
+        } else {
+          setScope(defaultScope);
         }
       }}
     >
@@ -87,8 +94,8 @@ export function CreateDatabaseDialog({
         <DialogHeader>
           <DialogTitle>Create a database</DialogTitle>
           <DialogDescription>
-            Databases hold pages in a table. You can add properties after
-            opening it.
+            Databases hold pages in a table. Add board, list, gallery, or
+            calendar views after opening it.
           </DialogDescription>
         </DialogHeader>
         <form
@@ -110,6 +117,27 @@ export function CreateDatabaseDialog({
               autoComplete="off"
               spellCheck={false}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Scope</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={scope === 'workspace' ? 'default' : 'outline'}
+                onClick={() => setScope('workspace')}
+              >
+                Workspace
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={scope === 'personal' ? 'default' : 'outline'}
+                onClick={() => setScope('personal')}
+              >
+                Personal
+              </Button>
+            </div>
           </div>
           <DialogFooter>
             <Button type="submit" disabled={busy || !name.trim()}>
