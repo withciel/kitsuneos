@@ -2,15 +2,9 @@ import type { KitsuneEngine } from '@kitsuneos/core';
 import {
   assertPlanLimit,
   claimInvitesForUser,
-  createApiKey,
   ensureOwnerMembership,
 } from '@kitsuneos/core';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  defineStarterCollections,
-  grantAssistantOnStarters,
-  grantOwnerOnStarters,
-} from './seed-collections.js';
 
 export interface ProvisionUserInput {
   workosId: string;
@@ -28,9 +22,8 @@ export interface ProvisionUserResult {
 }
 
 /**
- * Idempotent per workosId. Uses a dedicated pool client for the advisory lock
- * so lock and unlock cannot run on different pooled connections (which would
- * leave the lock held and hang later signup attempts).
+ * Idempotent per workosId. Creates an empty workspace (no starter databases).
+ * Interactive onboarding creates the first databases in the console.
  */
 export async function provisionUserWorkspace(
   engine: KitsuneEngine,
@@ -86,71 +79,11 @@ export async function provisionUserWorkspace(
       );
       created.push('principal');
 
-      const ids = await defineStarterCollections(engine, workspaceId);
-      created.push('collection:accounts');
-      created.push('collection:contacts');
-      created.push('collection:opportunities');
-      created.push('collection:notes');
-      created.push('collection:posts');
-
-      const assistantId = await engine.createPrincipal(
-        workspaceId,
-        'agent',
-        'assistant',
-      );
-      created.push('principal:assistant');
-
-      await grantOwnerOnStarters(
-        engine,
-        workspaceId,
-        principalId,
-        ids,
-        created,
-      );
-      await grantAssistantOnStarters(
-        engine,
-        workspaceId,
-        principalId,
-        assistantId,
-        ids,
-      );
-      created.push('grant:assistant:collections');
-
-      const accountId = uuidv4();
-      await engine.directWrite(
-        workspaceId,
-        principalId,
-        'accounts',
-        { name: 'Starter Account', industry: 'software' },
-        { recordId: accountId },
-      );
-      await engine.directWrite(workspaceId, principalId, 'opportunities', {
-        account_id: accountId,
-        name: 'Starter Opportunity',
-        amount: 1000,
-        stage: 'prospecting',
-        next_step: 'Review KitsuneOS docs',
-      });
-      created.push('seed');
-
-      // Connect keys belong to the assistant agent (propose-only), not the human.
-      const apiKey = await createApiKey(engine.ownerPool, assistantId);
-      created.push('api_key');
-
-      // Persist one-time reveal: /api/schema often provisions first and drops
-      // the in-memory key; Settings /api/me consumes and clears this column.
       await lockClient.query(
         `INSERT INTO kitsune.users
            (id, workos_id, email, workspace_id, principal_id, pending_api_key)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [
-          userId,
-          input.workosId,
-          input.email,
-          workspaceId,
-          principalId,
-          apiKey.plaintext,
-        ],
+         VALUES ($1, $2, $3, $4, $5, NULL)`,
+        [userId, input.workosId, input.email, workspaceId, principalId],
       );
       created.push('user');
 
@@ -175,7 +108,7 @@ export async function provisionUserWorkspace(
         workspaceId,
         principalId,
         schemaName,
-        apiKeyPlaintext: apiKey.plaintext,
+        apiKeyPlaintext: null,
         created,
         skipped,
       };
@@ -207,8 +140,7 @@ export interface CreateAdditionalWorkspaceResult {
 }
 
 /**
- * Create another workspace for an existing user (multi-workspace accounts).
- * Seeds the same starter databases + assistant as first-time provision.
+ * Create another empty workspace for an existing user.
  */
 export async function createAdditionalWorkspaceForUser(
   engine: KitsuneEngine,
@@ -240,50 +172,6 @@ export async function createAdditionalWorkspaceForUser(
   );
   created.push('principal');
 
-  const ids = await defineStarterCollections(engine, workspaceId);
-  created.push('collection:accounts');
-  created.push('collection:contacts');
-  created.push('collection:opportunities');
-  created.push('collection:notes');
-  created.push('collection:posts');
-
-  const assistantId = await engine.createPrincipal(
-    workspaceId,
-    'agent',
-    'assistant',
-  );
-  created.push('principal:assistant');
-
-  await grantOwnerOnStarters(engine, workspaceId, principalId, ids, created);
-  await grantAssistantOnStarters(
-    engine,
-    workspaceId,
-    principalId,
-    assistantId,
-    ids,
-  );
-  created.push('grant:assistant:collections');
-
-  const accountId = uuidv4();
-  await engine.directWrite(
-    workspaceId,
-    principalId,
-    'accounts',
-    { name: 'Starter Account', industry: 'software' },
-    { recordId: accountId },
-  );
-  await engine.directWrite(workspaceId, principalId, 'opportunities', {
-    account_id: accountId,
-    name: 'Starter Opportunity',
-    amount: 1000,
-    stage: 'prospecting',
-    next_step: 'Review KitsuneOS docs',
-  });
-  created.push('seed');
-
-  const apiKey = await createApiKey(engine.ownerPool, assistantId);
-  created.push('api_key');
-
   await ensureOwnerMembership(engine.ownerPool, {
     userId: input.userId,
     workspaceId,
@@ -295,13 +183,10 @@ export async function createAdditionalWorkspaceForUser(
   if (activate) {
     await engine.ownerPool.query(
       `UPDATE kitsune.users
-          SET workspace_id = $2,
-              principal_id = $3,
-              pending_api_key = $4
+          SET workspace_id = $2, principal_id = $3
         WHERE id = $1`,
-      [input.userId, workspaceId, principalId, apiKey.plaintext],
+      [input.userId, workspaceId, principalId],
     );
-    created.push('activated');
   }
 
   return {
@@ -309,13 +194,7 @@ export async function createAdditionalWorkspaceForUser(
     principalId,
     schemaName,
     workspaceName: displayName,
-    apiKeyPlaintext: apiKey.plaintext,
+    apiKeyPlaintext: null,
     created,
   };
 }
-
-export {
-  ensureNotesCollection,
-  NOTES_COLLECTION,
-  NOTES_DEFINITION,
-} from './seed-collections.js';

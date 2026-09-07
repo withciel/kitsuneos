@@ -101,9 +101,41 @@ export interface FieldDefinition {
   rollup?: RollupDefinition;
 }
 
+export type CollectionScope = 'workspace' | 'personal';
+
+export type CollectionViewType =
+  | 'table'
+  | 'board'
+  | 'list'
+  | 'gallery'
+  | 'calendar';
+
+export interface CollectionViewConfig {
+  groupBy?: string;
+  dateField?: string;
+  hiddenColumns?: string[];
+  sorts?: QuerySort[];
+  filters?: QueryFilter[];
+}
+
+export interface CollectionView {
+  id: string;
+  collectionId: string;
+  name: string;
+  type: CollectionViewType;
+  config: CollectionViewConfig;
+  position: number;
+  isDefaultTable: boolean;
+}
+
+export type AgentMembership = 'workspace' | 'team' | 'personal';
+
 export interface CollectionDefinition {
   name: string;
   fields: FieldDefinition[];
+  /** Defaults to workspace. Personal collections are owned by a principal. */
+  scope?: CollectionScope;
+  ownerPrincipalId?: string;
 }
 
 export interface ResolvedGrant {
