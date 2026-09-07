@@ -19,7 +19,7 @@ const INITIAL: OnboardingProgress = {
   'create-database': false,
   'add-page': false,
   'connect-agent': false,
-  'review-inbox': false,
+  'review-changes': false,
   firstCollection: null,
 };
 

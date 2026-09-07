@@ -6,17 +6,21 @@ import { CreateDatabaseDialog } from '@/components/collection/create-database-di
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 
+type BootState =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'empty'; memberOnly: boolean }
+  | { kind: 'redirecting' };
+
 export default function WorkspaceHomePage() {
   const router = useRouter();
-  const [empty, setEmpty] = useState(false);
-  const [memberOnlyEmpty, setMemberOnlyEmpty] = useState(false);
-  const [bootError, setBootError] = useState('');
+  const [boot, setBoot] = useState<BootState>({ kind: 'loading' });
+  const [notesBusy, setNotesBusy] = useState(false);
 
   useEffect(() => {
     void fetch('/api/schema')
       .then(async (response) => {
         if (response.status === 401) {
-          // App auth path — do not bounce expired sessions to marketing `/`.
           window.location.assign('/login');
           return;
         }
@@ -24,49 +28,78 @@ export default function WorkspaceHomePage() {
           const body = (await response.json().catch(() => ({}))) as {
             error?: string;
           };
-          setBootError(
-            body.error ??
+          setBoot({
+            kind: 'error',
+            message:
+              body.error ??
               'Could not load your workspace. Refresh or sign in again.',
-          );
+          });
           return;
         }
         const body = (await response.json()) as {
           collections?: Array<{ name: string }>;
         };
-        const first = body.collections?.[0]?.name;
-        if (first) {
-          router.replace(`/c/${first}`);
-        } else {
-          setEmpty(true);
-          try {
-            const meRes = await fetch('/api/me');
-            const meBody = (await meRes.json()) as { role?: string };
-            setMemberOnlyEmpty(
+        if ((body.collections?.length ?? 0) > 0) {
+          setBoot({ kind: 'redirecting' });
+          router.replace(`/c/${body.collections![0]!.name}`);
+          return;
+        }
+        try {
+          const meRes = await fetch('/api/me');
+          const meBody = (await meRes.json()) as { role?: string };
+          setBoot({
+            kind: 'empty',
+            memberOnly:
               meBody.role === 'member' || meBody.role === 'viewer',
-            );
-          } catch {
-            setMemberOnlyEmpty(false);
-          }
+          });
+        } catch {
+          setBoot({ kind: 'empty', memberOnly: false });
         }
       })
       .catch(() =>
-        setBootError(
-          'Could not reach the workspace API. Check your connection and retry.',
-        ),
+        setBoot({
+          kind: 'error',
+          message:
+            'Could not reach the workspace API. Check your connection and retry.',
+        }),
       );
   }, [router]);
 
-  if (bootError) {
+  async function createPersonalNotes() {
+    setNotesBusy(true);
+    try {
+      const response = await fetch('/api/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'notes',
+          scope: 'personal',
+          fields: [
+            { name: 'title', type: 'text', nullable: false },
+            { name: 'body', type: 'prose' },
+            { name: 'tags', type: 'text' },
+          ],
+        }),
+      });
+      const body = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(body.error ?? 'Create failed');
+      router.push('/c/notes');
+    } catch {
+      setNotesBusy(false);
+    }
+  }
+
+  if (boot.kind === 'error') {
     return (
       <div className="flex flex-1 flex-col items-start gap-4 p-8">
         <h1 className="text-2xl font-semibold tracking-tight">
           Workspace unavailable
         </h1>
-        <p className="max-w-md text-sm text-destructive">{bootError}</p>
+        <p className="max-w-md text-sm text-destructive">{boot.message}</p>
         <Button
           variant="outline"
           onClick={() => {
-            setBootError('');
+            setBoot({ kind: 'loading' });
             window.location.reload();
           }}
         >
@@ -76,25 +109,44 @@ export default function WorkspaceHomePage() {
     );
   }
 
-  if (empty) {
+  if (boot.kind === 'empty') {
     return (
-      <div className="flex flex-1 flex-col items-start gap-6 p-8">
+      <div className="flex flex-1 flex-col items-start gap-8 p-8">
         <div className="space-y-2">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Step 1 of 4 · First win
+            Welcome
           </p>
           <h1 className="text-2xl font-semibold tracking-tight">
-            {memberOnlyEmpty
+            {boot.memberOnly
               ? 'No databases shared with you yet'
-              : 'Create your first database'}
+              : 'Start with an empty workspace'}
           </h1>
           <p className="max-w-lg text-sm text-muted-foreground">
-            {memberOnlyEmpty
-              ? 'This workspace may already have databases, but none are shared with your account yet. Ask a workspace owner or admin to grant you access under Settings → Access.'
-              : 'A database is a shared table for you and your AI helpers. Start here — next you will add a page, connect an agent, and review proposals in Inbox. You can add properties after you open the database.'}
+            {boot.memberOnly
+              ? 'Ask a workspace owner or admin to grant you access, or wait for a shared database.'
+              : 'Nothing is seeded for you. Create a workspace database, a personal notes database, or connect an agent when you are ready.'}
           </p>
         </div>
-        {memberOnlyEmpty ? null : <CreateDatabaseDialog />}
+        {boot.memberOnly ? null : (
+          <div className="flex flex-wrap gap-3">
+            <CreateDatabaseDialog defaultScope="workspace" />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={notesBusy}
+              onClick={() => void createPersonalNotes()}
+            >
+              {notesBusy ? 'Creating…' : 'Create personal notes'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push('/agents')}
+            >
+              Connect an agent
+            </Button>
+          </div>
+        )}
       </div>
     );
   }

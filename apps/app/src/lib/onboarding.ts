@@ -1,13 +1,13 @@
 'use client';
 
 const DISMISS_KEY = 'kitsuneos.onboarding.dismissed';
-const SEEN_INBOX_KEY = 'kitsuneos.onboarding.seen-inbox';
+const SEEN_CHANGES_KEY = 'kitsuneos.onboarding.seen-changes';
 
 export type OnboardingStepId =
   | 'create-database'
   | 'add-page'
   | 'connect-agent'
-  | 'review-inbox';
+  | 'review-changes';
 
 export interface OnboardingStep {
   id: OnboardingStepId;
@@ -36,16 +36,16 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'connect-agent',
     title: 'Connect an AI helper',
-    description: 'Create a key and paste MCP config into Cursor or Claude.',
-    href: '/settings/connect',
-    cta: 'Connect AI',
+    description: 'Create an agent and paste MCP config into Cursor or Claude.',
+    href: '/agents',
+    cta: 'Open Agents',
   },
   {
-    id: 'review-inbox',
+    id: 'review-changes',
     title: 'Know where reviews land',
-    description: 'Agent proposals show up in Inbox for approve or reject.',
-    href: '/inbox',
-    cta: 'Open Inbox',
+    description: 'Agent proposals show up in Changes for approve or merge.',
+    href: '/changes',
+    cta: 'Open Changes',
   },
 ];
 
@@ -68,15 +68,19 @@ export function dismissOnboarding(): void {
 
 export function markInboxSeen(): void {
   try {
-    window.localStorage.setItem(SEEN_INBOX_KEY, '1');
+    window.localStorage.setItem(SEEN_CHANGES_KEY, '1');
   } catch {
     // ignore
   }
 }
 
-function hasSeenInbox(): boolean {
+export function markChangesSeen(): void {
+  markInboxSeen();
+}
+
+function hasSeenChanges(): boolean {
   try {
-    return window.localStorage.getItem(SEEN_INBOX_KEY) === '1';
+    return window.localStorage.getItem(SEEN_CHANGES_KEY) === '1';
   } catch {
     return false;
   }
@@ -86,7 +90,7 @@ export interface OnboardingProgress {
   'create-database': boolean;
   'add-page': boolean;
   'connect-agent': boolean;
-  'review-inbox': boolean;
+  'review-changes': boolean;
   firstCollection: string | null;
 }
 
@@ -95,14 +99,14 @@ export async function loadOnboardingProgress(): Promise<OnboardingProgress> {
     'create-database': false,
     'add-page': false,
     'connect-agent': false,
-    'review-inbox': false,
+    'review-changes': false,
     firstCollection: null,
   };
 
   try {
-    const [schemaRes, meRes, reviewRes] = await Promise.all([
+    const [schemaRes, agentsRes, reviewRes] = await Promise.all([
       fetch('/api/schema'),
-      fetch('/api/me'),
+      fetch('/api/agents'),
       fetch('/api/review'),
     ]);
 
@@ -131,20 +135,19 @@ export async function loadOnboardingProgress(): Promise<OnboardingProgress> {
       }
     }
 
-    if (meRes.ok) {
-      const me = (await meRes.json()) as {
-        apiKeyPlaintext?: string | null;
-        hasApiKey?: boolean;
+    if (agentsRes.ok) {
+      const agents = (await agentsRes.json()) as {
+        agents?: unknown[];
       };
-      progress['connect-agent'] = Boolean(me.apiKeyPlaintext || me.hasApiKey);
+      progress['connect-agent'] = (agents.agents?.length ?? 0) > 0;
     }
 
     if (reviewRes.ok) {
       const review = (await reviewRes.json()) as {
         changeSets?: unknown[];
       };
-      progress['review-inbox'] =
-        (review.changeSets?.length ?? 0) > 0 || hasSeenInbox();
+      progress['review-changes'] =
+        (review.changeSets?.length ?? 0) > 0 || hasSeenChanges();
     }
   } catch {
     return progress;
