@@ -74,7 +74,7 @@ import {
   listTeams as listTeamRows,
   removeTeamMember,
 } from './org/memberships.js';
-import { canViewPage, filterVisibleRecordIds } from './org/page-access.js';
+import { canViewPage } from './org/page-access.js';
 import {
   type SweepRevisionsResult,
   sweepExpiredRevisions,
@@ -107,11 +107,16 @@ import {
   upsertRecordEmbeddings,
 } from './search/search.js';
 import type {
+  AgentMembership,
   AuditQuery,
   AuditRow,
   Capability,
   ChangeOpInput,
   CollectionDefinition,
+  CollectionScope,
+  CollectionView,
+  CollectionViewConfig,
+  CollectionViewType,
   DbConfig,
   FieldType,
   JsonValue,
@@ -141,6 +146,14 @@ import {
   type VfsListResult,
   type VfsReadResult,
 } from './vfs/paths.js';
+import {
+  createCollectionView,
+  deleteCollectionView,
+  ensureDefaultTableView,
+  listCollectionViews,
+  readCollectionViews,
+  updateCollectionView,
+} from './views/collection-views.js';
 import {
   deleteWebhookEndpoint,
   dispatchChangeSetApplied,
@@ -560,6 +573,9 @@ export class KitsuneEngine {
       principalId?: string;
       externalIssuer?: string;
       externalSubject?: string;
+      agentMembership?: AgentMembership;
+      agentTeamId?: string;
+      agentOwnerPrincipalId?: string;
     },
   ): Promise<string> {
     const id = options?.principalId ?? uuidv4();
@@ -577,12 +593,65 @@ export class KitsuneEngine {
         dimension: 'agentsPerWorkspace',
       });
     }
+    const agentMembership =
+      kind === 'agent' ? (options?.agentMembership ?? 'workspace') : null;
+    const rawAgentTeamId =
+      agentMembership === 'team' ? (options?.agentTeamId ?? null) : null;
+    const agentOwnerPrincipalId =
+      agentMembership === 'personal'
+        ? (options?.agentOwnerPrincipalId ?? null)
+        : null;
+    if (kind === 'agent' && agentMembership === 'team' && !rawAgentTeamId) {
+      throw new KitsuneError(
+        'agentTeamId is required for team agents',
+        'validation',
+      );
+    }
+    if (
+      kind === 'agent' &&
+      agentMembership === 'personal' &&
+      !agentOwnerPrincipalId
+    ) {
+      throw new KitsuneError(
+        'agentOwnerPrincipalId is required for personal agents',
+        'validation',
+      );
+    }
+    // agent_team_id FK is kitsune.teams(id). Callers (console) often pass the
+    // team's principal_id from share-targets; accept either and store teams.id.
+    let agentTeamId: string | null = null;
+    if (rawAgentTeamId) {
+      const team = await withOwner(this.ownerPool, async (client) =>
+        queryOne<{ id: string }>(
+          client,
+          `SELECT id FROM kitsune.teams
+            WHERE workspace_id = $1
+              AND (id = $2 OR principal_id = $2)`,
+          [workspaceId, rawAgentTeamId],
+        ),
+      );
+      if (!team) {
+        throw new KitsuneError('Team not found', 'not_found');
+      }
+      agentTeamId = team.id;
+    }
     await withOwner(this.ownerPool, async (client) => {
       await client.query(
         `INSERT INTO kitsune.principals
-           (id, workspace_id, kind, display_name, external_issuer, external_subject)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [id, workspaceId, kind, displayName, externalIssuer, externalSubject],
+           (id, workspace_id, kind, display_name, external_issuer, external_subject,
+            agent_membership, agent_team_id, agent_owner_principal_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          id,
+          workspaceId,
+          kind,
+          displayName,
+          externalIssuer,
+          externalSubject,
+          agentMembership,
+          agentTeamId,
+          agentOwnerPrincipalId,
+        ],
       );
     });
     return id;
@@ -719,6 +788,25 @@ export class KitsuneEngine {
       dimension: 'collectionsPerWorkspace',
     });
     validateCollectionDefinition(definition);
+    if (definition.scope === 'personal' && !definition.ownerPrincipalId) {
+      throw new KitsuneError(
+        'ownerPrincipalId is required for personal collections',
+        'validation',
+      );
+    }
+    if (definition.scope === 'personal' && definition.ownerPrincipalId) {
+      const owner = await this.ownerPool.query<{ id: string }>(
+        `SELECT id FROM kitsune.principals
+          WHERE id = $1 AND workspace_id = $2 AND disabled_at IS NULL`,
+        [definition.ownerPrincipalId, workspaceId],
+      );
+      if (!owner.rows[0]) {
+        throw new KitsuneError(
+          'ownerPrincipalId must be an active principal in this workspace',
+          'validation',
+        );
+      }
+    }
     const schemaName = schemaNameForWorkspace(workspaceId);
     const collectionId = uuidv4();
     const tableName = definition.name;
@@ -757,9 +845,19 @@ export class KitsuneEngine {
       }
 
       await client.query(
-        `INSERT INTO kitsune.collections (id, workspace_id, name, table_name)
-         VALUES ($1, $2, $3, $4)`,
-        [collectionId, workspaceId, definition.name, tableName],
+        `INSERT INTO kitsune.collections
+           (id, workspace_id, name, table_name, scope, owner_principal_id)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [
+          collectionId,
+          workspaceId,
+          definition.name,
+          tableName,
+          definition.scope ?? 'workspace',
+          definition.scope === 'personal'
+            ? (definition.ownerPrincipalId ?? null)
+            : null,
+        ],
       );
 
       for (const field of definition.fields) {
@@ -796,6 +894,8 @@ export class KitsuneEngine {
       )) {
         await client.query(stmt);
       }
+
+      await ensureDefaultTableView(client, collectionId);
     });
 
     return collectionId;
@@ -808,9 +908,10 @@ export class KitsuneEngine {
     capability: Capability,
     fieldMask: string[] | null,
     rowPredicate: Predicate | null,
-    options?: { adminOverrideAgentWrite?: boolean; actorId?: string },
+    options?: { actorId?: string },
   ): Promise<string> {
     const grantId = uuidv4();
+    let principalKind: string | undefined;
     await withOwner(this.ownerPool, async (client) => {
       const principal = await queryOne<{ kind: string }>(
         client,
@@ -820,19 +921,7 @@ export class KitsuneEngine {
       if (!principal) {
         throw new KitsuneError('Principal not found', 'not_found');
       }
-
-      if (
-        principal.kind === 'agent' &&
-        CAPABILITY_ORDER.indexOf(capability) >=
-          CAPABILITY_ORDER.indexOf('write')
-      ) {
-        if (!options?.adminOverrideAgentWrite) {
-          throw new KitsuneError(
-            'Agent principals cannot be granted write without explicit admin action',
-            'forbidden',
-          );
-        }
-      }
+      principalKind = principal.kind;
 
       await client.query(
         `INSERT INTO kitsune.grants
@@ -851,30 +940,19 @@ export class KitsuneEngine {
     });
 
     if (options?.actorId) {
-      let principalKind: string | undefined;
       if (
+        principalKind === 'agent' &&
         CAPABILITY_ORDER.indexOf(capability) >=
-          CAPABILITY_ORDER.indexOf('write') &&
-        options.adminOverrideAgentWrite
+          CAPABILITY_ORDER.indexOf('write')
       ) {
-        await withOwner(this.ownerPool, async (client) => {
-          const principal = await queryOne<{ kind: string }>(
-            client,
-            `SELECT kind FROM kitsune.principals WHERE id = $1`,
-            [principalId],
-          );
-          principalKind = principal?.kind;
+        await writeAudit(this.appPool, {
+          workspaceId,
+          principalId: options.actorId,
+          action: 'grant.agent_write',
+          collectionId,
+          outcome: 'allowed',
+          detail: { targetPrincipalId: principalId, capability },
         });
-        if (principalKind === 'agent') {
-          await writeAudit(this.appPool, {
-            workspaceId,
-            principalId: options.actorId,
-            action: 'grant.agent_write_override',
-            collectionId,
-            outcome: 'allowed',
-            detail: { targetPrincipalId: principalId, capability },
-          });
-        }
       }
       await writeAudit(this.appPool, {
         workspaceId,
@@ -919,9 +997,19 @@ export class KitsuneEngine {
     try {
       await client.query('BEGIN');
       await setSessionContext(client, { schemaName, principalId });
-      const collections = await queryRows<{ id: string; name: string }>(
+      const collections = await queryRows<{
+        id: string;
+        name: string;
+        scope: string;
+        owner_principal_id: string | null;
+      }>(
         client,
-        `SELECT id, name FROM kitsune.collections WHERE workspace_id = $1 ORDER BY name`,
+        `SELECT id, name,
+                COALESCE(scope, 'workspace') AS scope,
+                owner_principal_id
+           FROM kitsune.collections
+          WHERE workspace_id = $1
+          ORDER BY name`,
         [workspaceId],
       );
       const result = [];
@@ -934,6 +1022,8 @@ export class KitsuneEngine {
         if (!grant || grant.capability === 'none') {
           continue;
         }
+        // Personal collections stay visible to any principal holding a grant;
+        // the grant check above is the only gate.
         const fields = await queryRows<{
           name: string;
           type: string;
@@ -954,16 +1044,23 @@ export class KitsuneEngine {
         if (visibleFields.length === 0) {
           continue;
         }
+        // Default views are created by defineCollection and migration backfill;
+        // do not INSERT from this read path.
+        const views = await readCollectionViews(client, collection.id);
         result.push({
+          id: collection.id,
           name: collection.name,
+          scope: collection.scope as CollectionScope,
+          ownerPrincipalId: collection.owner_principal_id,
           capability: grant.capability,
+          views,
           fields: visibleFields.map((f) => ({
             name: f.name,
             type: f.type,
             relationTarget: f.relation_target,
             enumValues: f.enum_values ?? undefined,
             readable: true,
-            // Console direct edit requires write/admin. Propose-only reviews via Inbox.
+            // Console direct edit requires write/admin. Propose-only reviews via Changes.
             writable:
               grant.fieldMask === null || grant.fieldMask.includes(f.name)
                 ? CAPABILITY_ORDER.indexOf(grant.capability) >=
@@ -981,6 +1078,243 @@ export class KitsuneEngine {
     } finally {
       client.release();
     }
+  }
+
+  async listViews(
+    workspaceId: string,
+    principalId: string,
+    collectionName: string,
+  ): Promise<CollectionView[]> {
+    return withOwner(this.ownerPool, async (client) => {
+      const collection = await queryOne<{ id: string }>(
+        client,
+        `SELECT id FROM kitsune.collections
+          WHERE workspace_id = $1 AND name = $2`,
+        [workspaceId, collectionName],
+      );
+      if (!collection) throw new KitsuneError('Not found', 'not_found');
+      const grant = await loadResolvedGrant(client, principalId, collection.id);
+      if (!grant || grant.capability === 'none') {
+        throw new KitsuneError('Not found', 'not_found');
+      }
+      return listCollectionViews(client, collection.id);
+    });
+  }
+
+  async createView(
+    workspaceId: string,
+    principalId: string,
+    collectionName: string,
+    input: {
+      name: string;
+      type: CollectionViewType;
+      config?: CollectionViewConfig;
+    },
+  ): Promise<CollectionView> {
+    if (input.type === 'table' && !input.name.trim()) {
+      throw new KitsuneError('View name is required', 'validation');
+    }
+    return withOwner(this.ownerPool, async (client) => {
+      const collection = await queryOne<{ id: string }>(
+        client,
+        `SELECT id FROM kitsune.collections
+          WHERE workspace_id = $1 AND name = $2`,
+        [workspaceId, collectionName],
+      );
+      if (!collection) throw new KitsuneError('Not found', 'not_found');
+      const grant = await loadResolvedGrant(client, principalId, collection.id);
+      if (
+        !grant ||
+        CAPABILITY_ORDER.indexOf(grant.capability) <
+          CAPABILITY_ORDER.indexOf('write')
+      ) {
+        throw new KitsuneError('Forbidden', 'forbidden');
+      }
+      await ensureDefaultTableView(client, collection.id);
+      return createCollectionView(client, collection.id, input);
+    });
+  }
+
+  async updateView(
+    workspaceId: string,
+    principalId: string,
+    viewId: string,
+    input: {
+      name?: string;
+      config?: CollectionViewConfig;
+      position?: number;
+    },
+  ): Promise<CollectionView> {
+    return withOwner(this.ownerPool, async (client) => {
+      const view = await queryOne<{ collection_id: string }>(
+        client,
+        `SELECT v.collection_id
+           FROM kitsune.collection_views v
+           JOIN kitsune.collections c ON c.id = v.collection_id
+          WHERE v.id = $1 AND c.workspace_id = $2`,
+        [viewId, workspaceId],
+      );
+      if (!view) throw new KitsuneError('Not found', 'not_found');
+      const grant = await loadResolvedGrant(
+        client,
+        principalId,
+        view.collection_id,
+      );
+      if (
+        !grant ||
+        CAPABILITY_ORDER.indexOf(grant.capability) <
+          CAPABILITY_ORDER.indexOf('write')
+      ) {
+        throw new KitsuneError('Forbidden', 'forbidden');
+      }
+      return updateCollectionView(client, viewId, input);
+    });
+  }
+
+  async deleteView(
+    workspaceId: string,
+    principalId: string,
+    viewId: string,
+  ): Promise<void> {
+    await withOwner(this.ownerPool, async (client) => {
+      const view = await queryOne<{ collection_id: string }>(
+        client,
+        `SELECT v.collection_id
+           FROM kitsune.collection_views v
+           JOIN kitsune.collections c ON c.id = v.collection_id
+          WHERE v.id = $1 AND c.workspace_id = $2`,
+        [viewId, workspaceId],
+      );
+      if (!view) throw new KitsuneError('Not found', 'not_found');
+      const grant = await loadResolvedGrant(
+        client,
+        principalId,
+        view.collection_id,
+      );
+      if (
+        !grant ||
+        CAPABILITY_ORDER.indexOf(grant.capability) <
+          CAPABILITY_ORDER.indexOf('write')
+      ) {
+        throw new KitsuneError('Forbidden', 'forbidden');
+      }
+      await deleteCollectionView(client, viewId);
+    });
+  }
+
+  async listChangeSetComments(
+    workspaceId: string,
+    principalId: string,
+    changeSetId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      authorId: string;
+      authorName: string;
+      body: string;
+      createdAt: string;
+    }>
+  > {
+    return withOwner(this.ownerPool, async (client) => {
+      await this.assertChangeSetCommentAccess(
+        client,
+        workspaceId,
+        principalId,
+        changeSetId,
+      );
+      const rows = await queryRows<{
+        id: string;
+        author_id: string;
+        display_name: string;
+        body: string;
+        created_at: Date;
+      }>(
+        client,
+        `SELECT c.id, c.author_id, p.display_name, c.body, c.created_at
+           FROM kitsune.change_set_comments c
+           JOIN kitsune.principals p ON p.id = c.author_id
+          WHERE c.change_set_id = $1
+          ORDER BY c.created_at ASC`,
+        [changeSetId],
+      );
+      return rows.map((row) => ({
+        id: row.id,
+        authorId: row.author_id,
+        authorName: row.display_name,
+        body: row.body,
+        createdAt: row.created_at.toISOString(),
+      }));
+    });
+  }
+
+  async addChangeSetComment(
+    workspaceId: string,
+    principalId: string,
+    changeSetId: string,
+    body: string,
+  ): Promise<{ id: string }> {
+    const trimmed = body.trim();
+    if (!trimmed) {
+      throw new KitsuneError('Comment body is required', 'validation');
+    }
+    return withOwner(this.ownerPool, async (client) => {
+      await this.assertChangeSetCommentAccess(
+        client,
+        workspaceId,
+        principalId,
+        changeSetId,
+      );
+      const id = uuidv4();
+      await client.query(
+        `INSERT INTO kitsune.change_set_comments
+           (id, change_set_id, author_id, body)
+         VALUES ($1, $2, $3, $4)`,
+        [id, changeSetId, principalId, trimmed],
+      );
+      return { id };
+    });
+  }
+
+  /**
+   * Author may always comment; other principals need at least read on one of
+   * the change set's collections (same visibility bar as reviewing ops).
+   */
+  private async assertChangeSetCommentAccess(
+    client: PoolClient,
+    workspaceId: string,
+    principalId: string,
+    changeSetId: string,
+  ): Promise<void> {
+    const changeSet = await queryOne<{ author_id: string }>(
+      client,
+      `SELECT author_id FROM kitsune.change_sets
+        WHERE id = $1 AND workspace_id = $2`,
+      [changeSetId, workspaceId],
+    );
+    if (!changeSet) throw new KitsuneError('Not found', 'not_found');
+    if (changeSet.author_id === principalId) return;
+
+    const collections = await queryRows<{ collection_id: string }>(
+      client,
+      `SELECT DISTINCT collection_id FROM kitsune.change_ops
+        WHERE change_set_id = $1`,
+      [changeSetId],
+    );
+    for (const row of collections) {
+      const grant = await loadResolvedGrant(
+        client,
+        principalId,
+        row.collection_id,
+      );
+      if (
+        grant &&
+        CAPABILITY_ORDER.indexOf(grant.capability) >=
+          CAPABILITY_ORDER.indexOf('read')
+      ) {
+        return;
+      }
+    }
+    throw new KitsuneError('Not found', 'not_found');
   }
 
   async query(
@@ -1005,11 +1339,6 @@ export class KitsuneEngine {
         compiled.sql,
         compiled.params,
       );
-      const meta = await getCollectionMeta(
-        client,
-        workspaceId,
-        request.collection,
-      );
       await writeAuditInTxn(client, {
         workspaceId,
         principalId,
@@ -1018,27 +1347,7 @@ export class KitsuneEngine {
         detail: { collection: request.collection },
       });
       await client.query('COMMIT');
-      // Aggregate result rows have no record id; page_access post-filtering
-      // only applies to row-level queries.
-      if (request.aggregates?.length) {
-        return rows;
-      }
-      const ids = rows
-        .map((row) => row.id)
-        .filter((id): id is string => typeof id === 'string');
-      // TODO(compiler-acl): compile page_access into row predicates instead of
-      // post-filtering after grant-scoped SELECT.
-      const visible = new Set(
-        await filterVisibleRecordIds(this.ownerPool, {
-          workspaceId,
-          collectionId: meta.id,
-          recordIds: ids,
-          principalId,
-        }),
-      );
-      return rows.filter(
-        (row) => typeof row.id === 'string' && visible.has(row.id),
-      );
+      return rows;
     } catch (error) {
       await client.query('ROLLBACK');
       if (error instanceof KitsuneError && error.code === 'forbidden') {

@@ -535,13 +535,13 @@ export function PageView({
         {!canDirectEdit ? (
           <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
             {capability === 'propose'
-              ? 'You can suggest changes via an AI helper or Inbox — this view is read-only for your access level.'
+              ? 'You can suggest changes via an AI helper or Changes — this view is read-only for your access level.'
               : 'You can view this page, but your access does not include editing here.'}{' '}
             <Link
-              href="/inbox"
+              href="/changes"
               className="text-primary underline-offset-4 hover:underline"
             >
-              Open Inbox
+              Open Changes
             </Link>
           </div>
         ) : null}
@@ -557,7 +557,7 @@ export function PageView({
               {pendingChangeRequests.map((cr) => (
                 <li key={cr.id}>
                   <Link
-                    href={`/inbox/${cr.id}`}
+                    href={`/changes/${cr.id}`}
                     className="text-primary underline-offset-4 hover:underline"
                   >
                     {cr.title?.trim() || 'Untitled change request'}

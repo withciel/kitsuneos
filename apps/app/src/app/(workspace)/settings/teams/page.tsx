@@ -1,7 +1,13 @@
 'use client';
 
+import { ShieldCheck, UsersRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SettingsNav } from '@/components/settings/settings-nav';
+import {
+  SettingsCallout,
+  SettingsPageHeader,
+  SettingsSection,
+} from '@/components/settings/settings-section';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -166,14 +172,12 @@ export default function SettingsTeamsPage() {
   return (
     <div className="flex flex-1 flex-col">
       <SettingsNav />
-      <div className="mx-auto w-full max-w-3xl space-y-8 p-6">
-        <div className="space-y-2">
-          <h2 className="text-lg font-medium">Teams</h2>
-          <p className="text-sm text-muted-foreground">
-            Group people so you can share database access with everyone on the
-            team at once.
-          </p>
-        </div>
+      <div className="mx-auto w-full max-w-3xl space-y-6 p-6">
+        <SettingsPageHeader
+          icon={UsersRound}
+          title="Teams"
+          description="Group people so you can share database access with everyone on the team at once, instead of one by one."
+        />
 
         {error ? (
           <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -181,13 +185,10 @@ export default function SettingsTeamsPage() {
           </p>
         ) : null}
 
-        <div className="space-y-4 rounded-lg border border-border p-4">
-          <div>
-            <h3 className="text-sm font-medium">Create a team</h3>
-            <p className="text-xs text-muted-foreground">
-              Example: Sales, Support, Finance.
-            </p>
-          </div>
+        <SettingsSection
+          title="Create a team"
+          description="Example: Sales, Support, Finance."
+        >
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label htmlFor="team-name">Name</Label>
@@ -203,19 +204,9 @@ export default function SettingsTeamsPage() {
               {busy ? 'Creating…' : 'Create team'}
             </Button>
           </div>
-        </div>
+        </SettingsSection>
 
-        <div className="space-y-4 rounded-lg border border-border p-4">
-          <div>
-            <h3 className="text-sm font-medium">Manage team members</h3>
-            <p className="text-xs text-muted-foreground">
-              After adding people, give the team access under{' '}
-              <a href="/settings/access" className="text-primary underline">
-                Access
-              </a>
-              .
-            </p>
-          </div>
+        <SettingsSection title="Manage team members">
           <div className="space-y-1">
             <Label>Team</Label>
             <Select value={selectedTeamId} onValueChange={setSelectedTeamId}>
@@ -234,34 +225,39 @@ export default function SettingsTeamsPage() {
 
           {selectedTeam ? (
             <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
-                {selectedTeam.memberPrincipalIds.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No members yet.
-                  </p>
-                ) : (
-                  selectedTeam.memberPrincipalIds.map((principalId) => (
-                    <Badge
-                      key={principalId}
-                      variant="secondary"
-                      className="gap-2 px-2 py-1"
-                    >
-                      {nameForPrincipal(principalId)}
-                      <button
-                        type="button"
-                        className="text-muted-foreground hover:text-foreground"
-                        disabled={busy}
-                        onClick={() => void removeMember(principalId)}
+              <div>
+                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                  Members
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedTeam.memberPrincipalIds.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No members yet.
+                    </p>
+                  ) : (
+                    selectedTeam.memberPrincipalIds.map((principalId) => (
+                      <Badge
+                        key={principalId}
+                        variant="secondary"
+                        className="gap-2 px-2 py-1"
                       >
-                        ×
-                      </button>
-                    </Badge>
-                  ))
-                )}
+                        {nameForPrincipal(principalId)}
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-foreground"
+                          disabled={busy}
+                          onClick={() => void removeMember(principalId)}
+                        >
+                          ×
+                        </button>
+                      </Badge>
+                    ))
+                  )}
+                </div>
               </div>
-              <div className="flex flex-wrap items-end gap-3">
+              <div className="flex flex-wrap items-end gap-3 border-t border-border pt-3">
                 <div className="space-y-1">
-                  <Label>Person</Label>
+                  <Label>Add person</Label>
                   <Select
                     value={memberPrincipalId}
                     onValueChange={setMemberPrincipalId}
@@ -291,7 +287,15 @@ export default function SettingsTeamsPage() {
               Create a team above to start adding people.
             </p>
           )}
-        </div>
+        </SettingsSection>
+
+        <SettingsCallout icon={ShieldCheck}>
+          After adding people, give the team access to a database under{' '}
+          <a href="/settings/access" className="text-primary underline">
+            Access
+          </a>
+          .
+        </SettingsCallout>
       </div>
     </div>
   );

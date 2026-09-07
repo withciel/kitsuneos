@@ -6,6 +6,11 @@ import {
   migrate,
   upsertSubscription,
 } from '@kitsuneos/core';
+import {
+  defineStarterCollections,
+  grantAssistantOnStarters,
+  grantOwnerOnStarters,
+} from '@kitsuneos/provisioning';
 import { v4 as uuidv4 } from 'uuid';
 
 let sharedEngine: EngineType | null = null;
@@ -336,4 +341,54 @@ export async function issueApiKey(
   principalId: string,
 ): Promise<{ keyId: string; plaintext: string; prefix: string }> {
   return coreCreateApiKey(engine.ownerPool, principalId);
+}
+
+/**
+ * Empty provision no longer seeds CRM/CMS. Tests that still need accounts /
+ * opportunities (or an admin grant for createTeam) call this after provision.
+ */
+export async function seedProvisionedCrmForTests(
+  engine: KitsuneEngine,
+  workspaceId: string,
+  ownerPrincipalId: string,
+  options?: { withAssistant?: boolean; withSeedRows?: boolean },
+): Promise<{ assistantId: string | null }> {
+  const ids = await defineStarterCollections(engine, workspaceId);
+  await grantOwnerOnStarters(engine, workspaceId, ownerPrincipalId, ids, []);
+
+  let assistantId: string | null = null;
+  if (options?.withAssistant) {
+    assistantId = await engine.createPrincipal(
+      workspaceId,
+      'agent',
+      'assistant',
+    );
+    await grantAssistantOnStarters(
+      engine,
+      workspaceId,
+      ownerPrincipalId,
+      assistantId,
+      ids,
+    );
+  }
+
+  if (options?.withSeedRows) {
+    const accountId = uuidv4();
+    await engine.directWrite(
+      workspaceId,
+      ownerPrincipalId,
+      'accounts',
+      { name: 'Starter Account', industry: 'software' },
+      { recordId: accountId },
+    );
+    await engine.directWrite(workspaceId, ownerPrincipalId, 'opportunities', {
+      account_id: accountId,
+      name: 'Starter Opportunity',
+      amount: 1000,
+      stage: 'prospecting',
+      next_step: 'Review',
+    });
+  }
+
+  return { assistantId };
 }

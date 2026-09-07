@@ -60,7 +60,7 @@ export async function PATCH(
     const meta = schema.collections.find((c) => c.name === collection);
     if (!meta || !WRITE_CAPABILITIES.has(meta.capability)) {
       throw new KitsuneError(
-        'Write capability required to edit records in the console; propose-only principals use Inbox',
+        'Write capability required to edit records in the console; propose-only principals use Changes',
         'forbidden',
       );
     }

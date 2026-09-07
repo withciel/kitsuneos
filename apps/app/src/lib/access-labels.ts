@@ -1,36 +1,45 @@
-/** Plain-language labels for access levels (non-technical UI). */
+/**
+ * Plain-language, Claude-style access labels.
+ *
+ * Agents may hold the same capability ladder as humans (Q1 reopened —
+ * `propose` remains the recommended default for agents, not a hard ceiling).
+ * `admin` means "Full control": edit records and manage access for the
+ * database, for any principal kind.
+ */
 
-export type AccessLevel = 'read' | 'propose' | 'write' | 'admin';
+export type AccessLevel = 'none' | 'read' | 'propose' | 'write' | 'admin';
 
 export const ACCESS_LEVELS: Array<{
   value: AccessLevel;
   label: string;
   description: string;
-  /** Hide from the simple form when the recipient is an AI. */
-  humansOnly?: boolean;
 }> = [
   {
+    value: 'none',
+    label: 'No Access',
+    description: 'Cannot see or change records.',
+  },
+  {
     value: 'read',
-    label: 'View only',
+    label: 'Read Only',
     description: 'Can see records, cannot change them.',
   },
   {
     value: 'propose',
-    label: 'Suggest changes',
+    label: 'Change Request',
     description:
-      'Can propose edits; you review them in Inbox before they apply.',
+      'Can propose edits; a reviewer approves or rejects them in Changes before they apply.',
   },
   {
     value: 'write',
-    label: 'Edit directly',
-    description: 'Can change records without waiting for approval.',
-    humansOnly: true,
+    label: 'Full write',
+    description: 'Can change records directly, without waiting for approval.',
   },
   {
     value: 'admin',
     label: 'Full control',
-    description: 'Can edit records and manage access for this database.',
-    humansOnly: true,
+    description:
+      'Can edit records directly and manage access for this database.',
   },
 ];
 

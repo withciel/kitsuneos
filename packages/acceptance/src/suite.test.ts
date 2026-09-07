@@ -1064,23 +1064,12 @@ describe('KitsuneOS Acceptance Suite', () => {
     });
   });
 
-  it('20. An agent principal cannot be granted write without explicit admin action and audit event', async () => {
+  it('20. An agent principal may be granted write; grant is audited', async () => {
     const tempAgent = await engine.createPrincipal(
       fixture.workspaceId,
       'agent',
       'WriteAgent',
     );
-    await expect(
-      engine.createGrant(
-        fixture.workspaceId,
-        tempAgent,
-        fixture.collections.accounts,
-        'write',
-        ['name'],
-        null,
-      ),
-    ).rejects.toMatchObject({ code: 'forbidden' });
-
     await engine.createGrant(
       fixture.workspaceId,
       tempAgent,
@@ -1088,14 +1077,32 @@ describe('KitsuneOS Acceptance Suite', () => {
       'write',
       ['name'],
       null,
-      { adminOverrideAgentWrite: true, actorId: fixture.adminId },
+      { actorId: fixture.adminId },
     );
 
     const audit = await engine.ownerPool.query(
-      `SELECT action FROM kitsune.audit_log WHERE action = 'grant.agent_write_override' AND principal_id = $1`,
-      [fixture.adminId],
+      `SELECT action, detail FROM kitsune.audit_log
+        WHERE action = 'grant.agent_write'
+          AND principal_id = $1
+          AND detail->>'targetPrincipalId' = $2
+          AND detail->>'capability' = 'write'`,
+      [fixture.adminId, tempAgent],
     );
-    expect(audit.rows.length).toBeGreaterThan(0);
+    expect(audit.rows.length).toBe(1);
+
+    const recordId = await engine.directWrite(
+      fixture.workspaceId,
+      tempAgent,
+      'accounts',
+      { name: 'Agent Wrote This' },
+    );
+    const written = await engine.readRecord(
+      fixture.workspaceId,
+      tempAgent,
+      'accounts',
+      recordId,
+    );
+    expect(written?.name).toBe('Agent Wrote This');
   });
 
   it('21. Authorization matrix: every query shape runs as every principal class with exact result sets', async () => {

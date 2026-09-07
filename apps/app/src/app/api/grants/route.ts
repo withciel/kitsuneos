@@ -61,7 +61,6 @@ export async function POST(request: Request) {
       capability?: Capability;
       fieldMask?: string[] | null;
       rowPredicate?: Predicate | null;
-      adminOverrideAgentWrite?: boolean;
     };
     if (!body.principalId || !body.collectionId || !body.capability) {
       return NextResponse.json(
@@ -78,7 +77,6 @@ export async function POST(request: Request) {
       body.rowPredicate ?? null,
       {
         actorId: ctx.principalId,
-        adminOverrideAgentWrite: body.adminOverrideAgentWrite,
       },
     );
     return NextResponse.json({ grantId });

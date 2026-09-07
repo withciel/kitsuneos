@@ -2,7 +2,7 @@ import type { KitsuneEngine } from '@kitsuneos/core';
 import { provisionUserWorkspace } from '@kitsuneos/provisioning';
 import { v4 as uuidv4 } from 'uuid';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { getEngine } from './fixtures.js';
+import { getEngine, seedProvisionedCrmForTests } from './fixtures.js';
 
 describe('Accounts, workspaces, and teams', () => {
   let engine: KitsuneEngine;
@@ -70,6 +70,14 @@ describe('Accounts, workspaces, and teams', () => {
       workosId: `team_owner_${uuidv4()}`,
       email: `team_owner_${uuidv4()}@example.com`,
     });
+
+    // Empty provision; seed CRM so owner has an admin grant and opportunities rows.
+    await seedProvisionedCrmForTests(
+      engine,
+      owner.workspaceId,
+      owner.principalId,
+      { withSeedRows: true },
+    );
 
     const memberEmail = `teammate_${uuidv4()}@example.com`;
     const invited = await engine.invitePerson(owner.workspaceId, owner.userId, {

@@ -24,7 +24,7 @@ import {
 interface ShareTarget {
   principalId: string;
   label: string;
-  kind: 'person' | 'team';
+  kind: 'person' | 'team' | 'agent';
 }
 
 interface AccessState {
@@ -276,6 +276,7 @@ export function ShareDialog({
                         value={target.principalId}
                       >
                         {target.kind === 'team' ? 'Team: ' : ''}
+                        {target.kind === 'agent' ? 'AI: ' : ''}
                         {target.label}
                       </SelectItem>
                     ))}

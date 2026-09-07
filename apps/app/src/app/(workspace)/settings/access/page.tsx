@@ -1,7 +1,13 @@
 'use client';
 
+import { Bot, GitPullRequest, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SettingsNav } from '@/components/settings/settings-nav';
+import {
+  SettingsCallout,
+  SettingsPageHeader,
+  SettingsSection,
+} from '@/components/settings/settings-section';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -59,17 +65,12 @@ export default function SettingsAccessPage() {
   const [collectionId, setCollectionId] = useState('');
   const [capability, setCapability] = useState<AccessLevel>('propose');
 
-  const selectedPrincipal = useMemo(
-    () => principals.find((p) => p.id === principalId),
-    [principals, principalId],
+  // Agents and people share the same capability ladder; "No Access" only
+  // makes sense when removing a grant, not when adding one.
+  const availableLevels = useMemo(
+    () => ACCESS_LEVELS.filter((level) => level.value !== 'none'),
+    [],
   );
-
-  const availableLevels = useMemo(() => {
-    if (selectedPrincipal?.kind === 'agent') {
-      return ACCESS_LEVELS.filter((level) => !level.humansOnly);
-    }
-    return ACCESS_LEVELS;
-  }, [selectedPrincipal]);
 
   const reload = useCallback(async () => {
     const response = await fetch('/api/grants');
@@ -99,15 +100,6 @@ export default function SettingsAccessPage() {
     void reload().catch(() => setError('Could not load access settings'));
   }, [reload]);
 
-  useEffect(() => {
-    if (
-      selectedPrincipal?.kind === 'agent' &&
-      (capability === 'write' || capability === 'admin')
-    ) {
-      setCapability('propose');
-    }
-  }, [selectedPrincipal, capability]);
-
   function labelPrincipal(id: string): string {
     return principals.find((p) => p.id === id)?.display_name ?? 'Unknown';
   }
@@ -131,7 +123,7 @@ export default function SettingsAccessPage() {
       });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) {
-        setError(friendlyGrantError(body.error ?? 'Could not save access'));
+        setError(body.error ?? 'Could not save access');
         return;
       }
       await reload();
@@ -167,15 +159,12 @@ export default function SettingsAccessPage() {
   return (
     <div className="flex flex-1 flex-col">
       <SettingsNav />
-      <div className="mx-auto w-full max-w-3xl space-y-8 p-6">
-        <div className="space-y-2">
-          <h2 className="text-lg font-medium">Who can access what</h2>
-          <p className="text-sm text-muted-foreground">
-            Give people and AI helpers permission to view or suggest changes in
-            each database. Suggested changes show up in Inbox for you to
-            approve.
-          </p>
-        </div>
+      <div className="mx-auto w-full max-w-3xl space-y-6 p-6">
+        <SettingsPageHeader
+          icon={ShieldCheck}
+          title="Access"
+          description="Give people and AI agents permission to view or change records in each database. Change Request access lands in Changes for a reviewer to approve."
+        />
 
         {error ? (
           <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -183,89 +172,88 @@ export default function SettingsAccessPage() {
           </p>
         ) : null}
 
-        <div className="overflow-hidden rounded-lg border border-border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Who</TableHead>
-                <TableHead>Database</TableHead>
-                <TableHead>Access</TableHead>
-                <TableHead className="w-[1%]" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {grants.length === 0 ? (
+        <SettingsSection
+          title={`Current access${grants.length ? ` (${grants.length})` : ''}`}
+        >
+          <div className="overflow-hidden rounded-lg border border-border">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell
-                    colSpan={4}
-                    className="py-8 text-center text-sm text-muted-foreground"
-                  >
-                    No access rules yet. Add a person or AI helper, pick a
-                    database, and choose what they can do. Add one below.
-                  </TableCell>
+                  <TableHead>Who</TableHead>
+                  <TableHead>Database</TableHead>
+                  <TableHead>Access</TableHead>
+                  <TableHead className="w-[1%]" />
                 </TableRow>
-              ) : (
-                grants.map((grant) => (
-                  <TableRow key={grant.id}>
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <span className="font-medium">
-                          {labelPrincipal(grant.principalId)}
-                        </span>
-                        <Badge
-                          variant="secondary"
-                          className="w-fit text-[10px]"
-                        >
-                          {personKindLabel(kindFor(grant.principalId))}
-                        </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {grant.collection}
-                      {grant.fieldMask && grant.fieldMask.length > 0 ? (
-                        <p className="mt-1 text-xs font-normal text-muted-foreground">
-                          Only columns: {grant.fieldMask.join(', ')}
-                        </p>
-                      ) : null}
-                    </TableCell>
-                    <TableCell>
-                      <div className="space-y-1">
-                        <span>{accessLabel(grant.capability)}</span>
-                        <p className="text-xs text-muted-foreground">
-                          {accessDescription(grant.capability)}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() => void removeAccess(grant.id)}
-                      >
-                        Remove
-                      </Button>
+              </TableHeader>
+              <TableBody>
+                {grants.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={4}
+                      className="py-8 text-center text-sm text-muted-foreground"
+                    >
+                      No access rules yet. Add one below.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="space-y-4 rounded-lg border border-border p-4">
-          <div>
-            <h3 className="text-sm font-medium">Add access</h3>
-            <p className="text-xs text-muted-foreground">
-              AI helpers are limited to viewing or suggesting — they cannot edit
-              directly from this screen.
-            </p>
+                ) : (
+                  grants.map((grant) => (
+                    <TableRow key={grant.id}>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          <span className="font-medium">
+                            {labelPrincipal(grant.principalId)}
+                          </span>
+                          <Badge
+                            variant="secondary"
+                            className="w-fit text-[10px]"
+                          >
+                            {personKindLabel(kindFor(grant.principalId))}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {grant.collection}
+                        {grant.fieldMask && grant.fieldMask.length > 0 ? (
+                          <p className="mt-1 text-xs font-normal text-muted-foreground">
+                            Only columns: {grant.fieldMask.join(', ')}
+                          </p>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <span>{accessLabel(grant.capability)}</span>
+                          <p className="text-xs text-muted-foreground">
+                            {accessDescription(grant.capability)}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() => void removeAccess(grant.id)}
+                        >
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
+        </SettingsSection>
+
+        <SettingsSection
+          title="Add access"
+          description="Pick the lowest level that gets the job done — Change Request is the safest default for AI agents."
+        >
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="space-y-1.5">
               <Label>Who</Label>
               <Select value={principalId} onValueChange={setPrincipalId}>
-                <SelectTrigger className="w-52">
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Choose…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -277,10 +265,10 @@ export default function SettingsAccessPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label>Database</Label>
               <Select value={collectionId} onValueChange={setCollectionId}>
-                <SelectTrigger className="w-52">
+                <SelectTrigger className="w-full">
                   <SelectValue placeholder="Choose…" />
                 </SelectTrigger>
                 <SelectContent>
@@ -292,13 +280,13 @@ export default function SettingsAccessPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label>Access level</Label>
               <Select
                 value={capability}
                 onValueChange={(value) => setCapability(value as AccessLevel)}
               >
-                <SelectTrigger className="w-52">
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -310,22 +298,33 @@ export default function SettingsAccessPage() {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+            <p className="text-xs text-muted-foreground">
+              {accessDescription(capability)}
+            </p>
             <Button disabled={busy} onClick={() => void createAccess()}>
               {busy ? 'Saving…' : 'Add access'}
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            {accessDescription(capability)}
-          </p>
-        </div>
+        </SettingsSection>
+
+        <SettingsCallout icon={Bot}>
+          Don&apos;t see the AI agent you want to grant access to? Create it
+          first on the{' '}
+          <a href="/agents" className="text-primary underline">
+            Agents
+          </a>{' '}
+          page.
+        </SettingsCallout>
+        <SettingsCallout icon={GitPullRequest}>
+          Proposals from &ldquo;Change Request&rdquo; access wait in{' '}
+          <a href="/changes" className="text-primary underline">
+            Changes
+          </a>{' '}
+          for review.
+        </SettingsCallout>
       </div>
     </div>
   );
-}
-
-function friendlyGrantError(message: string): string {
-  if (/Agent principals cannot be granted write/i.test(message)) {
-    return 'AI helpers can only view or suggest changes. Pick “Suggest changes” instead.';
-  }
-  return message;
 }

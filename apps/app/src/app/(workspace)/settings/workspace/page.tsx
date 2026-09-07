@@ -1,7 +1,12 @@
 'use client';
 
+import { KeyRound, LogOut, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { SettingsNav } from '@/components/settings/settings-nav';
+import {
+  SettingsPageHeader,
+  SettingsSection,
+} from '@/components/settings/settings-section';
 import { Button } from '@/components/ui/button';
 
 export default function SettingsAccountPage() {
@@ -35,36 +40,41 @@ export default function SettingsAccountPage() {
     <div className="flex flex-1 flex-col">
       <SettingsNav />
       <div className="mx-auto w-full max-w-3xl space-y-6 p-6">
-        <div className="space-y-2">
-          <h2 className="text-lg font-medium">Account</h2>
-          <p className="text-sm text-muted-foreground">
-            Your signed-in identity and workspace. Connect AI helpers from the
-            Connect AI tab.
-          </p>
-        </div>
+        <SettingsPageHeader
+          icon={UserRound}
+          title="Account"
+          description="Your signed-in identity and current workspace. Manage AI agents from the Connect AI tab."
+        />
         {error ? (
-          <p className="text-sm text-destructive">{error}</p>
+          <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {error}
+          </p>
         ) : (
-          <div className="space-y-4 rounded-lg border border-border p-4">
-            <div>
-              <p className="text-xs text-muted-foreground">Signed in as</p>
-              <p className="mt-1 text-sm">{email ?? '…'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Workspace</p>
-              <p className="mt-1 font-mono text-xs break-all">
-                {workspaceId ?? '…'}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
+          <SettingsSection icon={KeyRound} title="Identity">
+            <dl className="divide-y divide-border">
+              <div className="flex items-center justify-between gap-4 py-2 text-sm first:pt-0">
+                <dt className="text-muted-foreground">Signed in as</dt>
+                <dd className="font-medium">{email ?? '…'}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-2 text-sm last:pb-0">
+                <dt className="text-muted-foreground">Workspace ID</dt>
+                <dd className="font-mono text-xs break-all">
+                  {workspaceId ?? '…'}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap gap-2 pt-1">
               <Button asChild size="sm" variant="outline">
                 <a href="/settings/connect">Connect an AI helper</a>
               </Button>
               <Button asChild size="sm" variant="ghost">
-                <a href="/logout">Sign out</a>
+                <a href="/logout">
+                  <LogOut />
+                  Sign out
+                </a>
               </Button>
             </div>
-          </div>
+          </SettingsSection>
         )}
       </div>
     </div>

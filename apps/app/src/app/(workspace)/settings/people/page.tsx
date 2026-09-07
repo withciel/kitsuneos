@@ -1,7 +1,13 @@
 'use client';
 
+import { Bot, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { SettingsNav } from '@/components/settings/settings-nav';
+import {
+  SettingsCallout,
+  SettingsPageHeader,
+  SettingsSection,
+} from '@/components/settings/settings-section';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,15 +101,12 @@ export default function SettingsPeoplePage() {
   return (
     <div className="flex flex-1 flex-col">
       <SettingsNav />
-      <div className="mx-auto w-full max-w-3xl space-y-8 p-6">
-        <div className="space-y-2">
-          <h2 className="text-lg font-medium">People</h2>
-          <p className="text-sm text-muted-foreground">
-            Add coworkers to this workspace by email. No email is sent — they
-            must sign in with that address, then you grant database access under
-            Access.
-          </p>
-        </div>
+      <div className="mx-auto w-full max-w-3xl space-y-6 p-6">
+        <SettingsPageHeader
+          icon={Users}
+          title="People"
+          description="Add coworkers to this workspace by email. No email is sent — they sign in with that address, then you grant database access under Access."
+        />
 
         {error ? (
           <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -111,55 +114,56 @@ export default function SettingsPeoplePage() {
           </p>
         ) : null}
 
-        <div className="overflow-hidden rounded-lg border border-border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Email</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {people.length === 0 ? (
+        <SettingsSection
+          icon={Users}
+          title={`Members${people.length ? ` (${people.length})` : ''}`}
+        >
+          <div className="overflow-hidden rounded-lg border border-border">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell
-                    colSpan={3}
-                    className="py-8 text-center text-sm text-muted-foreground"
-                  >
-                    No people yet.
-                  </TableCell>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Role</TableHead>
+                  <TableHead>Status</TableHead>
                 </TableRow>
-              ) : (
-                people.map((person) => (
-                  <TableRow key={person.id}>
-                    <TableCell className="font-medium">
-                      {person.email}
-                    </TableCell>
-                    <TableCell>
-                      {ROLE_LABELS[person.role] ?? person.role}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="text-[10px]">
-                        {person.userId ? 'Joined' : 'Invited'}
-                      </Badge>
+              </TableHeader>
+              <TableBody>
+                {people.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={3}
+                      className="py-8 text-center text-sm text-muted-foreground"
+                    >
+                      No people yet. Add one below.
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
-
-        <div className="space-y-4 rounded-lg border border-border p-4">
-          <div>
-            <h3 className="text-sm font-medium">Add a person</h3>
-            <p className="text-xs text-muted-foreground">
-              They appear as Invited until they sign in with that email. Share
-              the app link yourself — we do not send an invite email yet. Then
-              open Access to share databases with them.
-            </p>
+                ) : (
+                  people.map((person) => (
+                    <TableRow key={person.id}>
+                      <TableCell className="font-medium">
+                        {person.email}
+                      </TableCell>
+                      <TableCell>
+                        {ROLE_LABELS[person.role] ?? person.role}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="text-[10px]">
+                          {person.userId ? 'Joined' : 'Invited'}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
+        </SettingsSection>
+
+        <SettingsSection
+          icon={UserPlus}
+          title="Add a person"
+          description="They appear as Invited until they sign in with that email. Share the app link yourself — we do not send an invite email yet."
+        >
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1">
               <Label htmlFor="invite-email">Email</Label>
@@ -193,7 +197,28 @@ export default function SettingsPeoplePage() {
               {busy ? 'Adding…' : 'Add person'}
             </Button>
           </div>
-        </div>
+        </SettingsSection>
+
+        <SettingsCallout icon={ShieldCheck}>
+          Next, open{' '}
+          <a href="/settings/access" className="text-primary underline">
+            Access
+          </a>{' '}
+          to share specific databases with people you just added, or group them
+          first under{' '}
+          <a href="/settings/teams" className="text-primary underline">
+            Teams
+          </a>
+          .
+        </SettingsCallout>
+        <SettingsCallout icon={Bot}>
+          Looking for AI helpers instead of people? Create and manage named
+          agents on the{' '}
+          <a href="/settings/connect" className="text-primary underline">
+            Connect AI
+          </a>{' '}
+          page.
+        </SettingsCallout>
       </div>
     </div>
   );

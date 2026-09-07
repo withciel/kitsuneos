@@ -75,6 +75,7 @@ export async function GET() {
       {
         userId: ctx.userId,
         workspaceId: ctx.workspaceId,
+        principalId: ctx.principalId,
         role: ctx.role,
         email: userRow.rows[0]?.email ?? null,
         apiKeyPlaintext: connectKeyPlaintext,

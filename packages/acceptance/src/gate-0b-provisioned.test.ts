@@ -3,7 +3,11 @@ import { provisionUserWorkspace } from '@kitsuneos/provisioning';
 import { createHttpMcpServer, resetRateLimits } from '@kitsuneos/server';
 import { v4 as uuidv4 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { getEngine, issueApiKey } from './fixtures.js';
+import {
+  getEngine,
+  issueApiKey,
+  seedProvisionedCrmForTests,
+} from './fixtures.js';
 
 interface ProvisionedTenant {
   workspaceId: string;
@@ -51,12 +55,21 @@ describe('Gate 0b against provisioned workspaces', () => {
       email: `gate0b-b-${uuidv4()}@example.com`,
     });
 
-    const agentB = await engine.ownerPool.query<{ id: string }>(
-      `SELECT id FROM kitsune.principals
-        WHERE workspace_id = $1 AND kind = 'agent' AND display_name = 'assistant'
-        LIMIT 1`,
-      [provB.workspaceId],
+    // Empty provision; seed CRM so cross-tenant isolation still exercises real tables.
+    await seedProvisionedCrmForTests(
+      engine,
+      provA.workspaceId,
+      provA.principalId,
     );
+    const seededB = await seedProvisionedCrmForTests(
+      engine,
+      provB.workspaceId,
+      provB.principalId,
+      { withAssistant: true },
+    );
+    if (!seededB.assistantId) {
+      throw new Error('expected assistant principal for tenant B');
+    }
 
     const keyA = await issueApiKey(engine, provA.principalId);
     const keyB = await issueApiKey(engine, provB.principalId);
@@ -70,7 +83,7 @@ describe('Gate 0b against provisioned workspaces', () => {
     tenantB = {
       workspaceId: provB.workspaceId,
       principalId: provB.principalId,
-      agentPrincipalId: agentB.rows[0]?.id,
+      agentPrincipalId: seededB.assistantId,
       apiKey: keyB.plaintext,
     };
 
@@ -99,7 +112,9 @@ describe('Gate 0b against provisioned workspaces', () => {
   });
 
   afterAll(async () => {
-    await httpServer.close();
+    if (httpServer) {
+      await httpServer.close();
+    }
     resetRateLimits();
   });
 

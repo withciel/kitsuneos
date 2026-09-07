@@ -28,8 +28,11 @@ docker compose up --build
 ```
 
 Local demo mode skips WorkOS and seeds a starter CRM workspace (`accounts`, `contacts`,
-`opportunities`). Open the console, pick a collection in the sidebar, and edit a row from the peek
-panel. Inbox is where agent change requests land. Settings is schema, grants, and workspace.
+`opportunities`) so the quickstart has something to open. Hosted signup provisions an empty
+workspace; databases are created in onboarding. Open the console, pick a collection in the
+sidebar (Workspace or Personal), and edit a row from the peek panel. **Changes** is where agent
+change requests land (PR-style review). Footer links cover Agents, Graph, and Settings. Collections
+support Table plus addable Board / List / Gallery / Calendar views.
 Details: [apps/app/README.md](apps/app/README.md).
 
 ### MCP (agents)
@@ -81,7 +84,7 @@ above connects your agent **as the assistant**. The human opens the same workspa
 ### 1. Open the workspace as a human
 
 In the console, `accounts` is a table. Click a row, edit a field, save. That write uses
-`write`/`admin` (direct write or an auto-applied change set). It does not wait in Inbox. History
+`write`/`admin` (direct write or an auto-applied change set). It does not wait in Changes. History
 still records it under the human principal.
 
 ### 2. Ask the agent what it can see
@@ -126,7 +129,7 @@ change set a6f3c130-2e3f-408c-bfc4-d91c387586cc
         + Send revised quote by Friday, per Dana
 ```
 
-Nothing has changed in the database yet. The proposal is sitting in Inbox.
+Nothing has changed in the database yet. The proposal is sitting in Changes.
 
 ### 4. Now ask it to change the amount
 
@@ -151,7 +154,7 @@ denials to map what it is not allowed to see.
 
 ### 5. Review the proposal
 
-In the console, open **Inbox**, then the change set. Field-level diffs, partial approve/reject, and
+In the console, open **Changes**, then the change set. Field-level diffs, partial approve/reject, and
 apply live there. The CLI does the same work:
 
 ```bash
@@ -232,7 +235,7 @@ with `pnpm acceptance` (87 tests as of this revision).
 | A change set touching a field outside the author's mask is rejected when it is created | suite 17 |
 | Revoking the author's grant before apply blocks the apply | suite 18 |
 | A reviewer with broader permissions cannot launder in permissions the author lacked | suite 19 |
-| An agent cannot be granted `write` without an explicit admin action, which is audited | suite 20 |
+| An agent may be granted `write`; the grant is audited (`grant.agent_write`) | suite 20 |
 | Ten query shapes across seven principal classes match an independently written authorization oracle, exercised through the MCP handlers | suite 21 |
 | Reads, writes, denials and grant changes all produce audit rows attributable to a principal | suite 22 |
 | A relation target the author cannot see is byte-identical to one that does not exist | suite 23 |
@@ -244,7 +247,7 @@ with `pnpm acceptance` (87 tests as of this revision).
 | GraphQL and REST GET share the compiler; masked fields and collections are absent | `graphql.test.ts` |
 | Generated TypeScript client drifts fail `pnpm codegen -- --check` | `codegen.test.ts` |
 | CLI `init` / `schema push` / grant-filtered `export` | `cli.test.ts` |
-| Console APIs: schema mask, audit not-found, partial review apply (UI is collections / Inbox / Settings) | `console.test.ts` |
+| Console APIs: schema mask, audit not-found, partial review apply (UI is collections / Changes / Agents / Graph / Settings) | `console.test.ts` |
 | The application role can insert audit rows but cannot update or delete them | supplementary |
 | A masked principal still receives record ids, but never a masked field | supplementary |
 | Row level security really bites: a mismatched workspace GUC returns zero rows | supplementary |
@@ -317,7 +320,7 @@ packages/mcp         five MCP tools over core, plus a stdio server
 packages/cli         quickstart, init, schema, query, review, history, export
 packages/ui          ActionConsent (field-level diffs, per-op review)
 packages/acceptance  the acceptance suite and its authorization oracle
-apps/app             hosted console — human workspace (collections, Inbox, Settings)
+apps/app             hosted console — Workspace/Personal DBs, Changes, Agents, Graph, Settings
 ```
 
 Every read and every write goes through one query compiler. It resolves the caller's grant, projects

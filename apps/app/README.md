@@ -12,7 +12,7 @@ Opens the console at [http://localhost:8080](http://localhost:8080) with Postgre
 
 Uses `pgvector/pgvector:pg16` so semantic search (R9) works locally. Fresh volumes are required if you previously ran stock `postgres:16`.
 
-The app uses `network_mode: service:db` so it can reach Postgres on `127.0.0.1` (ports are published on the `db` service). Local demo mode (`KITSUNE_LOCAL_DEMO=1`) skips WorkOS login and seeds a starter CRM workspace. Set real `WORKOS_*` values and clear `KITSUNE_LOCAL_DEMO` for AuthKit.
+The app uses `network_mode: service:db` so it can reach Postgres on `127.0.0.1` (ports are published on the `db` service). Local demo mode (`KITSUNE_LOCAL_DEMO=1`) skips WorkOS login and seeds a starter CRM workspace for eval. Hosted signup provisions an empty workspace; create databases from onboarding. Set real `WORKOS_*` values and clear `KITSUNE_LOCAL_DEMO` for AuthKit.
 
 ## WorkOS (AuthKit)
 
@@ -55,7 +55,9 @@ Without OpenAI keys, search still works via the deterministic embedder (same tex
 
 - `GET /health` — health check
 - `POST /api/mcp/tools/call` — HTTP MCP (Bearer API key)
-- `GET /review` — review queue UI
+- `GET /changes` — change-set review UI (legacy `/inbox` and `/review` redirect here)
+- `GET /agents` — agent directory and access
+- `GET /graph` — workspace force graph
 - `POST /api/billing/webhook` — Dodo webhooks
 
 ## Deploy

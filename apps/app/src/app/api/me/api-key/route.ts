@@ -7,7 +7,7 @@ const PRIVATE_HEADERS = { 'Cache-Control': 'no-store' };
 
 /**
  * Resolve (or create) the workspace assistant agent principal.
- * Connect keys must belong to this principal so MCP writes become Inbox proposals
+ * Connect keys must belong to this principal so MCP writes become Changes proposals
  * instead of acting with the signed-in human's write/admin grants.
  */
 async function resolveAssistantPrincipal(
