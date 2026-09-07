@@ -1,17 +1,28 @@
+import type { CollectionViewConfig, CollectionViewType } from '@kitsuneos/core';
+import { KitsuneError } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
-import type { CollectionViewType } from '@kitsuneos/core';
 import { engine } from '@/lib/engine';
+import { jsonError } from '@/lib/http-error';
 import { resolveRequestAuth } from '@/lib/request-auth';
 
+const VIEW_TYPES = new Set<CollectionViewType>([
+  'table',
+  'board',
+  'list',
+  'gallery',
+  'calendar',
+]);
+
+/** List views for a collection (Table view is auto-created if missing). */
 export async function GET(request: Request) {
   try {
     const ctx = await resolveRequestAuth(request);
     const url = new URL(request.url);
-    const collection = url.searchParams.get('collection');
+    const collection = url.searchParams.get('collection')?.trim() ?? '';
     if (!collection) {
-      return NextResponse.json(
-        { error: 'collection query param is required' },
-        { status: 400 },
+      throw new KitsuneError(
+        'collection query param is required',
+        'validation',
       );
     }
     const views = await engine.listViews(
@@ -21,47 +32,40 @@ export async function GET(request: Request) {
     );
     return NextResponse.json({ views });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes('Unauthorized')
-      ? 401
-      : message.includes('Forbidden')
-        ? 403
-        : message.includes('Not found')
-          ? 404
-          : 400;
-    return NextResponse.json({ error: message }, { status });
+    return jsonError(error);
   }
 }
 
+/** Create a new view (Board / List / Gallery / Calendar) for a collection. */
 export async function POST(request: Request) {
   try {
     const ctx = await resolveRequestAuth(request);
     const body = (await request.json()) as {
       collection?: string;
       name?: string;
-      type?: CollectionViewType;
-      config?: Record<string, unknown>;
+      type?: string;
+      config?: CollectionViewConfig;
     };
-    if (!body.collection || !body.type) {
-      return NextResponse.json(
-        { error: 'collection and type are required' },
-        { status: 400 },
+    const collection = body.collection?.trim() ?? '';
+    const type = body.type as CollectionViewType | undefined;
+    if (!collection || !type || !VIEW_TYPES.has(type)) {
+      throw new KitsuneError(
+        'collection and a valid type are required',
+        'validation',
       );
     }
     const view = await engine.createView(
       ctx.workspaceId,
       ctx.principalId,
-      body.collection,
+      collection,
       {
-        name: body.name?.trim() || body.type,
-        type: body.type,
+        name: body.name?.trim() || type,
+        type,
         config: body.config,
       },
     );
-    return NextResponse.json({ view });
+    return NextResponse.json({ view }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes('Forbidden') ? 403 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return jsonError(error);
   }
 }
