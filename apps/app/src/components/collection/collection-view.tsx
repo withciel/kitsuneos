@@ -24,6 +24,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DatabasePropertiesSheet } from '@/components/collection/database-properties-sheet';
+import { OperateEmptyState } from '@/components/operate/empty-state';
 import {
   cellText,
   draftToPayload,
@@ -66,6 +67,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useShellContext } from '@/hooks/use-shell-context';
 import {
   addMonths,
   dayKey,
@@ -84,6 +86,7 @@ import {
   publishStatusLabel,
 } from '@/lib/publish-status';
 import { recordLabel } from '@/lib/record-label';
+import { cn } from '@/lib/utils';
 
 interface SchemaCollection {
   name: string;
@@ -546,12 +549,17 @@ export function CollectionView({ collection }: { collection: string }) {
 
   const activeType = activeView?.type ?? 'table';
 
+  useShellContext({
+    title: collection,
+    crumbs: [{ label: 'Databases', href: '/' }],
+  });
+
   return (
     <div className="flex flex-1 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-6 py-4">
         <div className="mr-auto">
           <h1 className="text-xl font-semibold tracking-tight">{collection}</h1>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             Database · {views.length} view{views.length === 1 ? '' : 's'}
           </p>
         </div>
@@ -609,30 +617,33 @@ export function CollectionView({ collection }: { collection: string }) {
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1 border-b border-border px-6 py-1.5">
-        {views.map((view) => {
-          const meta = VIEW_TYPE_META[view.type] ?? VIEW_TYPE_META.table;
-          const Icon = meta.icon;
-          const active = view.id === activeViewId;
-          return (
-            <button
-              key={view.id}
-              type="button"
-              onClick={() => setActiveViewId(view.id)}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm transition-colors ${
-                active
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-              }`}
-            >
-              <Icon className="size-3.5" />
-              {view.name}
-            </button>
-          );
-        })}
+      <div className="flex flex-wrap items-end gap-x-4 gap-y-2 border-b border-border px-6 pt-1">
+        <nav className="flex flex-wrap gap-4" aria-label="Database views">
+          {views.map((view) => {
+            const meta = VIEW_TYPE_META[view.type] ?? VIEW_TYPE_META.table;
+            const Icon = meta.icon;
+            const active = view.id === activeViewId;
+            return (
+              <button
+                key={view.id}
+                type="button"
+                onClick={() => setActiveViewId(view.id)}
+                className={cn(
+                  'inline-flex items-center gap-1.5 border-b-2 pb-2 text-sm transition-colors',
+                  active
+                    ? 'border-primary text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Icon className="size-3.5" />
+                {view.name}
+              </button>
+            );
+          })}
+        </nav>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 px-2">
+            <Button variant="ghost" size="sm" className="mb-1 h-8 px-2">
               <Plus className="size-3.5" />
               View
             </Button>
@@ -652,11 +663,41 @@ export function CollectionView({ collection }: { collection: string }) {
             })}
           </DropdownMenuContent>
         </DropdownMenu>
+        {publishable ? (
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            {(
+              [
+                { id: 'all' as const, label: 'All' },
+                ...PUBLISH_STATUSES.map((status) => ({
+                  id: status,
+                  label: publishStatusLabel(status),
+                })),
+              ] as const
+            ).map((chip) => {
+              const active = statusFilter === chip.id;
+              return (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => setStatusFilter(chip.id)}
+                  className={cn(
+                    'rounded-md px-2 py-1 text-xs transition-colors',
+                    active
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+                  )}
+                >
+                  {chip.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
         {activeView && !activeView.isDefaultTable ? (
           <Button
             variant="ghost"
             size="sm"
-            className="ml-auto h-8 px-2 text-muted-foreground hover:text-destructive"
+            className="mb-1 ml-auto h-8 px-2 text-muted-foreground hover:text-destructive"
             onClick={() => void removeActiveView()}
           >
             <Trash2 className="size-3.5" />
@@ -669,33 +710,6 @@ export function CollectionView({ collection }: { collection: string }) {
         <p className="border-b border-border px-6 py-2 text-sm text-destructive">
           {error}
         </p>
-      ) : null}
-
-      {publishable ? (
-        <div className="flex flex-wrap gap-2 border-b border-border px-6 py-2">
-          {(
-            [
-              { id: 'all' as const, label: 'All' },
-              ...PUBLISH_STATUSES.map((status) => ({
-                id: status,
-                label: publishStatusLabel(status),
-              })),
-            ] as const
-          ).map((chip) => {
-            const active = statusFilter === chip.id;
-            return (
-              <Button
-                key={chip.id}
-                type="button"
-                size="sm"
-                variant={active ? 'default' : 'outline'}
-                onClick={() => setStatusFilter(chip.id)}
-              >
-                {chip.label}
-              </Button>
-            );
-          })}
-        </div>
       ) : null}
 
       {truncated ? (
@@ -712,7 +726,7 @@ export function CollectionView({ collection }: { collection: string }) {
         </p>
       ) : null}
 
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <div className="operate-enter flex-1 overflow-auto px-6 py-4">
         {loading ? (
           <div className="space-y-2">
             <Skeleton className="h-8 w-full" />
@@ -771,14 +785,15 @@ export function CollectionView({ collection }: { collection: string }) {
             <TableHeader>
               <TableRow>
                 {visibleFields.map((field) => (
-                  <TableHead key={field.name}>
+                  <TableHead
+                    key={field.name}
+                    title={
+                      field.type === 'relation' && field.relationTarget
+                        ? `${field.type} → ${field.relationTarget}`
+                        : field.type
+                    }
+                  >
                     {field.name}
-                    <span className="ml-1 text-[10px] text-muted-foreground">
-                      {field.type}
-                      {field.type === 'relation' && field.relationTarget
-                        ? ` → ${field.relationTarget}`
-                        : ''}
-                    </span>
                   </TableHead>
                 ))}
               </TableRow>
@@ -872,15 +887,15 @@ export function CollectionView({ collection }: { collection: string }) {
           <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-4">
             {fields.map((field) => (
               <div key={field.name} className="space-y-1.5">
-                <Label htmlFor={`field-${field.name}`}>
+                <Label
+                  htmlFor={`field-${field.name}`}
+                  title={
+                    field.type === 'relation' && field.relationTarget
+                      ? `${field.type} → ${field.relationTarget}`
+                      : field.type
+                  }
+                >
                   {field.name}
-                  <span className="ml-1 text-muted-foreground">
-                    ({field.type}
-                    {field.type === 'relation' && field.relationTarget
-                      ? ` → ${field.relationTarget}`
-                      : ''}
-                    )
-                  </span>
                 </Label>
                 <FieldControl
                   field={field}
@@ -1031,7 +1046,7 @@ function BoardView({
                     event.dataTransfer.setData('text/plain', row.id);
                   }}
                   onClick={() => onOpenRow(row)}
-                  className="cursor-pointer rounded-md border border-border bg-background p-2.5 text-left text-sm shadow-xs hover:border-primary/50"
+                  className="cursor-pointer border border-border bg-background p-2.5 text-left text-sm transition-colors hover:bg-muted/30"
                 >
                   <p className="truncate font-medium">{recordLabel(row)}</p>
                   {publishable && statusField ? (
@@ -1139,7 +1154,7 @@ function GalleryView({
           key={String(row.id ?? JSON.stringify(row))}
           type="button"
           onClick={() => onOpenRow(row)}
-          className="flex flex-col rounded-md border border-border bg-background p-3 text-left shadow-xs hover:border-primary/50"
+          className="flex flex-col border-b border-border bg-background p-3 text-left transition-colors hover:bg-muted/30"
         >
           <p className="truncate text-sm font-medium">{recordLabel(row)}</p>
           {bodyField ? (
@@ -1320,26 +1335,21 @@ function EmptyState({
   canDirectEdit: boolean;
   onCreate: () => void;
 }) {
+  if (!emptyState) {
+    return (
+      <p className="py-10 text-sm text-muted-foreground">No matching pages</p>
+    );
+  }
   return (
-    <div className="flex h-32 items-center justify-center rounded-md border border-dashed border-border">
-      {emptyState ? (
-        <div className="mx-auto flex max-w-sm flex-col items-center gap-3 py-2">
-          <div className="space-y-1 text-center">
-            <p className="text-sm font-medium text-foreground">
-              Add your first page
-            </p>
-            <p className="text-xs text-muted-foreground">
-              A page is one row in this database.
-            </p>
-          </div>
-          <Button size="sm" disabled={!canDirectEdit} onClick={onCreate}>
-            <Plus />
-            Create first page
-          </Button>
-        </div>
-      ) : (
-        <span className="text-sm text-muted-foreground">No matching pages</span>
-      )}
-    </div>
+    <OperateEmptyState
+      title="Add your first page"
+      description="A page is one row in this database — title, properties, and body."
+      action={
+        <Button size="sm" disabled={!canDirectEdit} onClick={onCreate}>
+          <Plus />
+          Create first page
+        </Button>
+      }
+    />
   );
 }

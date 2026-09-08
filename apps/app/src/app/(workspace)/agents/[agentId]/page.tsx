@@ -1,13 +1,14 @@
 'use client';
 
-import { Bot } from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { AccessEditor } from '@/components/access/access-editor';
+import { OperateLoadingBlock } from '@/components/operate/loading-block';
+import { OperatePageHeader } from '@/components/operate/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
+import { useShellContext } from '@/hooks/use-shell-context';
 
 interface AgentDetail {
   id: string;
@@ -83,6 +84,15 @@ export default function AgentProfilePage() {
       .finally(() => setLoading(false));
   }, [reload]);
 
+  useShellContext(
+    agent
+      ? {
+          title: agent.name,
+          crumbs: [{ label: 'Agents', href: '/agents' }],
+        }
+      : null,
+  );
+
   async function rotateToken() {
     if (
       !window.confirm(
@@ -116,17 +126,12 @@ export default function AgentProfilePage() {
   }
 
   if (loading) {
-    return (
-      <div className="flex flex-1 flex-col gap-4 p-6">
-        <Skeleton className="h-10 w-64" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    );
+    return <OperateLoadingBlock rows={4} />;
   }
 
   if (!agent) {
     return (
-      <div className="flex flex-1 flex-col items-start gap-3 p-6">
+      <div className="flex flex-1 flex-col items-start gap-3 px-6 py-4">
         <p className="text-sm text-destructive">
           {error || 'Agent not found.'}
         </p>
@@ -146,32 +151,27 @@ export default function AgentProfilePage() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="border-b border-border px-6 py-4">
-        <Button asChild size="sm" variant="ghost" className="mb-2 -ml-2">
-          <Link href="/agents">← Agents</Link>
-        </Button>
-        <div className="flex items-center gap-3">
-          <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <Bot className="size-5" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">
-              {agent.name}
-            </h1>
-            <div className="mt-1 flex items-center gap-2">
-              <Badge variant="secondary">{membershipLabel}</Badge>
-              <span className="text-xs text-muted-foreground">
-                {agent.activeKeyCount} active token
-                {agent.activeKeyCount === 1 ? '' : 's'}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="mx-auto w-full max-w-3xl space-y-6 p-6">
+      <OperatePageHeader
+        title={agent.name}
+        description={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <Badge variant="secondary">{membershipLabel}</Badge>
+            <span>
+              {agent.activeKeyCount} active token
+              {agent.activeKeyCount === 1 ? '' : 's'}
+            </span>
+          </span>
+        }
+        action={
+          <Button asChild size="sm" variant="outline">
+            <Link href="/agents">All agents</Link>
+          </Button>
+        }
+      />
+      <div className="operate-enter mx-auto w-full max-w-3xl space-y-6 px-6 py-6">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
 
-        <section className="space-y-3 rounded-lg border border-border p-4">
+        <section className="space-y-3 border-b border-border pb-6">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-medium">API token</h3>
             <Button
@@ -202,23 +202,23 @@ export default function AgentProfilePage() {
         {canManageAccess ? (
           <AccessEditor principalId={agent.id} principalLabel={agent.name} />
         ) : (
-          <div className="rounded-lg border border-border p-4">
+          <div className="space-y-1 border-b border-border pb-6">
             <h3 className="text-sm font-medium">Access</h3>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               Only workspace owners and admins can view and manage this
               agent&apos;s access.
             </p>
           </div>
         )}
 
-        <section className="space-y-3 rounded-lg border border-border p-4">
+        <section className="space-y-3">
           <h3 className="text-sm font-medium">Activity</h3>
           {activity.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No change requests authored yet.
             </p>
           ) : (
-            <ul className="space-y-1.5">
+            <ul className="divide-y divide-border rounded-md border border-border">
               {activity.map((item) => {
                 const databases = [
                   ...new Set(item.operations.map((op) => op.collection)),
@@ -227,7 +227,7 @@ export default function AgentProfilePage() {
                   <li key={item.id}>
                     <Link
                       href={`/changes/${item.id}`}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-sm hover:bg-muted/50"
+                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5 text-sm transition-colors hover:bg-muted/40"
                     >
                       <span className="font-medium">
                         {item.title ?? 'Untitled change request'}

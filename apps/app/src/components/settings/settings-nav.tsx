@@ -24,7 +24,7 @@ export function SettingsNav() {
               href={tab.href}
               aria-current={active ? 'page' : undefined}
               className={cn(
-                'border-b-2 pb-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                'border-b-2 pb-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 active
                   ? 'border-primary text-foreground'
                   : 'border-transparent text-muted-foreground hover:text-foreground',

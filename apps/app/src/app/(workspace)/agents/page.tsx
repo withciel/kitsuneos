@@ -1,8 +1,10 @@
 'use client';
 
-import { Bot } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { OperateEmptyState } from '@/components/operate/empty-state';
+import { OperateLoadingBlock } from '@/components/operate/loading-block';
+import { OperatePageHeader } from '@/components/operate/page-header';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -22,7 +24,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 interface AgentRow {
   id: string;
@@ -114,49 +123,36 @@ export default function AgentsPage() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="border-b border-border px-6 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">Agents</h1>
-            <p className="text-xs text-muted-foreground">
-              Every AI helper connected to this workspace — identity,
-              membership, and access, next to People.
-            </p>
-          </div>
-          {isAdmin ? (
+      <OperatePageHeader
+        title="Agents"
+        description="Every AI helper connected to this workspace — identity, membership, and access, next to People."
+        action={
+          isAdmin ? (
             <CreateAgentDialog teams={teams} onCreated={() => void reload()} />
-          ) : null}
-        </div>
-      </div>
-      <div className="flex-1 overflow-auto px-6 py-4">
+          ) : undefined
+        }
+      />
+      <div className="operate-enter flex-1 overflow-auto px-6 py-4">
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         {loading ? (
-          <div className="space-y-2">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
+          <OperateLoadingBlock className="px-0 py-0" />
         ) : agents.length === 0 ? (
-          <div className="mx-auto flex max-w-md flex-col items-start gap-4 py-6">
-            <div className="space-y-2">
-              <p className="text-sm font-medium tracking-tight">
-                No agents yet
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Create an agent to give an AI helper its own identity, access
-                grants, and API token.
-              </p>
-            </div>
-            {isAdmin ? (
-              <CreateAgentDialog
-                teams={teams}
-                onCreated={() => void reload()}
-              />
-            ) : (
-              <Button asChild size="sm" variant="outline">
-                <Link href="/settings/connect">Connect an AI helper</Link>
-              </Button>
-            )}
-          </div>
+          <OperateEmptyState
+            title="No agents yet"
+            description="Create an agent to give an AI helper its own identity, access grants, and API token."
+            action={
+              isAdmin ? (
+                <CreateAgentDialog
+                  teams={teams}
+                  onCreated={() => void reload()}
+                />
+              ) : (
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/settings/connect">Connect an AI helper</Link>
+                </Button>
+              )
+            }
+          />
         ) : (
           <div className="space-y-8">
             <AgentSection title="Workspace agents" agents={workspaceAgents} />
@@ -186,7 +182,7 @@ export default function AgentsPage() {
 function AgentSection({
   title,
   agents,
-  emptyLabel = 'None yet.',
+  emptyLabel = 'No agents in this group yet.',
 }: {
   title: string;
   agents: AgentRow[];
@@ -198,27 +194,33 @@ function AgentSection({
       {agents.length === 0 ? (
         <p className="text-sm text-muted-foreground">{emptyLabel}</p>
       ) : (
-        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {agents.map((agent) => (
-            <li key={agent.id}>
-              <Link
-                href={`/agents/${agent.id}`}
-                className="flex items-center gap-3 rounded-lg border border-border p-3 hover:border-primary/50 hover:bg-muted/50"
-              >
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <Bot className="size-4" />
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{agent.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {agent.activeKeyCount} active token
-                    {agent.activeKeyCount === 1 ? '' : 's'}
-                  </p>
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <div className="overflow-hidden rounded-md border border-border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead className="w-36">Tokens</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {agents.map((agent) => (
+                <TableRow key={agent.id} className="group">
+                  <TableCell>
+                    <Link
+                      href={`/agents/${agent.id}`}
+                      className="font-medium text-foreground underline-offset-4 group-hover:underline"
+                    >
+                      {agent.name}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {agent.activeKeyCount} active
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
       )}
     </section>
   );

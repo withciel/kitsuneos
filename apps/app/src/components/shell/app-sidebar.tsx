@@ -129,12 +129,21 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border px-3 py-4">
-        <Link href="/" className="mb-2 flex items-center gap-2 px-1">
-          <div className="flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-xs font-bold tracking-tight">
-            K
-          </div>
+        <Link
+          href="/"
+          className="mb-2 flex items-center gap-2.5 px-1 transition-opacity hover:opacity-90"
+        >
+          <span
+            aria-hidden="true"
+            className="relative flex size-7 shrink-0 items-center justify-center"
+          >
+            <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary" />
+            <span className="pl-1.5 font-mono text-[11px] font-medium tracking-tight text-sidebar-foreground">
+              KO
+            </span>
+          </span>
           <span className="text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            Kitsune<span className="text-primary">OS</span>
+            KitsuneOS
           </span>
         </Link>
         <WorkspaceSwitcher />

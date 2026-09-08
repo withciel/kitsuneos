@@ -26,6 +26,7 @@ const INITIAL: OnboardingProgress = {
 export function SetupChecklist() {
   const pathname = usePathname();
   const [hidden, setHidden] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const [progress, setProgress] = useState<OnboardingProgress>(INITIAL);
 
   const refresh = useCallback(() => {
@@ -47,7 +48,6 @@ export function SetupChecklist() {
   }, [refresh]);
 
   useEffect(() => {
-    // Recompute after route changes (e.g. first database or Changes visit).
     void pathname;
     refresh();
   }, [pathname, refresh]);
@@ -57,98 +57,119 @@ export function SetupChecklist() {
     [progress],
   );
 
+  const nextStep = useMemo(
+    () => ONBOARDING_STEPS.find((step) => !progress[step.id]),
+    [progress],
+  );
+
   const percent = Math.round((completedCount / ONBOARDING_STEPS.length) * 100);
 
   if (hidden) return null;
 
+  const nextHref =
+    nextStep?.id === 'add-page' && progress.firstCollection
+      ? `/c/${progress.firstCollection}`
+      : nextStep?.id === 'create-database' && progress.firstCollection
+        ? `/c/${progress.firstCollection}`
+        : (nextStep?.href ?? '/');
+
   return (
     <aside
-      className="border-b border-border bg-muted/30 px-4 py-3"
+      className="border-b border-border bg-muted/20 px-4 py-2"
       aria-label="Setup checklist"
     >
-      <div className="mx-auto flex w-full max-w-5xl flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 space-y-1">
-            <p className="text-sm font-medium tracking-tight">
-              Get to your first agent review
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {completedCount} of {ONBOARDING_STEPS.length} done — create a
-              database, add a page, connect an AI helper, then watch Changes.
-            </p>
-            <div
-              className="mt-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-border"
-              role="progressbar"
-              aria-valuenow={percent}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="Onboarding progress"
-            >
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-2">
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-sm font-medium tracking-tight">
+                Setup · {completedCount}/{ONBOARDING_STEPS.length}
+              </p>
               <div
-                className="h-full rounded-full bg-primary transition-[width]"
-                style={{ width: `${Math.max(percent, 8)}%` }}
-              />
+                className="h-1 w-24 overflow-hidden rounded-full bg-border sm:w-32"
+                role="progressbar"
+                aria-valuenow={percent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Onboarding progress"
+              >
+                <div
+                  className="h-full rounded-full bg-primary transition-[width] duration-300"
+                  style={{ width: `${Math.max(percent, 8)}%` }}
+                />
+              </div>
+              {nextStep ? (
+                <Link
+                  href={nextHref}
+                  className="truncate text-xs text-primary underline-offset-4 hover:underline"
+                >
+                  Next: {nextStep.title}
+                </Link>
+              ) : null}
             </div>
           </div>
           <Button
             type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 shrink-0 px-2 text-xs"
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded ? 'Hide steps' : 'Show steps'}
+          </Button>
+          <Button
+            type="button"
             size="icon"
             variant="ghost"
-            className="size-8 shrink-0"
+            className="size-7 shrink-0"
             aria-label="Dismiss setup checklist"
             onClick={() => {
               dismissOnboarding();
               setHidden(true);
             }}
           >
-            <X className="size-4" />
+            <X className="size-3.5" />
           </Button>
         </div>
 
-        <ol className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {ONBOARDING_STEPS.map((step) => {
-            const done = progress[step.id];
-            const href =
-              step.id === 'add-page' && progress.firstCollection
-                ? `/c/${progress.firstCollection}`
-                : step.id === 'create-database' && progress.firstCollection
+        {expanded ? (
+          <ol className="operate-enter flex flex-wrap gap-x-4 gap-y-1 pb-1">
+            {ONBOARDING_STEPS.map((step) => {
+              const done = progress[step.id];
+              const href =
+                step.id === 'add-page' && progress.firstCollection
                   ? `/c/${progress.firstCollection}`
-                  : step.href;
+                  : step.id === 'create-database' && progress.firstCollection
+                    ? `/c/${progress.firstCollection}`
+                    : step.href;
 
-            return (
-              <li key={step.id}>
-                <Link
-                  href={href}
-                  className={cn(
-                    'flex h-full flex-col gap-1 rounded-md border border-border bg-background p-3 transition-colors hover:border-primary/40',
-                    done && 'opacity-70',
-                  )}
-                >
-                  <span className="flex items-center gap-2 text-sm font-medium">
+              return (
+                <li key={step.id}>
+                  <Link
+                    href={href}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 text-xs transition-colors hover:text-foreground',
+                      done ? 'text-muted-foreground' : 'text-foreground',
+                    )}
+                  >
                     {done ? (
                       <Check
-                        className="size-4 text-primary"
+                        className="size-3 text-primary"
                         aria-hidden="true"
                       />
                     ) : (
                       <Circle
-                        className="size-4 text-muted-foreground"
+                        className="size-3 text-muted-foreground"
                         aria-hidden="true"
                       />
                     )}
                     {step.title}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {step.description}
-                  </span>
-                  <span className="mt-auto pt-2 text-xs font-medium text-primary">
-                    {done ? 'Done' : step.cta}
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ol>
+                  </Link>
+                </li>
+              );
+            })}
+          </ol>
+        ) : null}
       </div>
     </aside>
   );

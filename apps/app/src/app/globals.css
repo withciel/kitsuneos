@@ -97,3 +97,49 @@
     @apply bg-background text-foreground antialiased font-sans;
   }
 }
+
+/* Intentional Operate motion — quiet enter, not decorative noise */
+@keyframes operate-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes operate-enter-fast {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@layer utilities {
+  .operate-enter {
+    animation: operate-enter 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .operate-enter-fast {
+    animation: operate-enter-fast 0.16s ease-out both;
+  }
+}
+
+/* Sidebar active: left accent instead of filled block wash */
+[data-slot="sidebar-menu-button"][data-active="true"] {
+  position: relative;
+}
+[data-slot="sidebar-menu-button"][data-active="true"]::before {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--primary);
+  transition: opacity 0.2s ease;
+}

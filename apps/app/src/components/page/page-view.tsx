@@ -4,6 +4,7 @@ import type { JsonValue } from '@kitsuneos/core';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { OperateLoadingBlock } from '@/components/operate/loading-block';
 import {
   cellText,
   draftToPayload,
@@ -17,6 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useShellContext } from '@/hooks/use-shell-context';
 import {
   changeRequestsTouchingPage,
   type OpenChangeRequestRef,
@@ -402,18 +404,30 @@ export function PageView({
   const canPublish =
     Boolean(statusField?.writable) && canDirectEdit && !publishing;
 
+  const heading =
+    (titleField ? draft[titleField.name] : '')?.trim() ||
+    (row ? recordLabel(row) : '') ||
+    'Untitled';
+
+  useShellContext(
+    !loading && row
+      ? {
+          title: heading,
+          crumbs: [
+            { label: collection, href: `/c/${collection}` },
+            { label: 'Page' },
+          ],
+        }
+      : null,
+  );
+
   if (loading) {
-    return (
-      <div className="space-y-4 p-8">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    );
+    return <OperateLoadingBlock rows={4} />;
   }
 
   if (!row) {
     return (
-      <div className="space-y-3 p-8">
+      <div className="space-y-3 px-6 py-4">
         <p className="text-sm text-destructive">{error || 'Page not found'}</p>
         <Button
           variant="outline"
@@ -425,22 +439,10 @@ export function PageView({
     );
   }
 
-  const heading =
-    (titleField ? draft[titleField.name] : '')?.trim() ||
-    recordLabel(row) ||
-    'Untitled';
-
   return (
     <div className="flex flex-1 flex-col">
       <div className="border-b border-border px-6 py-4">
-        <p className="text-xs text-muted-foreground">
-          <Link href={`/c/${collection}`} className="hover:text-foreground">
-            {collection}
-          </Link>
-          {' / '}
-          Page
-        </p>
-        <div className="mt-2 flex flex-wrap items-start gap-3">
+        <div className="flex flex-wrap items-start gap-3">
           <div className="min-w-0 flex-1">
             {titleField ? (
               <input
@@ -457,27 +459,28 @@ export function PageView({
                 {heading}
               </h1>
             )}
-            <Badge
-              variant="secondary"
-              className="mt-2 w-fit font-mono text-[10px]"
-              title={pageId}
-            >
-              {pageId.slice(0, 8)}…
-            </Badge>
-            {publishable && currentStatus ? (
-              <Badge
-                variant={
-                  currentStatus === 'published'
-                    ? 'default'
-                    : currentStatus === 'archived'
-                      ? 'outline'
-                      : 'secondary'
-                }
-                className="mt-2 ml-2 w-fit text-[10px] uppercase"
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {publishable && currentStatus ? (
+                <Badge
+                  variant={
+                    currentStatus === 'published'
+                      ? 'default'
+                      : currentStatus === 'archived'
+                        ? 'outline'
+                        : 'secondary'
+                  }
+                  className="w-fit text-[10px] uppercase"
+                >
+                  {publishStatusLabel(currentStatus)}
+                </Badge>
+              ) : null}
+              <span
+                className="font-mono text-[10px] text-muted-foreground/70"
+                title={pageId}
               >
-                {publishStatusLabel(currentStatus)}
-              </Badge>
-            ) : null}
+                ID
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             {publishable && statusField ? (
@@ -533,7 +536,7 @@ export function PageView({
           <p className="mt-2 text-sm text-destructive">{error}</p>
         ) : null}
         {!canDirectEdit ? (
-          <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          <div className="mt-3 border-l-2 border-border pl-3 text-sm text-muted-foreground">
             {capability === 'propose'
               ? 'You can suggest changes via an AI helper or Changes — this view is read-only for your access level.'
               : 'You can view this page, but your access does not include editing here.'}{' '}
@@ -547,7 +550,7 @@ export function PageView({
         ) : null}
 
         {pendingChangeRequests.length > 0 ? (
-          <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+          <div className="mt-3 border-l-2 border-primary/50 pl-3 text-sm">
             <p className="font-medium">
               {pendingChangeRequests.length === 1
                 ? '1 open change request touches this page'
@@ -569,9 +572,9 @@ export function PageView({
         ) : null}
       </div>
 
-      <div className="grid flex-1 gap-8 overflow-auto px-6 py-6 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
+      <div className="operate-enter grid flex-1 gap-8 overflow-auto px-6 py-6 lg:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
         <aside className="space-y-4">
-          <p className="text-xs font-medium text-muted-foreground uppercase">
+          <p className="text-xs font-medium text-muted-foreground">
             Properties
           </p>
           {propertyFields.length === 0 ? (
@@ -579,15 +582,15 @@ export function PageView({
           ) : (
             propertyFields.map((field) => (
               <div key={field.name} className="space-y-1.5">
-                <Label htmlFor={`page-field-${field.name}`}>
+                <Label
+                  htmlFor={`page-field-${field.name}`}
+                  title={
+                    field.type === 'relation' && field.relationTarget
+                      ? `${field.type} → ${field.relationTarget}`
+                      : field.type
+                  }
+                >
                   {field.name}
-                  <span className="ml-1 text-muted-foreground">
-                    ({field.type}
-                    {field.type === 'relation' && field.relationTarget
-                      ? ` → ${field.relationTarget}`
-                      : ''}
-                    )
-                  </span>
                 </Label>
                 {field.type === 'relation' && field.relationTarget ? (
                   <div className="space-y-1.5">
@@ -624,9 +627,7 @@ export function PageView({
           )}
 
           <div className="space-y-2 border-t border-border pt-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase">
-              Related
-            </p>
+            <p className="text-xs font-medium text-muted-foreground">Related</p>
             {relatedLoading ? (
               <Skeleton className="h-12 w-full" />
             ) : !related ||
@@ -668,9 +669,7 @@ export function PageView({
           </div>
 
           <div className="space-y-2 border-t border-border pt-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase">
-              Links
-            </p>
+            <p className="text-xs font-medium text-muted-foreground">Links</p>
             {backlinksLoading ? (
               <Skeleton className="h-12 w-full" />
             ) : !backlinks ||
@@ -685,7 +684,7 @@ export function PageView({
               <div className="space-y-3 text-sm">
                 {backlinks.outgoing.length > 0 ? (
                   <div className="space-y-1.5">
-                    <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                    <p className="text-[10px] font-medium text-muted-foreground">
                       Outgoing
                     </p>
                     <ul className="space-y-1.5">
@@ -712,7 +711,7 @@ export function PageView({
                 ) : null}
                 {backlinks.incoming.length > 0 ? (
                   <div className="space-y-1.5">
-                    <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                    <p className="text-[10px] font-medium text-muted-foreground">
                       Backlinks
                     </p>
                     <ul className="space-y-1.5">
@@ -737,9 +736,7 @@ export function PageView({
           </div>
 
           <div className="space-y-2 border-t border-border pt-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase">
-              History
-            </p>
+            <p className="text-xs font-medium text-muted-foreground">History</p>
             {revisionsLoading ? (
               <Skeleton className="h-16 w-full" />
             ) : revisions.length === 0 ? (
@@ -749,7 +746,7 @@ export function PageView({
                 {revisions.map((revision) => (
                   <li
                     key={`${revision.revision}-${revision.validFrom}`}
-                    className="rounded-md border border-border px-3 py-2 text-xs"
+                    className="border-b border-border pb-2 text-xs last:border-0"
                   >
                     <p className="font-medium">Revision {revision.revision}</p>
                     <p className="text-muted-foreground">
@@ -769,9 +766,6 @@ export function PageView({
         </aside>
 
         <section className="min-w-0 space-y-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase">
-            Body
-          </p>
           {bodyField ? (
             <FieldControl
               field={bodyField}

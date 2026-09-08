@@ -3,8 +3,9 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { CreateDatabaseDialog } from '@/components/collection/create-database-dialog';
+import { OperateEmptyState } from '@/components/operate/empty-state';
+import { OperateLoadingBlock } from '@/components/operate/loading-block';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 
 type BootState =
   | { kind: 'loading' }
@@ -41,9 +42,12 @@ export default function WorkspaceHomePage() {
           collections?: Array<{ name: string }>;
         };
         if ((body.collections?.length ?? 0) > 0) {
-          setBoot({ kind: 'redirecting' });
-          router.replace(`/c/${body.collections![0]!.name}`);
-          return;
+          const first = body.collections?.[0]?.name;
+          if (first) {
+            setBoot({ kind: 'redirecting' });
+            router.replace(`/c/${first}`);
+            return;
+          }
         }
         try {
           const meRes = await fetch('/api/me');
@@ -93,75 +97,69 @@ export default function WorkspaceHomePage() {
 
   if (boot.kind === 'error') {
     return (
-      <div className="flex flex-1 flex-col items-start gap-4 p-8">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Workspace unavailable
-        </h1>
-        <p className="max-w-md text-sm text-destructive">{boot.message}</p>
-        <Button
-          variant="outline"
-          onClick={() => {
-            setBoot({ kind: 'loading' });
-            window.location.reload();
-          }}
-        >
-          Retry
-        </Button>
-      </div>
+      <OperateEmptyState
+        className="px-6"
+        title="Workspace unavailable"
+        description={boot.message}
+        action={
+          <Button
+            variant="outline"
+            onClick={() => {
+              setBoot({ kind: 'loading' });
+              window.location.reload();
+            }}
+          >
+            Retry
+          </Button>
+        }
+      />
     );
   }
 
   if (boot.kind === 'empty') {
     return (
-      <div className="flex flex-1 flex-col items-start gap-8 p-8">
-        <div className="space-y-2">
-          <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-            Welcome
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            {boot.memberOnly
-              ? 'No databases shared with you yet'
-              : 'Start with an empty workspace'}
-          </h1>
-          <p className="max-w-lg text-sm text-muted-foreground">
-            {boot.memberOnly
-              ? 'Ask a workspace owner or admin to grant you access, or wait for a shared database.'
-              : 'Nothing is seeded for you. Create a workspace database, a personal notes database, or connect an agent when you are ready.'}
-          </p>
-        </div>
-        {boot.memberOnly ? null : (
-          <div className="flex flex-wrap gap-3">
-            <CreateDatabaseDialog defaultScope="workspace" />
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={notesBusy}
-              onClick={() => void createPersonalNotes()}
-            >
-              {notesBusy ? 'Creating…' : 'Create personal notes'}
-            </Button>
-            {notesError ? (
-              <p className="basis-full text-sm text-destructive">
-                {notesError}
-              </p>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => router.push('/agents')}
-            >
-              Connect an agent
-            </Button>
-          </div>
-        )}
-      </div>
+      <OperateEmptyState
+        className="px-6"
+        title={
+          boot.memberOnly
+            ? 'No databases shared with you yet'
+            : 'Start with an empty workspace'
+        }
+        description={
+          boot.memberOnly
+            ? 'Ask a workspace owner or admin to grant you access, or wait for a shared database.'
+            : 'Create a workspace database, a personal notes database, or connect an agent when you are ready.'
+        }
+        action={
+          boot.memberOnly ? undefined : (
+            <div className="flex flex-wrap gap-3">
+              <CreateDatabaseDialog defaultScope="workspace" />
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={notesBusy}
+                onClick={() => void createPersonalNotes()}
+              >
+                {notesBusy ? 'Creating…' : 'Create personal notes'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => router.push('/agents')}
+              >
+                Connect an agent
+              </Button>
+              {notesError ? (
+                <p className="basis-full text-sm text-destructive">
+                  {notesError}
+                </p>
+              ) : null}
+            </div>
+          )
+        }
+      />
     );
   }
 
-  return (
-    <div className="flex flex-1 flex-col gap-3 p-8">
-      <Skeleton className="h-8 w-48" />
-      <Skeleton className="h-64 w-full" />
-    </div>
-  );
+  return <OperateLoadingBlock rows={2} />;
 }

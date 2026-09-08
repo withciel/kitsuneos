@@ -7,7 +7,15 @@ import {
   type GraphEdge,
   type GraphNode,
 } from '@/components/graph/force-graph';
+import { OperateEmptyState } from '@/components/operate/empty-state';
+import { OperatePageHeader } from '@/components/operate/page-header';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export default function GraphPage() {
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -41,40 +49,61 @@ export default function GraphPage() {
   }, [reload]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 p-6">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Graph</h1>
-          <p className="text-sm text-muted-foreground">
-            Pages you can see and how they link. Drag nodes to rearrange, scroll
-            or pinch to zoom, hover to trace connections, and click a node to
-            open its page.
-          </p>
+    <div className="flex flex-1 flex-col">
+      <OperatePageHeader
+        title="Graph"
+        description="How pages you can see link together. Drag to rearrange, scroll to zoom, click a node to open its page."
+        action={
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={reload}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="sm">
+                  More
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link href="/api/graph" target="_blank">
+                    Open as JSON
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </>
+        }
+      />
+      <div className="operate-enter flex flex-1 flex-col gap-3 px-6 py-4">
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+        <div className="min-h-[480px] flex-1 overflow-hidden border border-border bg-background">
+          {nodes.length === 0 && !loading ? (
+            <OperateEmptyState
+              className="h-full justify-center py-16"
+              title="No pages to map yet"
+              description="Create pages in a database, then return here to see how they link."
+              action={
+                <Button asChild size="sm" variant="outline">
+                  <Link href="/">Go to databases</Link>
+                </Button>
+              }
+            />
+          ) : (
+            <ForceGraph nodes={nodes} edges={edges} />
+          )}
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={reload} disabled={loading}>
-            Refresh
-          </Button>
-          <Button asChild variant="secondary">
-            <Link href="/api/graph" target="_blank">
-              Open JSON
-            </Link>
-          </Button>
-        </div>
+        <p className="text-xs text-muted-foreground">
+          {loading
+            ? 'Loading graph…'
+            : `${nodes.length} pages · ${edges.length} links`}
+        </p>
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      <div className="overflow-hidden rounded-lg border border-border bg-card">
-        {nodes.length === 0 && !loading ? (
-          <div className="flex h-[640px] items-center justify-center text-sm text-muted-foreground">
-            No pages to show yet.
-          </div>
-        ) : (
-          <ForceGraph nodes={nodes} edges={edges} />
-        )}
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {loading ? 'Loading…' : `${nodes.length} nodes · ${edges.length} edges`}
-      </p>
     </div>
   );
 }

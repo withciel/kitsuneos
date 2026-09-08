@@ -5,6 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -12,6 +20,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   notifyWorkspaceChanged,
   WORKSPACE_CHANGED_EVENT,
@@ -31,6 +41,8 @@ export function WorkspaceSwitcher() {
   const [activeName, setActiveName] = useState('Workspace');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newName, setNewName] = useState('');
 
   const reload = useCallback(() => {
     void fetch('/api/workspaces')
@@ -82,15 +94,13 @@ export function WorkspaceSwitcher() {
 
   async function createWorkspace() {
     if (busy) return;
-    const name = window.prompt('Name your new workspace');
-    if (name === null) return;
     setBusy(true);
     setError('');
     try {
       const response = await fetch('/api/workspaces', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: name.trim() || undefined }),
+        body: JSON.stringify({ name: newName.trim() || undefined }),
       });
       const body = (await response.json()) as {
         error?: string;
@@ -101,6 +111,8 @@ export function WorkspaceSwitcher() {
         return;
       }
       setActiveName(body.workspaceName?.trim() || 'Workspace');
+      setCreateOpen(false);
+      setNewName('');
       notifyWorkspaceChanged();
       reload();
       router.refresh();
@@ -144,8 +156,9 @@ export function WorkspaceSwitcher() {
           ))}
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onClick={() => {
-              void createWorkspace();
+            onSelect={(event) => {
+              event.preventDefault();
+              setCreateOpen(true);
             }}
           >
             <Plus className="size-3.5" />
@@ -153,9 +166,64 @@ export function WorkspaceSwitcher() {
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {error ? (
+      {error && !createOpen ? (
         <p className="mt-1 px-1 text-[11px] text-destructive">{error}</p>
       ) : null}
+
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) {
+            setNewName('');
+            setError('');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create workspace</DialogTitle>
+            <DialogDescription>
+              Workspaces isolate databases, people, and agent access.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="new-workspace-name">Name</Label>
+            <Input
+              id="new-workspace-name"
+              value={newName}
+              onChange={(event) => setNewName(event.target.value)}
+              placeholder="Acme Research"
+              disabled={busy}
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void createWorkspace();
+                }
+              }}
+            />
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+          </div>
+          <DialogFooter>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => setCreateOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => void createWorkspace()}
+            >
+              {busy ? 'Creating…' : 'Create'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

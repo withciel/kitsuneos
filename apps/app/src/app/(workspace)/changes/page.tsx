@@ -3,9 +3,12 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { statusTone } from '@/components/changes/checks-strip';
+import { OperateEmptyState } from '@/components/operate/empty-state';
+import { OperateLoadingBlock } from '@/components/operate/loading-block';
+import { OperatePageHeader } from '@/components/operate/page-header';
+import { UnderlineTabs } from '@/components/operate/underline-tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
   TableBody,
@@ -16,7 +19,6 @@ import {
 } from '@/components/ui/table';
 import { summarizePagesTouched } from '@/lib/group-ops-by-page';
 import { markChangesSeen } from '@/lib/onboarding';
-import { cn } from '@/lib/utils';
 
 interface ChangeSetSummary {
   id: string;
@@ -78,74 +80,46 @@ export default function ChangesPage() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="border-b border-border px-6 py-4">
-        <h1 className="text-xl font-semibold tracking-tight">Changes</h1>
-        <p className="text-xs text-muted-foreground">
-          Change requests from people and AI helpers — review, comment, and
-          merge approved operations.
-        </p>
-        <div className="mt-3 flex gap-1">
-          <button
-            type="button"
-            onClick={() => setTab('open')}
-            className={cn(
-              'rounded-md px-3 py-1.5 text-sm font-medium',
-              tab === 'open'
-                ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:bg-accent/50',
-            )}
-          >
-            Open ({open.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab('closed')}
-            className={cn(
-              'rounded-md px-3 py-1.5 text-sm font-medium',
-              tab === 'closed'
-                ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:bg-accent/50',
-            )}
-          >
-            Closed ({closed.length})
-          </button>
-        </div>
-      </div>
-      <div className="flex-1 overflow-auto px-6 py-4">
+      <OperatePageHeader
+        title="Changes"
+        description="Change requests from people and AI helpers — review, comment, and merge approved operations."
+      >
+        <UnderlineTabs
+          ariaLabel="Change request filters"
+          activeId={tab}
+          onSelect={(id) => setTab(id as Tab)}
+          items={[
+            { id: 'open', label: 'Open', count: open.length },
+            { id: 'closed', label: 'Closed', count: closed.length },
+          ]}
+        />
+      </OperatePageHeader>
+      <div className="operate-enter flex-1 overflow-auto px-6 py-4">
         {error ? (
           <p className="text-sm text-destructive">{error}</p>
         ) : items === null ? (
-          <div className="space-y-2">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
+          <OperateLoadingBlock className="px-0 py-0" />
         ) : visible.length === 0 ? (
           tab === 'open' ? (
-            <div className="mx-auto flex max-w-md flex-col items-start gap-4 py-6">
-              <div className="space-y-2">
-                <p className="text-sm font-medium tracking-tight">
-                  Changes is where agent proposals land
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  When an AI helper suggests a change, it shows up here for you
-                  to approve, comment on, or reject — nothing writes until you
-                  say so. Empty is normal until you connect a helper and ask it
-                  to update a page.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button asChild size="sm">
-                  <Link href="/settings/connect">Connect an AI helper</Link>
-                </Button>
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/">Open a database</Link>
-                </Button>
-              </div>
-            </div>
+            <OperateEmptyState
+              title="Changes is where agent proposals land"
+              description="When an AI helper suggests a change, it shows up here for you to approve, comment on, or reject — nothing writes until you say so. Empty is normal until you connect a helper and ask it to update a page."
+              action={
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm">
+                    <Link href="/settings/connect">Connect an AI helper</Link>
+                  </Button>
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/">Open a database</Link>
+                  </Button>
+                </div>
+              }
+            />
           ) : (
-            <p className="py-6 text-sm text-muted-foreground">
-              No closed change requests yet.
-            </p>
+            <OperateEmptyState
+              title="No closed change requests yet"
+              description="Merged and rejected requests will appear here."
+            />
           )
         ) : (
           <Table>
@@ -171,7 +145,7 @@ export default function ChangesPage() {
                     <TableCell>
                       <Link
                         href={href}
-                        className="font-medium text-foreground hover:text-primary"
+                        className="font-medium text-foreground underline-offset-4 group-hover:underline"
                       >
                         {item.title ?? 'Untitled change request'}
                       </Link>
@@ -186,10 +160,7 @@ export default function ChangesPage() {
                       </Link>
                     </TableCell>
                     <TableCell className="text-sm">
-                      <Link
-                        href={href}
-                        className="block text-foreground hover:text-primary"
-                      >
+                      <Link href={href} className="block text-foreground">
                         {item.author}
                       </Link>
                     </TableCell>

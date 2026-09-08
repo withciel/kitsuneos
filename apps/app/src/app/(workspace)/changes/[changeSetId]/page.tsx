@@ -11,6 +11,7 @@ import { ChangeDiff, type DiffOperation } from '@/components/changes/diff-view';
 import { FileTree } from '@/components/changes/file-tree';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useShellContext } from '@/hooks/use-shell-context';
 import { groupOpsByPage } from '@/lib/group-ops-by-page';
 import { markChangesSeen } from '@/lib/onboarding';
 
@@ -70,6 +71,15 @@ export default function ChangeDetailPage() {
     markChangesSeen();
     void load().catch(() => setError('Failed to load'));
   }, [load]);
+
+  useShellContext(
+    item
+      ? {
+          title: item.title?.trim() || 'Untitled change request',
+          crumbs: [{ label: 'Changes', href: '/changes' }],
+        }
+      : null,
+  );
 
   const pageGroups = useMemo(
     () => (item ? groupOpsByPage(item.operations) : []),

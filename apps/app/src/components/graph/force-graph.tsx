@@ -112,8 +112,8 @@ export function ForceGraph({
           .style('outline', 'none');
         g.append('circle')
           .attr('r', NODE_RADIUS)
-          .attr('class', 'fill-primary/15 stroke-primary')
-          .attr('stroke-width', 1.5);
+          .attr('class', 'fill-muted stroke-border')
+          .attr('stroke-width', 1.25);
         g.append('text')
           .attr('text-anchor', 'middle')
           .attr('dy', NODE_RADIUS * 2)
