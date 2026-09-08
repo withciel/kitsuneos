@@ -143,3 +143,21 @@
   background: var(--primary);
   transition: opacity 0.2s ease;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .operate-enter,
+  .operate-enter-fast {
+    animation: none !important;
+  }
+
+  .animate-pulse {
+    animation: none !important;
+  }
+
+  [data-slot="tooltip-content"],
+  [data-slot="dialog-content"],
+  [data-slot="sheet-content"] {
+    animation: none !important;
+    transition: none !important;
+  }
+}

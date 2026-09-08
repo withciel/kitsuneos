@@ -6,6 +6,7 @@ describe('SETTINGS_TABS', () => {
   it('matches Notion settings chrome without Databases', () => {
     assert.deepEqual(SETTINGS_TAB_LABELS, [
       'Account',
+      'Billing',
       'People',
       'Teams',
       'Access',

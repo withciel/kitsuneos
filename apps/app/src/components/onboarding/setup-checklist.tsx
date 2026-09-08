@@ -11,6 +11,7 @@ import {
   loadOnboardingProgress,
   ONBOARDING_STEPS,
   type OnboardingProgress,
+  onboardingStepTitle,
 } from '@/lib/onboarding';
 import { cn } from '@/lib/utils';
 import { WORKSPACE_CHANGED_EVENT } from '@/lib/workspace-events';
@@ -21,6 +22,7 @@ const INITIAL: OnboardingProgress = {
   'connect-agent': false,
   'review-changes': false,
   firstCollection: null,
+  hasAgents: false,
 };
 
 export function SetupChecklist() {
@@ -103,7 +105,7 @@ export function SetupChecklist() {
                   href={nextHref}
                   className="truncate text-xs text-primary underline-offset-4 hover:underline"
                 >
-                  Next: {nextStep.title}
+                  Next: {onboardingStepTitle(nextStep, progress)}
                 </Link>
               ) : null}
             </div>
@@ -163,7 +165,7 @@ export function SetupChecklist() {
                         aria-hidden="true"
                       />
                     )}
-                    {step.title}
+                    {onboardingStepTitle(step, progress)}
                   </Link>
                 </li>
               );

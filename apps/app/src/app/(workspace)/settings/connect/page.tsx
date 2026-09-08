@@ -7,6 +7,7 @@ import { AgentsPanel } from '@/components/settings/agents-panel';
 import { OAuthAppsPanel } from '@/components/settings/oauth-apps-panel';
 import { SettingsNav } from '@/components/settings/settings-nav';
 import { SettingsPageHeader } from '@/components/settings/settings-section';
+import { VaultPanel } from '@/components/settings/vault-panel';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -16,6 +17,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  claudeConnectorSteps,
+  claudeRemoteSnippet,
+  cursorRemoteSteps,
+} from '@/lib/connect-copy';
 
 type GuideId = 'local' | 'cursor-remote' | 'claude-remote' | 'rest';
 
@@ -109,14 +115,7 @@ export default function SettingsConnectPage() {
   );
 
   const claudeRemoteSteps = useMemo(
-    () =>
-      [
-        'In Claude (web or desktop), open Settings → Connectors.',
-        'Add a custom connector.',
-        `Remote MCP URL: ${origin}/api/mcp`,
-        'Complete the OAuth consent when prompted (no API key paste).',
-        'Enable tools for the conversation, then ask Claude to describe your schema.',
-      ].join('\n'),
+    () => claudeRemoteSnippet(origin),
     [origin],
   );
 
@@ -348,13 +347,7 @@ export default function SettingsConnectPage() {
               {guide === 'cursor-remote' ? (
                 <GuideBlock
                   title="Cursor (remote Streamable HTTP + OAuth)"
-                  steps={[
-                    'In Cursor, open Settings → MCP.',
-                    'Add a server with a url (not command). Do not add Authorization headers.',
-                    `Paste ${origin}/api/mcp — Cursor discovers OAuth and opens a browser login.`,
-                    'Approve access for your workspace when prompted, then return to Cursor.',
-                    'Ask Cursor to describe your schema to confirm initialize + tools/call work.',
-                  ]}
+                  steps={cursorRemoteSteps(origin)}
                   value={cursorRemoteConfig}
                   copied={copied === 'cursor-remote'}
                   onCopy={() =>
@@ -366,11 +359,7 @@ export default function SettingsConnectPage() {
               {guide === 'claude-remote' ? (
                 <GuideBlock
                   title="Claude Web / Desktop custom connector"
-                  steps={[
-                    'Requires the remote OAuth MCP endpoint (already at /api/mcp).',
-                    'Do not paste a url block into claude_desktop_config.json — Desktop local configs are stdio only.',
-                    'Use Connectors → Add custom connector with the URL below and finish OAuth.',
-                  ]}
+                  steps={claudeConnectorSteps(origin).slice(5)}
                   value={claudeRemoteSteps}
                   copied={copied === 'claude-remote'}
                   onCopy={() =>
@@ -433,6 +422,8 @@ export default function SettingsConnectPage() {
         <AgentsPanel />
 
         <OAuthAppsPanel />
+
+        <VaultPanel />
       </div>
     </div>
   );

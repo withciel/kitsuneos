@@ -36,6 +36,10 @@ const authkit = authkitMiddleware({
       // Authorize must run through AuthKit middleware (session for withAuth)
       // but stay anonymous so Claude's browser handoff is not blocked.
       '/api/mcp/oauth/authorize',
+      // Consent POST also needs AuthKit middleware to run (session for
+      // withAuth/requireWorkspace) — see matcher below. It enforces its own
+      // auth via requireWorkspace(), so it does not need to be unauthenticated
+      // here, but the matcher exclusion for /api/mcp must not swallow it.
       '/api/mcp/oauth/token',
       '/api/mcp/oauth/register',
       // MCP OAuth discovery must be anonymous (RFC 8414 / 9728).
@@ -66,9 +70,10 @@ export default function middleware(
 
 export const config = {
   matcher: [
-    // Skip static assets, health, MCP transport (not oauth/authorize), billing
-    // webhooks, and RFC 8414/9728 discovery. Authorize is intentionally NOT
-    // skipped — withAuth requires AuthKit middleware on that path.
-    '/((?!_next/static|_next/image|favicon.ico|health|api/mcp(?!/oauth/authorize)|api/billing/webhook|\\.well-known).*)',
+    // Skip static assets, health, MCP transport (not oauth/authorize or
+    // oauth/consent), billing webhooks, and RFC 8414/9728 discovery.
+    // Authorize and consent are intentionally NOT skipped — withAuth
+    // requires AuthKit middleware to have run on those paths.
+    '/((?!_next/static|_next/image|favicon.ico|health|api/mcp(?!/oauth/(?:authorize|consent))|api/billing/webhook|\\.well-known).*)',
   ],
 };

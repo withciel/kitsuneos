@@ -53,7 +53,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <a href="https://withciel.com" rel="noopener noreferrer">
                 Ciel
               </a>
-              — the data layer under their own work.
+              . The data layer under their own work.
             </p>
             <nav aria-label="Legal and support">
               <Link href="/terms/">Terms</Link>

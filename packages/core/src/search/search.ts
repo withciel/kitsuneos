@@ -1,4 +1,5 @@
 import type { PoolClient } from 'pg';
+import { compilePageAccessPredicate } from '../compiler/page-access-sql.js';
 import { compilePredicate } from '../compiler/predicate-sql.js';
 import { getCollectionMeta } from '../compiler/query.js';
 import { queryRows } from '../db/pool.js';
@@ -130,6 +131,19 @@ export async function searchCollections(
       params.push(...compiled.params);
       paramIdx += compiled.params.length;
     }
+
+    // Compile page_access into the search predicate so private page content
+    // (title/excerpt) is never selected before scoring — no post-filter.
+    const pageAcl = await compilePageAccessPredicate(client, {
+      workspaceId,
+      collectionId: collection.id,
+      principalId,
+      rootAlias: 'b',
+      paramStart: paramIdx,
+    });
+    whereParts.push(pageAcl.sql);
+    params.push(...pageAcl.params);
+    paramIdx = pageAcl.nextParam;
 
     // Candidate estimate for filtered ANN strategy (ADR-004).
     const countRow = await queryRows<{ n: string }>(

@@ -1459,23 +1459,10 @@ export class KitsuneEngine {
         },
       });
       await client.query('COMMIT');
-      const visibleHits = [];
-      for (const hit of result.hits) {
-        const meta = await withOwner(this.ownerPool, async (ownerClient) =>
-          getCollectionMeta(ownerClient, workspaceId, hit.collection),
-        );
-        if (
-          await canViewPage(this.ownerPool, {
-            workspaceId,
-            collectionId: meta.id,
-            recordId: hit.recordId,
-            principalId,
-          })
-        ) {
-          visibleHits.push(hit);
-        }
-      }
-      return { hits: visibleHits };
+      // page_access is compiled directly into searchCollections' SQL (see
+      // compilePageAccessPredicate in search/search.ts), so private rows are
+      // never selected and no post-filter is needed here.
+      return result;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -1512,33 +1499,10 @@ export class KitsuneEngine {
         detail: { collection },
       });
       await client.query('COMMIT');
-      // TODO(compiler-acl): page_access should compile into neighbor SQL.
-      // Until then, post-filter related edges with canViewPage.
-      const filterNeighbors = async (
-        neighbors: typeof result.outgoing,
-      ): Promise<typeof result.outgoing> => {
-        const visible = [];
-        for (const neighbor of neighbors) {
-          const meta = await withOwner(this.ownerPool, async (ownerClient) =>
-            getCollectionMeta(ownerClient, workspaceId, neighbor.collection),
-          );
-          if (
-            await canViewPage(this.ownerPool, {
-              workspaceId,
-              collectionId: meta.id,
-              recordId: neighbor.recordId,
-              principalId,
-            })
-          ) {
-            visible.push(neighbor);
-          }
-        }
-        return visible;
-      };
-      return {
-        outgoing: await filterNeighbors(result.outgoing),
-        incoming: await filterNeighbors(result.incoming),
-      };
+      // page_access is compiled into listRelatedRecords for the root record
+      // and every neighbor row (see search/related.ts), so private pages are
+      // never selected and no post-filter is needed here.
+      return result;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

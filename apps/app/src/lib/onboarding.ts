@@ -36,8 +36,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   },
   {
     id: 'connect-agent',
-    title: 'Connect an AI helper',
-    description: 'Create an agent and paste MCP config into Cursor or Claude.',
+    title: 'Create an agent',
+    description:
+      'Give an AI helper its own identity and grants, then connect MCP in Cursor or Claude.',
     href: '/agents',
     cta: 'Open Agents',
   },
@@ -98,6 +99,26 @@ export interface OnboardingProgress {
   'connect-agent': boolean;
   'review-changes': boolean;
   firstCollection: string | null;
+  hasAgents: boolean;
+}
+
+export function isAgentMcpConnected(input: {
+  agents?: Array<{ hasUsedKey?: boolean }>;
+  mcpUsed?: boolean;
+}): boolean {
+  if (input.mcpUsed) return true;
+  return (input.agents ?? []).some((agent) => agent.hasUsedKey === true);
+}
+
+/** Honest checklist label — never "Connected" until MCP actually ran. */
+export function onboardingStepTitle(
+  step: OnboardingStep,
+  progress: OnboardingProgress,
+): string {
+  if (step.id !== 'connect-agent') return step.title;
+  if (progress['connect-agent']) return 'Connected to MCP';
+  if (!progress.hasAgents) return 'Create an agent';
+  return 'Connect MCP';
 }
 
 export async function loadOnboardingProgress(): Promise<OnboardingProgress> {
@@ -107,6 +128,7 @@ export async function loadOnboardingProgress(): Promise<OnboardingProgress> {
     'connect-agent': false,
     'review-changes': false,
     firstCollection: null,
+    hasAgents: false,
   };
 
   try {
@@ -143,9 +165,15 @@ export async function loadOnboardingProgress(): Promise<OnboardingProgress> {
 
     if (agentsRes.ok) {
       const agents = (await agentsRes.json()) as {
-        agents?: unknown[];
+        agents?: Array<{ hasUsedKey?: boolean }>;
+        mcpUsed?: boolean;
       };
-      progress['connect-agent'] = (agents.agents?.length ?? 0) > 0;
+      const list = agents.agents ?? [];
+      progress.hasAgents = list.length > 0;
+      progress['connect-agent'] = isAgentMcpConnected({
+        agents: list,
+        mcpUsed: agents.mcpUsed,
+      });
     }
 
     if (reviewRes.ok) {

@@ -1,32 +1,11 @@
+import { LANDING } from '@/lib/landing-copy';
 import { contactMailto, signInUrl, signUpUrl } from '@/lib/urls';
 
 export default function LandingPage() {
   return (
     <main>
       <section className="hero" aria-labelledby="hero-heading">
-        <div className="hero-copy">
-          <p className="hero-eyebrow">
-            Application database for humans and agents
-          </p>
-          <h1 id="hero-heading">
-            Let agents write your records — without losing control.
-          </h1>
-          <p className="hero-lede">
-            KitsuneOS is the shared workspace where people and agents operate
-            the same data. Field-level grants. Propose and review before
-            anything lands. One console — not a second system of record.
-          </p>
-          <div className="hero-actions">
-            <a className="cta cta-primary" href={signUpUrl}>
-              Start free
-            </a>
-            <a className="cta cta-secondary" href={signInUrl}>
-              Sign in
-            </a>
-          </div>
-        </div>
-
-        <div className="hero-media">
+        <div className="hero-stage" aria-hidden="true">
           <video
             className="hero-video"
             autoPlay
@@ -43,94 +22,69 @@ export default function LandingPage() {
             {/* biome-ignore lint/performance/noImgElement: native <video> fallback poster */}
             <img
               src="/kitsune-agents-ad.gif"
-              alt="Agents writing into a shared company workspace — gathered, reviewable, ready"
+              alt="Agents writing into a shared company workspace: gathered, reviewable, ready"
               width={1280}
               height={720}
             />
           </video>
         </div>
-      </section>
-
-      <section className="band band-trust" id="trust" aria-label="Trust">
-        <p>
-          Built by{' '}
-          <a href="https://withciel.com" rel="noopener noreferrer">
-            Ciel
-          </a>
-          . Same data plane for people and agents — grants, proposals, and
-          history in one console.
-        </p>
-      </section>
-
-      <section className="band" id="problem">
-        <h2>Agents need to write. Your database wasn’t built for that.</h2>
-        <p>
-          Most stacks assume writes come from reviewed application code. Give an
-          agent production access and you risk silent corruption. Keep it
-          read-only and you leave most of the value on the table. Staging
-          tables, grant hacks, and approval UIs get rebuilt for every app —
-          security-critical, and nobody owns them as a product.
-        </p>
-      </section>
-
-      <section className="band" id="place">
-        <h2>One workspace. Equal principals. Review before it sticks.</h2>
-        <p>
-          KitsuneOS puts authorization and review in the data plane. Humans and
-          agents share grants, history, and the same collections. Agents propose
-          by default; operators approve in Inbox — beside the tables they
-          already use.
-        </p>
-      </section>
-
-      <section className="band band-triad" id="how" aria-label="How it works">
-        <div className="triad">
-          <article>
-            <h3>Grant</h3>
-            <p>
-              Scope an agent to the collections and fields it may touch — down
-              to the row when you need it.
-            </p>
-          </article>
-          <article>
-            <h3>Propose</h3>
-            <p>
-              Agent writes arrive as reviewable change sets, not silent updates
-              to production rows.
-            </p>
-          </article>
-          <article>
-            <h3>Review</h3>
-            <p>
-              Approve or reject in Inbox — same console your team uses to edit
-              pages and tables.
-            </p>
-          </article>
+        <div className="hero-copy">
+          <p className="hero-brand">
+            Kitsune<span className="hero-brand-os">OS</span>
+          </p>
+          <h1 id="hero-heading">{LANDING.hero.heading}</h1>
+          <p className="hero-lede">{LANDING.hero.lede}</p>
+          <div className="hero-actions">
+            <a className="cta cta-primary" href={signUpUrl}>
+              {LANDING.ctaPrimary}
+            </a>
+            <a className="cta cta-text" href={signInUrl}>
+              {LANDING.ctaSecondary}
+            </a>
+          </div>
         </div>
       </section>
 
+      <section className="band band-trust" id="trust" aria-label="Trust">
+        <p>{LANDING.trust}</p>
+      </section>
+
+      <section className="band" id="problem">
+        <h2>{LANDING.problem.heading}</h2>
+        <p>{LANDING.problem.body}</p>
+      </section>
+
+      <section className="band" id="place">
+        <h2>{LANDING.place.heading}</h2>
+        <p>{LANDING.place.body}</p>
+      </section>
+
+      <section className="band band-how" id="how" aria-labelledby="how-heading">
+        <h2 id="how-heading">{LANDING.how.heading}</h2>
+        <ol className="how-steps">
+          {LANDING.how.steps.map((step) => (
+            <li key={step.title}>
+              <h3>{step.title}</h3>
+              <p>{step.body}</p>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       <section className="band" id="for">
-        <h2>Built for teams connecting agents to real records.</h2>
-        <p>
-          If you’re wiring agents into accounts, opportunities, or tickets — and
-          you refuse a second source of truth — KitsuneOS is the control plane
-          you’d otherwise build yourself.
-        </p>
+        <h2>{LANDING.forWhom.heading}</h2>
+        <p>{LANDING.forWhom.body}</p>
       </section>
 
       <section className="band band-close" id="join">
-        <h2>Start free</h2>
-        <p>
-          Create an account and start building. Free tier includes one
-          workspace, notes, agents, and review — with clear limits. Upgrade to
-          Pro when you need more seats, agents, and automation.
-        </p>
+        <h2>{LANDING.join.heading}</h2>
+        <p>{LANDING.join.body}</p>
         <div className="hero-actions">
           <a className="cta cta-primary" href={signUpUrl}>
-            Create free account
+            {LANDING.joinPrimary}
           </a>
-          <a className="cta cta-secondary" href={signInUrl}>
-            Sign in
+          <a className="cta cta-text" href={signInUrl}>
+            {LANDING.ctaSecondary}
           </a>
         </div>
         <p className="band-note">

@@ -1,16 +1,14 @@
 import type { Metadata } from 'next';
+import { SITE_METADATA } from './landing-copy';
 import { SITE_ORIGIN } from './urls';
 
-const defaultTitle =
-  'KitsuneOS — The application database humans and agents share';
-const defaultDescription =
-  'Field-level grants, propose/review change sets, and a console where operators and agents work the same workspace — without a second system of record.';
+const { defaultTitle, defaultDescription } = SITE_METADATA;
 
 export const siteMetadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),
   title: {
     default: defaultTitle,
-    template: '%s — KitsuneOS',
+    template: SITE_METADATA.titleTemplate,
   },
   description: defaultDescription,
   alternates: {
@@ -28,7 +26,7 @@ export const siteMetadata: Metadata = {
         url: '/kitsune-agents-ad-poster.jpg',
         width: 1280,
         height: 720,
-        alt: 'KitsuneOS — shared workspace for humans and agents',
+        alt: SITE_METADATA.ogImageAlt,
       },
     ],
   },
@@ -53,17 +51,18 @@ export function pageMetadata(
   description: string,
   path: string,
 ): Metadata {
+  const fullTitle = SITE_METADATA.titleTemplate.replace('%s', title);
   return {
     title,
     description,
     alternates: { canonical: path },
     openGraph: {
-      title: `${title} — KitsuneOS`,
+      title: fullTitle,
       description,
       url: path,
     },
     twitter: {
-      title: `${title} — KitsuneOS`,
+      title: fullTitle,
       description,
     },
   };

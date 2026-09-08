@@ -35,11 +35,10 @@ function scoreMatch(haystack: string, needle: string): number {
 
 /**
  * Grant-aware + page-ACL keyword search across visible collections.
- * Uses engine.query (post-filters via canViewPage) rather than semantic
- * embeddings so ⌘K works without indexed prose vectors.
- *
- * TODO(compiler-acl): fold page_access into compiled row predicates so
- * list/search never materialize private rows before filtering.
+ * Uses engine.query rather than semantic embeddings so ⌘K works without
+ * indexed prose vectors. Visibility is enforced by the query compiler:
+ * engine.query compiles page_access (compilePageAccessPredicate) into the
+ * row SQL, so private rows are never selected — no post-filter here.
  */
 export async function GET(request: Request) {
   try {

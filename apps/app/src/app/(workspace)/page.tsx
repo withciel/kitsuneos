@@ -123,12 +123,12 @@ export default function WorkspaceHomePage() {
         title={
           boot.memberOnly
             ? 'No databases shared with you yet'
-            : 'Start with an empty workspace'
+            : 'Your shared workspace is ready'
         }
         description={
           boot.memberOnly
-            ? 'Ask a workspace owner or admin to grant you access, or wait for a shared database.'
-            : 'Create a workspace database, a personal notes database, or connect an agent when you are ready.'
+            ? 'Access follows collection grants and page shares. Ask a workspace owner or admin for access, or wait for a shared database.'
+            : 'People and agents share the same collections — grants scope access, agents propose changes, and you review in Changes. Create a workspace database, personal notes, or connect an agent to start.'
         }
         action={
           boot.memberOnly ? undefined : (

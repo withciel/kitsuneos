@@ -2,6 +2,8 @@
 
 import { Bot, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { OperateEmptyState } from '@/components/operate/empty-state';
+import { OperateLoadingBlock } from '@/components/operate/loading-block';
 import { SettingsNav } from '@/components/settings/settings-nav';
 import {
   SettingsCallout,
@@ -44,6 +46,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function SettingsPeoplePage() {
   const [people, setPeople] = useState<PersonRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState('');
@@ -61,14 +64,19 @@ export default function SettingsPeoplePage() {
           ? 'Only workspace owners and admins can manage People.'
           : (body.error ?? 'Could not load people'),
       );
+      setLoading(false);
       return;
     }
     setError('');
     setPeople(body.people ?? []);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
-    void reload().catch(() => setError('Could not load people'));
+    void reload().catch(() => {
+      setError('Could not load people');
+      setLoading(false);
+    });
   }, [reload]);
 
   async function invite() {
@@ -118,27 +126,25 @@ export default function SettingsPeoplePage() {
           icon={Users}
           title={`Members${people.length ? ` (${people.length})` : ''}`}
         >
-          <div className="overflow-hidden rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {people.length === 0 ? (
+          {loading ? (
+            <OperateLoadingBlock className="px-0 py-0" rows={3} />
+          ) : people.length === 0 ? (
+            <OperateEmptyState
+              title="No people yet"
+              description="Add coworkers by email in the section below. They appear as Invited until they sign in with that address."
+            />
+          ) : (
+            <div className="overflow-hidden rounded-lg border border-border">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell
-                      colSpan={3}
-                      className="py-8 text-center text-sm text-muted-foreground"
-                    >
-                      No people yet. Add one below.
-                    </TableCell>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Status</TableHead>
                   </TableRow>
-                ) : (
-                  people.map((person) => (
+                </TableHeader>
+                <TableBody>
+                  {people.map((person) => (
                     <TableRow key={person.id}>
                       <TableCell className="font-medium">
                         {person.email}
@@ -152,11 +158,11 @@ export default function SettingsPeoplePage() {
                         </Badge>
                       </TableCell>
                     </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </SettingsSection>
 
         <SettingsSection

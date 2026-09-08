@@ -27,6 +27,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSkeleton,
   SidebarRail,
 } from '@/components/ui/sidebar';
 import { WORKSPACE_CHANGED_EVENT } from '@/lib/workspace-events';
@@ -42,6 +43,7 @@ export function AppSidebar() {
   const [workspaceDbs, setWorkspaceDbs] = useState<SchemaCollection[]>([]);
   const [personalDbs, setPersonalDbs] = useState<SchemaCollection[]>([]);
   const [changesCount, setChangesCount] = useState(0);
+  const [schemaLoading, setSchemaLoading] = useState(true);
 
   const reload = useCallback(() => {
     void fetch('/api/schema')
@@ -60,7 +62,10 @@ export function AppSidebar() {
           next.filter((collection) => collection.scope === 'personal'),
         );
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        setSchemaLoading(false);
+      });
 
     void fetch('/api/review')
       .then(async (response) => {
@@ -90,6 +95,13 @@ export function AppSidebar() {
     emptyLabel: string,
     scope: 'workspace' | 'personal',
   ) {
+    if (schemaLoading) {
+      return ['a', 'b', 'c'].map((slot) => (
+        <SidebarMenuItem key={`schema-skeleton-${scope}-${slot}`}>
+          <SidebarMenuSkeleton showIcon />
+        </SidebarMenuItem>
+      ));
+    }
     if (items.length === 0) {
       return (
         <SidebarMenuItem>

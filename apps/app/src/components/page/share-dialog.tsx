@@ -200,7 +200,10 @@ export function ShareDialog({
           <DialogTitle>Share page</DialogTitle>
           <DialogDescription>
             Private (only you), workspace (everyone here), or shared with
-            specific people and teams.
+            specific people and teams. Actual access is the intersection of your
+            collection grant and this page&apos;s access — someone without
+            either sees the page as if it doesn&apos;t exist, not as a
+            permission error.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

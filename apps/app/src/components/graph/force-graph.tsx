@@ -15,6 +15,7 @@ import { select } from 'd3-selection';
 import { type D3ZoomEvent, zoom as d3Zoom, zoomIdentity } from 'd3-zoom';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef } from 'react';
+import { prefersReducedMotion } from '@/lib/motion-preferences';
 import { pageHref } from '@/lib/page';
 
 export interface GraphNode {
@@ -35,6 +36,19 @@ interface SimLink extends SimulationLinkDatum<SimNode> {
 }
 
 const NODE_RADIUS = 18;
+
+function applyCircleLayout(nodes: SimNode[], width: number, height: number) {
+  const cx = width / 2;
+  const cy = height / 2;
+  const radius = Math.min(width, height) * 0.35;
+  nodes.forEach((node, i) => {
+    const angle = (2 * Math.PI * i) / nodes.length;
+    node.x = cx + radius * Math.cos(angle);
+    node.y = cy + radius * Math.sin(angle);
+    node.fx = node.x;
+    node.fy = node.y;
+  });
+}
 
 /**
  * Interactive force-directed graph: drag to reposition, wheel/pinch to
@@ -177,22 +191,26 @@ export function ForceGraph({
         }
       });
 
-    const dragBehavior = d3Drag<SVGGElement, SimNode>()
-      .on('start', (event, d) => {
-        if (!event.active) simulationRef.current?.alphaTarget(0.3).restart();
-        d.fx = d.x;
-        d.fy = d.y;
-      })
-      .on('drag', (event, d) => {
-        d.fx = event.x;
-        d.fy = event.y;
-      })
-      .on('end', (event, d) => {
-        if (!event.active) simulationRef.current?.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
-      });
-    nodeSelection.call(dragBehavior);
+    const reducedMotion = prefersReducedMotion();
+
+    if (!reducedMotion) {
+      const dragBehavior = d3Drag<SVGGElement, SimNode>()
+        .on('start', (event, d) => {
+          if (!event.active) simulationRef.current?.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        })
+        .on('drag', (event, d) => {
+          d.fx = event.x;
+          d.fy = event.y;
+        })
+        .on('end', (event, d) => {
+          if (!event.active) simulationRef.current?.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        });
+      nodeSelection.call(dragBehavior);
+    }
 
     const zoomBehavior = d3Zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.25, 4])
@@ -228,7 +246,36 @@ export function ForceGraph({
 
     simulationRef.current = simulation;
 
+    if (reducedMotion) {
+      applyCircleLayout(simNodes, width, height);
+      simulation.stop();
+      linkSelection
+        .attr('x1', (d) => (d.source as SimNode).x ?? 0)
+        .attr('y1', (d) => (d.source as SimNode).y ?? 0)
+        .attr('x2', (d) => (d.target as SimNode).x ?? 0)
+        .attr('y2', (d) => (d.target as SimNode).y ?? 0);
+      nodeSelection.attr(
+        'transform',
+        (d) => `translate(${d.x ?? 0},${d.y ?? 0})`,
+      );
+    }
+
+    function onVisibilityChange() {
+      if (document.hidden) {
+        simulation.stop();
+        return;
+      }
+      if (!prefersReducedMotion()) {
+        simulation.alphaTarget(0.3).restart();
+        window.setTimeout(() => {
+          simulation.alphaTarget(0);
+        }, 300);
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       simulation.stop();
       simulationRef.current = null;
       linkLayer.selectAll('*').remove();

@@ -7,12 +7,11 @@ import { requireWorkspace } from '@/lib/require-workspace';
 /**
  * Graph distribution API — nodes/edges for linked-page views and exporters.
  *
- * Visibility: engine.query / engine.readRecord already post-filter via
- * filterVisibleRecordIds / canViewPage. We still drop nodes that fail an
- * explicit ACL check so private pages never appear in the graph payload.
- *
- * TODO(compiler-acl): push page_access into compiled predicates so neighbors
- * never load private rows before this filter.
+ * Visibility: engine.query / engine.readRecord / engine.listRelated compile
+ * page_access directly into their SQL (compilePageAccessPredicate), including
+ * the listRelated root record. The isVisible / filterVisibleRecordIds calls
+ * below remain only as the authorization gate for engine.listWikiLinkEdges,
+ * whose edges are not yet compiler-scoped.
  */
 export async function GET(request: Request) {
   try {

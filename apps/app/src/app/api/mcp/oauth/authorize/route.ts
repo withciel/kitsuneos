@@ -4,9 +4,10 @@ import { KitsuneError } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import {
-  authCodeTtlSeconds,
   ensureMcpOAuthTables,
-  newAuthCode,
+  newCsrfToken,
+  newPendingConsentId,
+  pendingConsentTtlSeconds,
 } from '@/lib/mcp-oauth';
 import { publicAppOrigin } from '@/lib/public-origin';
 import { requireWorkspace } from '@/lib/require-workspace';
@@ -90,15 +91,18 @@ export async function GET(request: Request) {
     );
   }
 
-  const code = newAuthCode();
-  const expiresAt = new Date(Date.now() + authCodeTtlSeconds() * 1000);
+  // Do not auto-issue the auth code — require an explicit Approve/Deny
+  // consent step before any credential is minted.
+  const pendingId = newPendingConsentId();
+  const csrfToken = newCsrfToken();
+  const expiresAt = new Date(Date.now() + pendingConsentTtlSeconds() * 1000);
   await engine.ownerPool.query(
-    `INSERT INTO kitsune.mcp_oauth_codes
-       (code, client_id, workspace_id, principal_id, redirect_uri,
-        code_challenge, code_challenge_method, scope, expires_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    `INSERT INTO kitsune.mcp_oauth_pending
+       (id, client_id, workspace_id, principal_id, redirect_uri,
+        code_challenge, code_challenge_method, scope, state, csrf_token, expires_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [
-      code,
+      pendingId,
       clientId,
       workspace.workspaceId,
       workspace.principalId,
@@ -106,12 +110,13 @@ export async function GET(request: Request) {
       codeChallenge,
       codeChallengeMethod,
       scope,
+      state,
+      csrfToken,
       expiresAt.toISOString(),
     ],
   );
 
-  const redirect = new URL(redirectUri);
-  redirect.searchParams.set('code', code);
-  if (state) redirect.searchParams.set('state', state);
-  return NextResponse.redirect(redirect);
+  const consent = new URL('/oauth/mcp/consent', publicAppOrigin(request));
+  consent.searchParams.set('pending', pendingId);
+  return NextResponse.redirect(consent);
 }
