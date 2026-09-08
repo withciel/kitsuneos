@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
+import { compilePageAccessPredicate } from '../compiler/page-access-sql.js';
 import { type CollectionMeta, getCollectionMeta } from '../compiler/query.js';
 import { queryRows } from '../db/pool.js';
 import { assertFieldAllowed, loadResolvedGrant } from '../grants/resolve.js';
@@ -170,7 +171,6 @@ async function resolveByIdHint(
   principalId: string,
   schemaName: string,
   parsed: ParsedWikiLink,
-  pool: Pool,
 ): Promise<WikiLinkEdge | null> {
   if (!parsed.collectionHint || !parsed.recordIdHint) return null;
   let meta: CollectionMeta;
@@ -182,24 +182,21 @@ async function resolveByIdHint(
   const grant = await loadResolvedGrant(client, principalId, meta.id);
   if (!canRead(grant)) return null;
 
+  const pageAcl = await compilePageAccessPredicate(client, {
+    workspaceId,
+    collectionId: meta.id,
+    principalId,
+    rootAlias: 't',
+    paramStart: 2,
+  });
   const rows = await queryRows<{ id: string }>(
     client,
-    `SELECT id FROM ${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)}
-     WHERE id = $1 AND _deleted_at IS NULL`,
-    [parsed.recordIdHint],
+    `SELECT t.id FROM ${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)} t
+     WHERE t.id = $1 AND t._deleted_at IS NULL
+       AND ${pageAcl.sql}`,
+    [parsed.recordIdHint, ...pageAcl.params],
   );
   if (rows.length === 0) return null;
-
-  if (
-    !(await canViewPage(pool, {
-      workspaceId,
-      collectionId: meta.id,
-      recordId: parsed.recordIdHint,
-      principalId,
-    }))
-  ) {
-    return null;
-  }
 
   const label = await labelForRecord(
     client,
@@ -223,7 +220,6 @@ async function resolveByTitle(
   principalId: string,
   schemaName: string,
   title: string,
-  pool: Pool,
 ): Promise<WikiLinkEdge | null> {
   const collections = await queryRows<{
     id: string;
@@ -250,40 +246,39 @@ async function resolveByTitle(
       continue;
     }
 
+    const pageAcl = await compilePageAccessPredicate(client, {
+      workspaceId,
+      collectionId: meta.id,
+      principalId,
+      rootAlias: 't',
+      paramStart: 2,
+    });
     const matches = await queryRows<{ id: string }>(
       client,
-      `SELECT id FROM ${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)}
-        WHERE _deleted_at IS NULL
-          AND lower(${quoteIdent(titleField)}) = lower($1)
-        ORDER BY _revision DESC
+      `SELECT t.id FROM ${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)} t
+        WHERE t._deleted_at IS NULL
+          AND lower(t.${quoteIdent(titleField)}) = lower($1)
+          AND ${pageAcl.sql}
+        ORDER BY t._revision DESC
         LIMIT 20`,
-      [title],
+      [title, ...pageAcl.params],
     );
 
     for (const match of matches) {
-      if (
-        await canViewPage(pool, {
-          workspaceId,
-          collectionId: meta.id,
-          recordId: match.id,
-          principalId,
-        })
-      ) {
-        const label = await labelForRecord(
-          client,
-          schemaName,
-          meta,
-          grant,
-          match.id,
-        );
-        return {
-          rawTarget: title,
-          toCollectionId: meta.id,
-          toRecordId: match.id,
-          toCollectionName: meta.name,
-          label: label ?? title,
-        };
-      }
+      const label = await labelForRecord(
+        client,
+        schemaName,
+        meta,
+        grant,
+        match.id,
+      );
+      return {
+        rawTarget: title,
+        toCollectionId: meta.id,
+        toRecordId: match.id,
+        toCollectionName: meta.name,
+        label: label ?? title,
+      };
     }
   }
   return null;
@@ -291,7 +286,7 @@ async function resolveByTitle(
 
 export async function resolveWikiLink(
   client: PoolClient,
-  pool: Pool,
+  _pool: Pool,
   workspaceId: string,
   principalId: string,
   schemaName: string,
@@ -304,7 +299,6 @@ export async function resolveWikiLink(
       principalId,
       schemaName,
       parsed,
-      pool,
     );
     if (byId) return byId;
     return {
@@ -322,7 +316,6 @@ export async function resolveWikiLink(
     principalId,
     schemaName,
     parsed.rawTarget,
-    pool,
   );
   if (byTitle) {
     return {
@@ -442,24 +435,21 @@ export async function listBacklinks(
     throw new KitsuneError('Not found', 'not_found');
   }
 
+  const rootPageAcl = await compilePageAccessPredicate(client, {
+    workspaceId,
+    collectionId: rootMeta.id,
+    principalId,
+    rootAlias: 't',
+    paramStart: 2,
+  });
   const rootRows = await queryRows<{ id: string }>(
     client,
-    `SELECT id FROM ${quoteIdent(schemaName)}.${quoteIdent(rootMeta.tableName)}
-     WHERE id = $1 AND _deleted_at IS NULL`,
-    [recordId],
+    `SELECT t.id FROM ${quoteIdent(schemaName)}.${quoteIdent(rootMeta.tableName)} t
+     WHERE t.id = $1 AND t._deleted_at IS NULL
+       AND ${rootPageAcl.sql}`,
+    [recordId, ...rootPageAcl.params],
   );
   if (rootRows.length === 0) {
-    throw new KitsuneError('Not found', 'not_found');
-  }
-
-  if (
-    !(await canViewPage(pool, {
-      workspaceId,
-      collectionId: rootMeta.id,
-      recordId,
-      principalId,
-    }))
-  ) {
     throw new KitsuneError('Not found', 'not_found');
   }
 

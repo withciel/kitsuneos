@@ -487,6 +487,53 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.oauth_apps TO kitsune_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.oauth_access_tokens TO kitsune_app;
 
 -- ---------------------------------------------------------------------------
+-- MCP OAuth (embedded authorization server for remote MCP clients)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS kitsune.mcp_oauth_clients (
+  client_id text PRIMARY KEY,
+  client_secret_hash text,
+  client_name text NOT NULL,
+  redirect_uris text[] NOT NULL,
+  token_endpoint_auth_method text NOT NULL DEFAULT 'none',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS kitsune.mcp_oauth_codes (
+  code text PRIMARY KEY,
+  client_id text NOT NULL REFERENCES kitsune.mcp_oauth_clients(client_id) ON DELETE CASCADE,
+  workspace_id uuid NOT NULL,
+  principal_id uuid NOT NULL,
+  redirect_uri text NOT NULL,
+  code_challenge text NOT NULL,
+  code_challenge_method text NOT NULL,
+  scope text NOT NULL DEFAULT 'mcp:tools',
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS kitsune.mcp_oauth_pending (
+  id text PRIMARY KEY,
+  client_id text NOT NULL REFERENCES kitsune.mcp_oauth_clients(client_id) ON DELETE CASCADE,
+  workspace_id uuid NOT NULL,
+  principal_id uuid NOT NULL,
+  redirect_uri text NOT NULL,
+  code_challenge text NOT NULL,
+  code_challenge_method text NOT NULL,
+  scope text NOT NULL DEFAULT 'mcp:tools',
+  state text NOT NULL DEFAULT '',
+  csrf_token text NOT NULL DEFAULT '',
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE kitsune.mcp_oauth_pending
+  ADD COLUMN IF NOT EXISTS csrf_token text NOT NULL DEFAULT '';
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.mcp_oauth_clients TO kitsune_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.mcp_oauth_codes TO kitsune_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.mcp_oauth_pending TO kitsune_app;
+
+-- ---------------------------------------------------------------------------
 -- Wiki-links extracted from prose ([[Title]] / [[col:id]])
 -- ---------------------------------------------------------------------------
 

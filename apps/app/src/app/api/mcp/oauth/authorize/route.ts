@@ -1,14 +1,12 @@
 // workspace-lint: ignore — MCP OAuth binds workspace from the authenticated
 // session (requireWorkspace / token claims), never from client request params.
 import { KitsuneError } from '@kitsuneos/core';
+import {
+  createMcpOAuthPendingConsent,
+  isMcpOAuthClientError,
+} from '@kitsuneos/server';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
-import {
-  ensureMcpOAuthTables,
-  newCsrfToken,
-  newPendingConsentId,
-  pendingConsentTtlSeconds,
-} from '@/lib/mcp-oauth';
 import { publicAppOrigin } from '@/lib/public-origin';
 import { requireWorkspace } from '@/lib/require-workspace';
 
@@ -40,12 +38,6 @@ export async function GET(request: Request) {
   if (!clientId || !redirectUri || !codeChallenge) {
     return NextResponse.json({ error: 'invalid_request' }, { status: 400 });
   }
-  if (codeChallengeMethod !== 'S256') {
-    return NextResponse.json(
-      { error: 'invalid_request', error_description: 'S256 required' },
-      { status: 400 },
-    );
-  }
 
   let workspace: Awaited<ReturnType<typeof requireWorkspace>>;
   try {
@@ -70,53 +62,29 @@ export async function GET(request: Request) {
     return NextResponse.redirect(login);
   }
 
-  await ensureMcpOAuthTables(engine);
-  const client = await engine.ownerPool.query<{
-    client_id: string;
-    client_name: string;
-    redirect_uris: string[];
-  }>(
-    `SELECT client_id, client_name, redirect_uris
-       FROM kitsune.mcp_oauth_clients WHERE client_id = $1`,
-    [clientId],
-  );
-  const row = client.rows[0];
-  if (!row) {
-    return NextResponse.json({ error: 'invalid_client' }, { status: 400 });
-  }
-  if (!row.redirect_uris.includes(redirectUri)) {
+  const result = await createMcpOAuthPendingConsent(engine, {
+    clientId,
+    redirectUri,
+    codeChallenge,
+    codeChallengeMethod,
+    scope,
+    state,
+    workspaceId: workspace.workspaceId,
+    principalId: workspace.principalId,
+  });
+  if (isMcpOAuthClientError(result)) {
     return NextResponse.json(
-      { error: 'invalid_request', error_description: 'redirect_uri mismatch' },
-      { status: 400 },
+      {
+        error: result.error,
+        ...(result.error_description
+          ? { error_description: result.error_description }
+          : {}),
+      },
+      { status: result.status },
     );
   }
 
-  // Do not auto-issue the auth code — require an explicit Approve/Deny
-  // consent step before any credential is minted.
-  const pendingId = newPendingConsentId();
-  const csrfToken = newCsrfToken();
-  const expiresAt = new Date(Date.now() + pendingConsentTtlSeconds() * 1000);
-  await engine.ownerPool.query(
-    `INSERT INTO kitsune.mcp_oauth_pending
-       (id, client_id, workspace_id, principal_id, redirect_uri,
-        code_challenge, code_challenge_method, scope, state, csrf_token, expires_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-    [
-      pendingId,
-      clientId,
-      workspace.workspaceId,
-      workspace.principalId,
-      redirectUri,
-      codeChallenge,
-      codeChallengeMethod,
-      scope,
-      state,
-      csrfToken,
-      expiresAt.toISOString(),
-    ],
-  );
-
   const consent = new URL('/oauth/mcp/consent', publicAppOrigin(request));
-  consent.searchParams.set('pending', pendingId);
+  consent.searchParams.set('pending', result.pendingId);
   return NextResponse.redirect(consent);
 }

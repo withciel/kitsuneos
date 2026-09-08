@@ -1,7 +1,7 @@
 // workspace-lint: ignore — workspace resolved via requireWorkspace(); SQL uses kitsune schema column names.
-import { withAuth } from '@workos-inc/authkit-nextjs';
 import { NextResponse } from 'next/server';
 import { getDodoClient } from '@/lib/dodo';
+import { jsonError } from '@/lib/http-error';
 import { requireWorkspace } from '@/lib/require-workspace';
 
 export async function POST() {
@@ -23,15 +23,15 @@ export async function POST() {
       );
     }
 
-    const { user } = await withAuth();
     const returnUrl = `${process.env.APP_BASE_URL ?? 'http://localhost:3000'}/?checkout=success`;
+    const displayName = ctx.firstName
+      ? `${ctx.firstName}${ctx.lastName ? ` ${ctx.lastName}` : ''}`
+      : 'KitsuneOS customer';
     const session = await client.checkoutSessions.create({
       product_cart: [{ product_id: productId, quantity: 1 }],
       customer: {
-        email: user?.email ?? 'billing@kitsuneos.com',
-        name: user?.firstName
-          ? `${user.firstName}${user.lastName ? ` ${user.lastName}` : ''}`
-          : 'KitsuneOS customer',
+        email: ctx.email || 'billing@kitsuneos.com',
+        name: displayName,
       },
       return_url: returnUrl,
       metadata: { kitsune_workspace: ctx.workspaceId },
@@ -39,7 +39,6 @@ export async function POST() {
 
     return NextResponse.json({ checkoutUrl: session.checkout_url });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return NextResponse.json({ error: message }, { status: 400 });
+    return jsonError(error);
   }
 }

@@ -1,5 +1,5 @@
 import type { KitsuneEngine } from '@kitsuneos/core';
-import { KitsuneError, recordUsageEvent } from '@kitsuneos/core';
+import { KitsuneError } from '@kitsuneos/core';
 import { createKitsuneMcpServer } from '@kitsuneos/mcp';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { checkRateLimit } from './rate-limit.js';
@@ -204,11 +204,9 @@ export async function handleStreamableMcpRequest(
   try {
     const response = await transport.handleRequest(request);
     if (request.method === 'POST') {
-      void recordUsageEvent(
-        engine.ownerPool,
-        credential.workspaceId,
-        'mcp_streamable',
-      ).catch(() => {});
+      void engine
+        .recordUsageEvent(credential.workspaceId, 'mcp_streamable')
+        .catch(() => {});
     }
     return withCors(origin, response);
   } finally {

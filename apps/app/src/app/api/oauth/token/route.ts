@@ -1,7 +1,4 @@
-import {
-  issueOAuthClientCredentialsToken,
-  KitsuneError,
-} from '@kitsuneos/core';
+import { KitsuneError } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { jsonError } from '@/lib/http-error';
@@ -47,7 +44,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const token = await issueOAuthClientCredentialsToken(engine.ownerPool, {
+    const token = await engine.issueOAuthClientCredentialsToken({
       clientId,
       clientSecret,
     });

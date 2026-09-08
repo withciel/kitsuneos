@@ -12,7 +12,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/**/*.test.ts"
   },
   "dependencies": {
     "@kitsuneos/core": "workspace:*",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
+    "tsx": "^4.20.0",
     "typescript": "5.9.2"
   }
 }

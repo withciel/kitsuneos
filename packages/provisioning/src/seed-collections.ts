@@ -185,23 +185,15 @@ export async function ensureNotesCollection(
   workspaceId: string,
   principalId: string,
 ): Promise<{ collectionId: string; created: boolean }> {
-  const existing = await engine.ownerPool.query<{ id: string }>(
-    `SELECT id FROM kitsune.collections
-      WHERE workspace_id = $1 AND name = $2`,
-    [workspaceId, NOTES_COLLECTION],
-  );
-  if (existing.rows[0]) {
-    const collectionId = existing.rows[0].id;
-    const grant = await engine.ownerPool.query<{ id: string }>(
-      `SELECT id FROM kitsune.grants
-        WHERE workspace_id = $1
-          AND principal_id = $2
-          AND collection_id = $3
-          AND revoked_at IS NULL
-        LIMIT 1`,
-      [workspaceId, principalId, collectionId],
-    );
-    if (!grant.rows[0]) {
+  const existing = await engine.findCollectionId(workspaceId, NOTES_COLLECTION);
+  if (existing) {
+    const collectionId = existing;
+    const hasGrant = await engine.hasActiveGrant({
+      workspaceId,
+      principalId,
+      collectionId,
+    });
+    if (!hasGrant) {
       await engine.createGrant(
         workspaceId,
         principalId,

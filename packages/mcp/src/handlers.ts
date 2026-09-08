@@ -339,6 +339,19 @@ export function createMcpHandlers(
 
 export type McpHandlers = ReturnType<typeof createMcpHandlers>;
 
+/** Widen handlers to a name → fn map for registry dispatch. */
+export function mcpHandlersDispatch(
+  handlers: McpHandlers,
+): Record<
+  keyof McpHandlers,
+  (args: Record<string, unknown>) => Promise<unknown>
+> {
+  return handlers as unknown as Record<
+    keyof McpHandlers,
+    (args: Record<string, unknown>) => Promise<unknown>
+  >;
+}
+
 export function parseJsonArgs(raw: unknown): Record<string, JsonValue> {
   if (typeof raw === 'string') {
     return JSON.parse(raw) as Record<string, JsonValue>;

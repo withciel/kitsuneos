@@ -1,9 +1,4 @@
 // workspace-lint: ignore — webhook metadata maps Dodo customer to provisioned workspace.
-import {
-  findWorkspaceByDodoCustomer,
-  processSubscriptionWebhook,
-  recordBillingEvent,
-} from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { Webhook } from 'standardwebhooks';
 import { mapDodoSubscriptionStatus } from '@/lib/dodo';
@@ -59,7 +54,7 @@ export async function POST(request: Request) {
     webhookId || `${event.type}:${JSON.stringify(event.data).slice(0, 64)}`;
 
   if (!event.type.startsWith('subscription.')) {
-    const isNew = await recordBillingEvent(engine.ownerPool, eventId, event);
+    const isNew = await engine.recordBillingEvent(eventId, event);
     return NextResponse.json({
       received: true,
       duplicate: !isNew,
@@ -81,8 +76,7 @@ export async function POST(request: Request) {
     subscription.metadata?.workspace_id ??
     null;
   if (!workspaceId && subscription.customer_id) {
-    workspaceId = await findWorkspaceByDodoCustomer(
-      engine.ownerPool,
+    workspaceId = await engine.findWorkspaceByDodoCustomer(
       subscription.customer_id,
     );
   }
@@ -93,7 +87,7 @@ export async function POST(request: Request) {
       : Date.now(),
   );
 
-  const result = await processSubscriptionWebhook(engine.ownerPool, {
+  const result = await engine.processSubscriptionWebhook({
     eventId,
     payload: event,
     workspaceId,

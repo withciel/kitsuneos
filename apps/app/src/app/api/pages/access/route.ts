@@ -1,10 +1,4 @@
 import type { PageShareCapability, PageVisibility } from '@kitsuneos/core';
-import {
-  getPageAccess,
-  sharePageWithPrincipal,
-  unsharePage,
-  upsertPageVisibility,
-} from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { jsonError } from '@/lib/http-error';
@@ -14,12 +8,7 @@ async function collectionId(
   workspaceId: string,
   collection: string,
 ): Promise<string> {
-  const row = await engine.ownerPool.query<{ id: string }>(
-    `SELECT id FROM kitsune.collections
-      WHERE workspace_id = $1 AND name = $2`,
-    [workspaceId, collection],
-  );
-  const id = row.rows[0]?.id;
+  const id = await engine.findCollectionId(workspaceId, collection);
   if (!id) {
     throw new Error(`Collection not found: ${collection}`);
   }
@@ -38,7 +27,7 @@ export async function GET(request: Request) {
         { status: 400 },
       );
     }
-    const access = await getPageAccess(engine.ownerPool, {
+    const access = await engine.getPageAccessState({
       workspaceId: ctx.workspaceId,
       collectionId: await collectionId(ctx.workspaceId, collection),
       recordId,
@@ -80,7 +69,7 @@ export async function POST(request: Request) {
     );
 
     if (body.visibility) {
-      await upsertPageVisibility(engine.ownerPool, {
+      await engine.upsertPageVisibility({
         workspaceId: ctx.workspaceId,
         collectionId: collectionIdValue,
         recordId: body.recordId,
@@ -90,7 +79,7 @@ export async function POST(request: Request) {
       });
     }
     if (body.share?.principalId) {
-      await sharePageWithPrincipal(engine.ownerPool, {
+      await engine.sharePageWithPrincipal({
         workspaceId: ctx.workspaceId,
         collectionId: collectionIdValue,
         recordId: body.recordId,
@@ -100,7 +89,7 @@ export async function POST(request: Request) {
       });
     }
     if (body.unsharePrincipalId) {
-      await unsharePage(engine.ownerPool, {
+      await engine.unsharePage({
         workspaceId: ctx.workspaceId,
         collectionId: collectionIdValue,
         recordId: body.recordId,
@@ -109,7 +98,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const access = await getPageAccess(engine.ownerPool, {
+    const access = await engine.getPageAccessState({
       workspaceId: ctx.workspaceId,
       collectionId: collectionIdValue,
       recordId: body.recordId,

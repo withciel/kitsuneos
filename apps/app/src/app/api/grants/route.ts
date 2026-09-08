@@ -18,27 +18,14 @@ export async function GET() {
     const ctx = await requireWorkspace();
     await requireAdmin(ctx);
     const grants = await engine.listGrants(ctx.workspaceId, ctx.principalId);
-    const principals = await engine.ownerPool.query<{
-      id: string;
-      display_name: string;
-      kind: string;
-    }>(
-      `SELECT id, display_name, kind FROM kitsune.principals
-        WHERE workspace_id = $1 ORDER BY display_name`,
-      [ctx.workspaceId],
-    );
-    const collections = await engine.ownerPool.query<{
-      id: string;
-      name: string;
-    }>(
-      `SELECT id, name FROM kitsune.collections
-        WHERE workspace_id = $1 ORDER BY name`,
-      [ctx.workspaceId],
-    );
+    const [principals, collections] = await Promise.all([
+      engine.listWorkspacePrincipals(ctx.workspaceId),
+      engine.listWorkspaceCollectionNames(ctx.workspaceId),
+    ]);
     return NextResponse.json({
       grants,
-      principals: principals.rows,
-      collections: collections.rows,
+      principals,
+      collections,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

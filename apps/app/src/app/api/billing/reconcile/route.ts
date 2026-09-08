@@ -1,6 +1,5 @@
 // workspace-lint: ignore — server-side billing reconciliation only.
 
-import { upsertSubscription } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { getDodoClient } from '@/lib/dodo';
 import { engine } from '@/lib/engine';
@@ -20,29 +19,23 @@ export async function POST(request: Request) {
     );
   }
 
-  const stored = await engine.ownerPool.query<{
-    workspace_id: string;
-    dodo_subscription_id: string;
-    status: string;
-  }>(
-    `SELECT workspace_id, dodo_subscription_id, status FROM kitsune.subscriptions`,
-  );
+  const stored = await engine.listSubscriptions();
 
   let updated = 0;
-  for (const row of stored.rows) {
-    const live = await client.subscriptions.retrieve(row.dodo_subscription_id);
+  for (const row of stored) {
+    const live = await client.subscriptions.retrieve(row.dodoSubscriptionId);
     const liveStatus = String(
       (live as { status?: string }).status ?? 'unknown',
     );
     if (liveStatus !== row.status) {
-      await upsertSubscription(engine.ownerPool, {
-        workspaceId: row.workspace_id,
-        dodoSubscriptionId: row.dodo_subscription_id,
+      await engine.upsertSubscription({
+        workspaceId: row.workspaceId,
+        dodoSubscriptionId: row.dodoSubscriptionId,
         status: liveStatus,
       });
       updated++;
     }
   }
 
-  return NextResponse.json({ checked: stored.rowCount, updated });
+  return NextResponse.json({ checked: stored.length, updated });
 }

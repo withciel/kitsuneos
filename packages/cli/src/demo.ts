@@ -33,33 +33,21 @@ export interface ProvisionResult {
 }
 
 async function workspaceExists(engine: KitsuneEngine): Promise<boolean> {
-  const result = await engine.ownerPool.query(
-    `SELECT 1 FROM kitsune.workspaces WHERE id = $1`,
-    [DEMO.workspaceId],
-  );
-  return result.rows.length > 0;
+  return engine.hasWorkspace(DEMO.workspaceId);
 }
 
 async function collectionId(
   engine: KitsuneEngine,
   name: string,
 ): Promise<string | null> {
-  const result = await engine.ownerPool.query<{ id: string }>(
-    `SELECT id FROM kitsune.collections WHERE workspace_id = $1 AND name = $2`,
-    [DEMO.workspaceId, name],
-  );
-  return result.rows[0]?.id ?? null;
+  return engine.findCollectionId(DEMO.workspaceId, name);
 }
 
 async function principalExists(
   engine: KitsuneEngine,
   id: string,
 ): Promise<boolean> {
-  const result = await engine.ownerPool.query(
-    `SELECT 1 FROM kitsune.principals WHERE id = $1`,
-    [id],
-  );
-  return result.rows.length > 0;
+  return engine.hasPrincipal(id);
 }
 
 async function recordExists(
@@ -67,11 +55,7 @@ async function recordExists(
   table: string,
   id: string,
 ): Promise<boolean> {
-  const result = await engine.ownerPool.query(
-    `SELECT 1 FROM ${DEMO_SCHEMA_NAME}.${table} WHERE id = $1`,
-    [id],
-  );
-  return result.rows.length > 0;
+  return engine.hasRecordInWorkspaceTable(DEMO.workspaceId, table, id);
 }
 
 async function grantExists(
@@ -79,13 +63,7 @@ async function grantExists(
   principalId: string,
   collection: string,
 ): Promise<boolean> {
-  const result = await engine.ownerPool.query(
-    `SELECT 1 FROM kitsune.grants g
-       JOIN kitsune.collections c ON c.id = g.collection_id
-      WHERE g.principal_id = $1 AND c.name = $2 AND g.revoked_at IS NULL`,
-    [principalId, collection],
-  );
-  return result.rows.length > 0;
+  return engine.hasActiveGrantByCollectionName(principalId, collection);
 }
 
 /**

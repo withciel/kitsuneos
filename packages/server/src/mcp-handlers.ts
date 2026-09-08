@@ -1,9 +1,5 @@
 import type { KitsuneEngine } from '@kitsuneos/core';
-import {
-  assertPlanLimit,
-  KitsuneError,
-  recordUsageEvent,
-} from '@kitsuneos/core';
+import { KitsuneError } from '@kitsuneos/core';
 import { invokeMcpTool, isKitsuneError } from '@kitsuneos/mcp/invoke';
 import { TOOL_DEFINITIONS } from '@kitsuneos/mcp/schemas';
 import { checkRateLimit } from './rate-limit.js';
@@ -144,7 +140,7 @@ export async function handleMcpHttpRequest(
     }
 
     try {
-      await assertPlanLimit(engine.ownerPool, {
+      await engine.assertPlanLimit({
         workspaceId: credential.workspaceId,
         dimension: 'mcpOpsPerDay',
       });
@@ -157,11 +153,9 @@ export async function handleMcpHttpRequest(
         parsed.tool,
         parsed.arguments,
       );
-      void recordUsageEvent(
-        engine.ownerPool,
-        credential.workspaceId,
-        parsed.tool,
-      ).catch(() => {});
+      void engine
+        .recordUsageEvent(credential.workspaceId, parsed.tool)
+        .catch(() => {});
       return { status: 200, body: { result } };
     } catch (error) {
       if (isKitsuneError(error)) {

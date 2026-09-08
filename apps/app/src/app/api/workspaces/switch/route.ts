@@ -1,4 +1,4 @@
-import { KitsuneError, switchActiveWorkspace } from '@kitsuneos/core';
+import { KitsuneError } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { requireWorkspace } from '@/lib/require-workspace';
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     if (!body.workspaceId || typeof body.workspaceId !== 'string') {
       throw new KitsuneError('workspaceId is required', 'validation');
     }
-    const membership = await switchActiveWorkspace(engine.ownerPool, {
+    const membership = await engine.switchActiveWorkspace({
       userId: ctx.userId,
       workspaceId: body.workspaceId,
     });

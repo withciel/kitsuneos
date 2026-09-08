@@ -1,4 +1,3 @@
-import { canViewPage, filterVisibleRecordIds } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { jsonError } from '@/lib/http-error';
@@ -7,11 +6,9 @@ import { requireWorkspace } from '@/lib/require-workspace';
 /**
  * Graph distribution API — nodes/edges for linked-page views and exporters.
  *
- * Visibility: engine.query / engine.readRecord / engine.listRelated compile
- * page_access directly into their SQL (compilePageAccessPredicate), including
- * the listRelated root record. The isVisible / filterVisibleRecordIds calls
- * below remain only as the authorization gate for engine.listWikiLinkEdges,
- * whose edges are not yet compiler-scoped.
+ * Visibility: engine.query / engine.readRecord / engine.listRelated /
+ * engine.listWikiLinkEdges all compile page_access into SQL (or evaluate the
+ * same compilePageAccessPredicate fragment). This route does not re-check ACL.
  */
 export async function GET(request: Request) {
   try {
@@ -30,33 +27,10 @@ export async function GET(request: Request) {
       ctx.principalId,
     );
     const collections = schema.collections ?? [];
-    const idRows = await engine.ownerPool.query<{
-      id: string;
-      name: string;
-    }>(`SELECT id, name FROM kitsune.collections WHERE workspace_id = $1`, [
-      ctx.workspaceId,
-    ]);
-    const collectionIdByName = new Map(
-      idRows.rows.map((row) => [row.name, row.id] as const),
-    );
 
     const nodes: Array<{ id: string; collection: string; label: string }> = [];
     const edges: Array<{ from: string; to: string; field: string }> = [];
     const seen = new Set<string>();
-
-    async function isVisible(
-      collection: string,
-      recordId: string,
-    ): Promise<boolean> {
-      const collectionId = collectionIdByName.get(collection);
-      if (!collectionId) return false;
-      return canViewPage(engine.ownerPool, {
-        workspaceId: ctx.workspaceId,
-        collectionId,
-        recordId,
-        principalId: ctx.principalId,
-      });
-    }
 
     async function addRecord(
       collection: string,
@@ -67,10 +41,6 @@ export async function GET(request: Request) {
       if (seen.has(key)) {
         return;
       }
-      if (!(await isVisible(collection, recordId))) {
-        return;
-      }
-      seen.add(key);
       const record = await engine.readRecord(
         ctx.workspaceId,
         ctx.principalId,
@@ -78,6 +48,7 @@ export async function GET(request: Request) {
         recordId,
       );
       if (!record) return;
+      seen.add(key);
       const label =
         (typeof record.title === 'string' && record.title) ||
         (typeof record.name === 'string' && record.name) ||
@@ -92,17 +63,13 @@ export async function GET(request: Request) {
       );
       for (const edge of related.outgoing) {
         const targetKey = `${edge.collection}:${edge.recordId}`;
-        if (await isVisible(edge.collection, edge.recordId)) {
-          edges.push({ from: key, to: targetKey, field: edge.field });
-          await addRecord(edge.collection, edge.recordId, remaining - 1);
-        }
+        edges.push({ from: key, to: targetKey, field: edge.field });
+        await addRecord(edge.collection, edge.recordId, remaining - 1);
       }
       for (const edge of related.incoming) {
         const sourceKey = `${edge.collection}:${edge.recordId}`;
-        if (await isVisible(edge.collection, edge.recordId)) {
-          edges.push({ from: sourceKey, to: key, field: edge.field });
-          await addRecord(edge.collection, edge.recordId, remaining - 1);
-        }
+        edges.push({ from: sourceKey, to: key, field: edge.field });
+        await addRecord(edge.collection, edge.recordId, remaining - 1);
       }
     }
 
@@ -114,25 +81,14 @@ export async function GET(request: Request) {
           collection: collection.name,
           limit: 20,
         });
-        const ids = rows
-          .map((row) => row.id)
-          .filter((id): id is string => typeof id === 'string');
-        // Belt-and-braces: re-run visibility even though query already filters.
-        const collectionId = collectionIdByName.get(collection.name);
-        if (!collectionId) continue;
-        const visible = await filterVisibleRecordIds(engine.ownerPool, {
-          workspaceId: ctx.workspaceId,
-          collectionId,
-          recordIds: ids,
-          principalId: ctx.principalId,
-        });
-        for (const id of visible) {
-          await addRecord(collection.name, id, 1);
+        for (const row of rows) {
+          if (typeof row.id !== 'string') continue;
+          await addRecord(collection.name, row.id, 1);
         }
       }
     }
 
-    // Wiki-link edges in addition to typed relations.
+    // Wiki-link edges in addition to typed relations (already page-ACL scoped).
     const wikiEdges = await engine.listWikiLinkEdges(
       ctx.workspaceId,
       ctx.principalId,
@@ -141,8 +97,6 @@ export async function GET(request: Request) {
     for (const wiki of wikiEdges) {
       const fromKey = `${wiki.fromCollection}:${wiki.fromRecordId}`;
       const toKey = `${wiki.toCollection}:${wiki.toRecordId}`;
-      // Include edge when either endpoint is already in the graph neighborhood,
-      // or when browsing the full workspace graph (no focus).
       const include =
         !focusCollection ||
         !focusRecordId ||

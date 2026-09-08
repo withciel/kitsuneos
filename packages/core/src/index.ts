@@ -58,6 +58,11 @@ export {
   recordUsageEvent,
   upsertSubscription,
 } from './billing/store.js';
+export type {
+  ChangeSetListScope,
+  ChangeSetOperationSummary,
+  ChangeSetSummary,
+} from './changeset/summaries.js';
 export { migrate } from './cli/migrate.js';
 export { compilePredicate } from './compiler/predicate-sql.js';
 export {

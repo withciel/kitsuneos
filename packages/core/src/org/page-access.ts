@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
+import { compilePageAccessPredicate } from '../compiler/page-access-sql.js';
 import { KitsuneError } from '../types.js';
 
 export type PageVisibility = 'private' | 'workspace' | 'shared';
@@ -229,6 +230,10 @@ export async function unsharePage(
  * Whether principal may see the page.
  * Missing page_access row => workspace visibility (legacy default).
  * Workspace admins see private pages (auditable policy).
+ *
+ * Implementation: same SQL fragment as the query compiler
+ * (`compilePageAccessPredicate`). Evaluated against a one-row id projection
+ * so ACL semantics do not require the data-plane row to exist.
  */
 export async function canViewPage(
   pool: Pool,
@@ -239,24 +244,45 @@ export async function canViewPage(
     principalId: string;
   },
 ): Promise<boolean> {
-  const access = await getPageAccess(pool, input);
-  if (!access || access.visibility === 'workspace') return true;
-  if (access.ownerPrincipalId === input.principalId) return true;
-  if (
-    await principalIsWorkspaceAdmin(pool, input.workspaceId, input.principalId)
-  ) {
-    return true;
+  const client = await pool.connect();
+  try {
+    return await canViewPageOnClient(client, input);
+  } finally {
+    client.release();
   }
-  if (access.visibility === 'private') return false;
-  const effective = await effectivePrincipalIds(
-    pool,
-    input.workspaceId,
-    input.principalId,
-  );
-  return access.shares.some((share) => effective.includes(share.principalId));
 }
 
-/** Filter record ids down to those visible to the principal. */
+/** Same as {@link canViewPage} when the caller already holds a client. */
+export async function canViewPageOnClient(
+  client: PoolClient,
+  input: {
+    workspaceId: string;
+    collectionId: string;
+    recordId: string;
+    principalId: string;
+  },
+): Promise<boolean> {
+  const pageAcl = await compilePageAccessPredicate(client, {
+    workspaceId: input.workspaceId,
+    collectionId: input.collectionId,
+    principalId: input.principalId,
+    rootAlias: 't',
+    paramStart: 2,
+  });
+  const result = await client.query(
+    `SELECT 1 AS ok
+       FROM (SELECT $1::uuid AS id) t
+      WHERE ${pageAcl.sql}
+      LIMIT 1`,
+    [input.recordId, ...pageAcl.params],
+  );
+  return result.rows.length > 0;
+}
+
+/**
+ * Filter record ids down to those visible to the principal.
+ * Uses one `unnest` + compiled page ACL predicate (not N round-trips).
+ */
 export async function filterVisibleRecordIds(
   pool: Pool,
   input: {
@@ -267,18 +293,24 @@ export async function filterVisibleRecordIds(
   },
 ): Promise<string[]> {
   if (input.recordIds.length === 0) return [];
-  const visible: string[] = [];
-  for (const recordId of input.recordIds) {
-    if (
-      await canViewPage(pool, {
-        workspaceId: input.workspaceId,
-        collectionId: input.collectionId,
-        recordId,
-        principalId: input.principalId,
-      })
-    ) {
-      visible.push(recordId);
-    }
+  const client = await pool.connect();
+  try {
+    const pageAcl = await compilePageAccessPredicate(client, {
+      workspaceId: input.workspaceId,
+      collectionId: input.collectionId,
+      principalId: input.principalId,
+      rootAlias: 't',
+      paramStart: 2,
+    });
+    const result = await client.query<{ id: string }>(
+      `SELECT t.id::text AS id
+         FROM unnest($1::uuid[]) AS t(id)
+        WHERE ${pageAcl.sql}`,
+      [input.recordIds, ...pageAcl.params],
+    );
+    const visible = new Set(result.rows.map((row) => row.id));
+    return input.recordIds.filter((id) => visible.has(id));
+  } finally {
+    client.release();
   }
-  return visible;
 }

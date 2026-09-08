@@ -1,4 +1,3 @@
-import { createApiKey, revokeApiKeysForPrincipal } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { requireWorkspace } from '@/lib/require-workspace';
@@ -14,39 +13,23 @@ async function resolveAssistantPrincipal(
   workspaceId: string,
   actorPrincipalId: string,
 ): Promise<string> {
-  const existing = await engine.ownerPool.query<{ id: string }>(
-    `SELECT id FROM kitsune.principals
-      WHERE workspace_id = $1
-        AND kind = 'agent'
-        AND display_name = 'assistant'
-        AND disabled_at IS NULL
-      ORDER BY created_at ASC
-      LIMIT 1`,
-    [workspaceId],
-  );
+  const existing = await engine.findAssistantPrincipalId(workspaceId);
   const assistantId =
-    existing.rows[0]?.id ??
+    existing ??
     (await engine.createPrincipal(workspaceId, 'agent', 'assistant'));
 
-  const collections = await engine.ownerPool.query<{ id: string }>(
-    `SELECT id FROM kitsune.collections WHERE workspace_id = $1`,
-    [workspaceId],
-  );
-  for (const collection of collections.rows) {
-    const grant = await engine.ownerPool.query<{ id: string }>(
-      `SELECT id FROM kitsune.grants
-        WHERE workspace_id = $1
-          AND principal_id = $2
-          AND collection_id = $3
-          AND revoked_at IS NULL
-        LIMIT 1`,
-      [workspaceId, assistantId, collection.id],
-    );
-    if (grant.rows[0]) continue;
+  const collectionIds = await engine.listCollectionIds(workspaceId);
+  for (const collectionId of collectionIds) {
+    const hasGrant = await engine.hasActiveGrant({
+      workspaceId,
+      principalId: assistantId,
+      collectionId,
+    });
+    if (hasGrant) continue;
     await engine.createGrant(
       workspaceId,
       assistantId,
-      collection.id,
+      collectionId,
       'propose',
       null,
       null,
@@ -64,12 +47,9 @@ export async function POST() {
       ctx.workspaceId,
       ctx.principalId,
     );
-    await revokeApiKeysForPrincipal(engine.ownerPool, assistantId);
-    const apiKey = await createApiKey(engine.ownerPool, assistantId);
-    await engine.ownerPool.query(
-      `UPDATE kitsune.users SET pending_api_key = NULL WHERE id = $1`,
-      [ctx.userId],
-    );
+    await engine.revokeApiKeysForPrincipal(assistantId);
+    const apiKey = await engine.createApiKey(assistantId);
+    await engine.clearPendingApiKey(ctx.userId);
     return NextResponse.json(
       {
         apiKeyPlaintext: apiKey.plaintext,

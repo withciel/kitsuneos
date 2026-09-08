@@ -15,15 +15,7 @@ export async function GET() {
       );
     }
 
-    const sub = await engine.ownerPool.query<{
-      dodo_customer_id: string | null;
-    }>(
-      `SELECT dodo_customer_id FROM kitsune.subscriptions
-        WHERE workspace_id = $1 AND dodo_customer_id IS NOT NULL
-        ORDER BY created_at DESC LIMIT 1`,
-      [ctx.workspaceId],
-    );
-    const customerId = sub.rows[0]?.dodo_customer_id;
+    const customerId = await engine.getWorkspaceDodoCustomerId(ctx.workspaceId);
     if (!customerId) {
       return NextResponse.json(
         { error: 'No subscription yet. Start checkout first.' },

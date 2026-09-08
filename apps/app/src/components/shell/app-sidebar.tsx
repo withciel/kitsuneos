@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { CreateDatabaseDialog } from '@/components/collection/create-database-dialog';
 import { WorkspaceSwitcher } from '@/components/shell/workspace-switcher';
 import { Badge } from '@/components/ui/badge';
@@ -30,68 +30,27 @@ import {
   SidebarMenuSkeleton,
   SidebarRail,
 } from '@/components/ui/sidebar';
-import { WORKSPACE_CHANGED_EVENT } from '@/lib/workspace-events';
-
-interface SchemaCollection {
-  name: string;
-  capability: string;
-  scope?: 'workspace' | 'personal';
-}
+import { useWorkspaceSession } from '@/lib/workspace-session';
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const [workspaceDbs, setWorkspaceDbs] = useState<SchemaCollection[]>([]);
-  const [personalDbs, setPersonalDbs] = useState<SchemaCollection[]>([]);
-  const [changesCount, setChangesCount] = useState(0);
-  const [schemaLoading, setSchemaLoading] = useState(true);
+  const { schema, openChangeSetCount, loading } = useWorkspaceSession();
 
-  const reload = useCallback(() => {
-    void fetch('/api/schema')
-      .then(async (response) => {
-        if (!response.ok) return;
-        const body = (await response.json()) as {
-          collections?: SchemaCollection[];
-        };
-        const next = body.collections ?? [];
-        setWorkspaceDbs(
-          next.filter(
-            (collection) => (collection.scope ?? 'workspace') !== 'personal',
-          ),
-        );
-        setPersonalDbs(
-          next.filter((collection) => collection.scope === 'personal'),
-        );
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        setSchemaLoading(false);
-      });
-
-    void fetch('/api/review')
-      .then(async (response) => {
-        if (!response.ok) return;
-        const body = (await response.json()) as {
-          changeSets?: unknown[];
-        };
-        setChangesCount(body.changeSets?.length ?? 0);
-      })
-      .catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    window.addEventListener(WORKSPACE_CHANGED_EVENT, reload);
-    return () => {
-      window.removeEventListener(WORKSPACE_CHANGED_EVENT, reload);
+  const { workspaceDbs, personalDbs } = useMemo(() => {
+    const next = schema?.collections ?? [];
+    return {
+      workspaceDbs: next.filter(
+        (collection) => (collection.scope ?? 'workspace') !== 'personal',
+      ),
+      personalDbs: next.filter((collection) => collection.scope === 'personal'),
     };
-  }, [reload]);
+  }, [schema]);
 
-  useEffect(() => {
-    if (!pathname) return;
-    reload();
-  }, [pathname, reload]);
+  const schemaLoading = loading && !schema;
+  const changesCount = openChangeSetCount;
 
   function renderDbList(
-    items: SchemaCollection[],
+    items: typeof workspaceDbs,
     emptyLabel: string,
     scope: 'workspace' | 'personal',
   ) {

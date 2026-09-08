@@ -6,6 +6,7 @@ import { CreateDatabaseDialog } from '@/components/collection/create-database-di
 import { OperateEmptyState } from '@/components/operate/empty-state';
 import { OperateLoadingBlock } from '@/components/operate/loading-block';
 import { Button } from '@/components/ui/button';
+import { useWorkspaceSession } from '@/lib/workspace-session';
 
 type BootState =
   | { kind: 'loading' }
@@ -15,59 +16,42 @@ type BootState =
 
 export default function WorkspaceHomePage() {
   const router = useRouter();
+  const { me, schema, loading, error, unauthorized, refresh } =
+    useWorkspaceSession();
   const [boot, setBoot] = useState<BootState>({ kind: 'loading' });
   const [notesBusy, setNotesBusy] = useState(false);
   const [notesError, setNotesError] = useState('');
 
   useEffect(() => {
-    void fetch('/api/schema')
-      .then(async (response) => {
-        if (response.status === 401) {
-          window.location.assign('/login');
-          return;
-        }
-        if (!response.ok) {
-          const body = (await response.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          setBoot({
-            kind: 'error',
-            message:
-              body.error ??
-              'Could not load your workspace. Refresh or sign in again.',
-          });
-          return;
-        }
-        const body = (await response.json()) as {
-          collections?: Array<{ name: string }>;
-        };
-        if ((body.collections?.length ?? 0) > 0) {
-          const first = body.collections?.[0]?.name;
-          if (first) {
-            setBoot({ kind: 'redirecting' });
-            router.replace(`/c/${first}`);
-            return;
-          }
-        }
-        try {
-          const meRes = await fetch('/api/me');
-          const meBody = (await meRes.json()) as { role?: string };
-          setBoot({
-            kind: 'empty',
-            memberOnly: meBody.role === 'member' || meBody.role === 'viewer',
-          });
-        } catch {
-          setBoot({ kind: 'empty', memberOnly: false });
-        }
-      })
-      .catch(() =>
-        setBoot({
-          kind: 'error',
-          message:
-            'Could not reach the workspace API. Check your connection and retry.',
-        }),
-      );
-  }, [router]);
+    if (unauthorized) {
+      window.location.assign('/login');
+      return;
+    }
+    if (loading && !schema) {
+      setBoot({ kind: 'loading' });
+      return;
+    }
+    if (!schema) {
+      setBoot({
+        kind: 'error',
+        message:
+          error ?? 'Could not load your workspace. Refresh or sign in again.',
+      });
+      return;
+    }
+    if (schema.collections.length > 0) {
+      const first = schema.collections[0]?.name;
+      if (first) {
+        setBoot({ kind: 'redirecting' });
+        router.replace(`/c/${first}`);
+        return;
+      }
+    }
+    setBoot({
+      kind: 'empty',
+      memberOnly: me?.role === 'member' || me?.role === 'viewer',
+    });
+  }, [unauthorized, loading, schema, me, error, router]);
 
   async function createPersonalNotes() {
     setNotesBusy(true);
@@ -88,6 +72,7 @@ export default function WorkspaceHomePage() {
       });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'Create failed');
+      await refresh();
       router.push('/c/notes');
     } catch (err) {
       setNotesError(err instanceof Error ? err.message : 'Create failed');
@@ -106,7 +91,7 @@ export default function WorkspaceHomePage() {
             variant="outline"
             onClick={() => {
               setBoot({ kind: 'loading' });
-              window.location.reload();
+              void refresh();
             }}
           >
             Retry

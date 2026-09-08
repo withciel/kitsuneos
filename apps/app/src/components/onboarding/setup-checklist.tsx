@@ -15,6 +15,7 @@ import {
 } from '@/lib/onboarding';
 import { cn } from '@/lib/utils';
 import { WORKSPACE_CHANGED_EVENT } from '@/lib/workspace-events';
+import { useWorkspaceSession } from '@/lib/workspace-session';
 
 const INITIAL: OnboardingProgress = {
   'create-database': false,
@@ -27,6 +28,11 @@ const INITIAL: OnboardingProgress = {
 
 export function SetupChecklist() {
   const pathname = usePathname();
+  const {
+    schema,
+    openChangeSetCount,
+    loading: sessionLoading,
+  } = useWorkspaceSession();
   const [hidden, setHidden] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [progress, setProgress] = useState<OnboardingProgress>(INITIAL);
@@ -36,12 +42,16 @@ export function SetupChecklist() {
       setHidden(true);
       return;
     }
-    void loadOnboardingProgress().then((next) => {
+    if (sessionLoading && !schema) return;
+    void loadOnboardingProgress({
+      collections: schema?.collections ?? [],
+      openChangeSetCount,
+    }).then((next) => {
       setProgress(next);
       const done = ONBOARDING_STEPS.every((step) => next[step.id]);
       setHidden(done);
     });
-  }, []);
+  }, [schema, openChangeSetCount, sessionLoading]);
 
   useEffect(() => {
     refresh();

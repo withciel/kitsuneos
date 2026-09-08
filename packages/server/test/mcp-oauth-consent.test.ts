@@ -4,17 +4,14 @@ import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { DEFAULT_CONFIG, KitsuneEngine, migrate } from '@kitsuneos/core';
 import {
-  ensureMcpOAuthTables,
-  newCsrfToken,
-  newPendingConsentId,
-  pkceChallengeS256,
-} from './mcp-oauth.ts';
-import {
   consentOriginMismatch,
   isConsentDecisionError,
+  newCsrfToken,
+  newPendingConsentId,
   parseConsentDecisionBody,
+  pkceChallengeS256,
   processConsentDecision,
-} from './mcp-oauth-consent.ts';
+} from '../src/index.js';
 
 describe('mcp oauth consent helpers', () => {
   it('parseConsentDecisionBody defaults missing fields to empty strings', () => {
@@ -90,7 +87,6 @@ describe('processConsentDecision (Postgres E2E)', () => {
       'test-mcp-oauth-secret-for-consent-e2e';
     await migrate(DEFAULT_CONFIG);
     engine = new KitsuneEngine({ config: DEFAULT_CONFIG });
-    await ensureMcpOAuthTables(engine);
     const ws = await engine.createWorkspace(`oauth-consent-${Date.now()}`);
     workspaceId = ws.workspaceId;
     principalId = await engine.createPrincipal(

@@ -1,6 +1,8 @@
-import { handleStreamableMcpRequest } from '@kitsuneos/server';
+import {
+  handleStreamableMcpRequest,
+  resolveMcpOAuthCredential,
+} from '@kitsuneos/server';
 import { engine } from '@/lib/engine';
-import { resolveMcpOAuthCredential } from '@/lib/mcp-oauth';
 import { publicAppOrigin } from '@/lib/public-origin';
 
 export const runtime = 'nodejs';

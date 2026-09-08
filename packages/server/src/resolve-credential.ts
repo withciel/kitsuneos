@@ -1,9 +1,5 @@
 import type { KitsuneEngine, ResolvedApiKey } from '@kitsuneos/core';
-import {
-  apiKeyDisplayPrefix,
-  KitsuneError,
-  resolveApiKey,
-} from '@kitsuneos/core';
+import { apiKeyDisplayPrefix, KitsuneError } from '@kitsuneos/core';
 
 export interface CredentialContext extends ResolvedApiKey {}
 
@@ -15,7 +11,7 @@ export async function resolveCredential(
     throw new KitsuneError('Missing bearer token', 'forbidden');
   }
   const token = authorizationHeader.slice('Bearer '.length).trim();
-  return resolveApiKey(engine.ownerPool, token);
+  return engine.resolveApiKey(token);
 }
 
 export async function auditAuthFailure(
@@ -30,18 +26,5 @@ export async function auditAuthFailure(
     token.startsWith('kso_live_') || token.startsWith('kso_test_')
       ? apiKeyDisplayPrefix(token)
       : 'unknown';
-  await engine.ownerPool.query(
-    `INSERT INTO kitsune.audit_log
-      (id, workspace_id, principal_id, action, outcome, reason, detail)
-     VALUES (
-       gen_random_uuid(),
-       '00000000-0000-0000-0000-000000000001',
-       '00000000-0000-0000-0000-000000000002',
-       'auth_failed',
-       'denied',
-       $1,
-       $2::jsonb
-     )`,
-    [reason, JSON.stringify({ keyPrefix: prefix })],
-  );
+  await engine.recordAuthFailure(reason, prefix);
 }

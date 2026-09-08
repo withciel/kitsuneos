@@ -121,7 +121,14 @@ export function onboardingStepTitle(
   return 'Connect MCP';
 }
 
-export async function loadOnboardingProgress(): Promise<OnboardingProgress> {
+export interface OnboardingSessionInput {
+  collections?: Array<{ name: string }> | null;
+  openChangeSetCount?: number;
+}
+
+export async function loadOnboardingProgress(
+  session?: OnboardingSessionInput,
+): Promise<OnboardingProgress> {
   const progress: OnboardingProgress = {
     'create-database': false,
     'add-page': false,
@@ -132,13 +139,35 @@ export async function loadOnboardingProgress(): Promise<OnboardingProgress> {
   };
 
   try {
+    const hasSchema = session?.collections !== undefined;
+    const hasReview = session?.openChangeSetCount !== undefined;
     const [schemaRes, agentsRes, reviewRes] = await Promise.all([
-      fetch('/api/schema'),
+      hasSchema ? Promise.resolve(null) : fetch('/api/schema'),
       fetch('/api/agents'),
-      fetch('/api/review'),
+      hasReview ? Promise.resolve(null) : fetch('/api/review'),
     ]);
 
-    if (schemaRes.ok) {
+    if (hasSchema) {
+      const first = session?.collections?.[0]?.name ?? null;
+      progress.firstCollection = first;
+      progress['create-database'] = Boolean(first);
+
+      if (first) {
+        const queryRes = await fetch('/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            collection: first,
+            fields: ['id'],
+            limit: 1,
+          }),
+        });
+        if (queryRes.ok) {
+          const body = (await queryRes.json()) as { rows?: unknown[] };
+          progress['add-page'] = (body.rows?.length ?? 0) > 0;
+        }
+      }
+    } else if (schemaRes?.ok) {
       const schema = (await schemaRes.json()) as {
         collections?: Array<{ name: string }>;
       };
@@ -176,7 +205,10 @@ export async function loadOnboardingProgress(): Promise<OnboardingProgress> {
       });
     }
 
-    if (reviewRes.ok) {
+    if (hasReview) {
+      progress['review-changes'] =
+        (session?.openChangeSetCount ?? 0) > 0 || hasSeenChanges();
+    } else if (reviewRes?.ok) {
       const review = (await reviewRes.json()) as {
         changeSets?: unknown[];
       };

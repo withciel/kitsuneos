@@ -25,6 +25,7 @@ import {
   OPEN_COMMAND_PALETTE_EVENT,
   WORKSPACE_CHANGED_EVENT,
 } from '@/lib/workspace-events';
+import { useWorkspaceSession } from '@/lib/workspace-session';
 
 interface SearchHit {
   collection: string;
@@ -41,6 +42,7 @@ type PaletteItem =
 
 export function CommandPalette() {
   const router = useRouter();
+  const { refresh: refreshSession } = useWorkspaceSession();
   const inputId = useId();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -169,7 +171,7 @@ export function CommandPalette() {
     setError('');
     try {
       // Schema GET backfills notes for older workspaces.
-      await fetch('/api/schema');
+      await refreshSession();
       const response = await fetch('/api/records', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -185,9 +187,10 @@ export function CommandPalette() {
       if (!response.ok || typeof body.recordId !== 'string') {
         throw new Error(body.error ?? 'Failed to create note');
       }
+      const recordId = body.recordId;
       close();
       startTransition(() => {
-        router.push(pageHref(body.recordId!, 'notes'));
+        router.push(pageHref(recordId, 'notes'));
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

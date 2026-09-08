@@ -7,7 +7,7 @@ import {
 import type { McpContext } from './handlers.js';
 import { parseJsonArgs } from './handlers.js';
 import { invokeMcpTool, isKitsuneError } from './invoke.js';
-import { TOOL_DEFINITIONS } from './schemas.js';
+import { REGISTRY_TOOL_DEFINITIONS } from './registry.js';
 
 export interface CreateKitsuneMcpServerOptions {
   engine: KitsuneEngine;
@@ -28,7 +28,7 @@ export function createKitsuneMcpServer(
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOL_DEFINITIONS,
+    tools: REGISTRY_TOOL_DEFINITIONS,
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {

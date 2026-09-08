@@ -1,9 +1,4 @@
 import type { KitsuneEngine } from '@kitsuneos/core';
-import {
-  assertPlanLimit,
-  claimInvitesForUser,
-  ensureOwnerMembership,
-} from '@kitsuneos/core';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface ProvisionUserInput {
@@ -32,94 +27,72 @@ export async function provisionUserWorkspace(
   const created: string[] = [];
   const skipped: string[] = [];
 
-  const lockClient = await engine.ownerPool.connect();
-  try {
-    await lockClient.query(`SELECT pg_advisory_lock(hashtext($1))`, [
-      input.workosId,
-    ]);
-
-    try {
-      const existing = await lockClient.query<{
-        id: string;
-        workspace_id: string;
-        principal_id: string;
-        schema_name: string;
-      }>(
-        `SELECT u.id, u.workspace_id, u.principal_id, w.schema_name
-           FROM kitsune.users u
-           JOIN kitsune.workspaces w ON w.id = u.workspace_id
-          WHERE u.workos_id = $1`,
-        [input.workosId],
-      );
-      if (existing.rows[0]) {
-        return {
-          userId: existing.rows[0].id,
-          workspaceId: existing.rows[0].workspace_id,
-          principalId: existing.rows[0].principal_id,
-          schemaName: existing.rows[0].schema_name,
-          apiKeyPlaintext: null,
-          created,
-          skipped: ['already provisioned'],
-        };
-      }
-
-      const userId = uuidv4();
-      const slug = `ws-${uuidv4().replace(/-/g, '').slice(0, 16)}`;
-      const { workspaceId, schemaName } = await engine.createWorkspace(slug);
-      created.push('workspace');
-
-      const principalId = await engine.createPrincipal(
-        workspaceId,
-        'human',
-        input.email,
-        {
-          externalIssuer: 'workos',
-          externalSubject: input.workosId,
-        },
-      );
-      created.push('principal');
-
-      await lockClient.query(
-        `INSERT INTO kitsune.users
-           (id, workos_id, email, workspace_id, principal_id, pending_api_key)
-         VALUES ($1, $2, $3, $4, $5, NULL)`,
-        [userId, input.workosId, input.email, workspaceId, principalId],
-      );
-      created.push('user');
-
-      await ensureOwnerMembership(engine.ownerPool, {
-        userId,
-        workspaceId,
-        principalId,
-        email: input.email,
-      });
-      created.push('membership:owner');
-
-      const claimed = await claimInvitesForUser(engine.ownerPool, {
-        userId,
-        email: input.email,
-      });
-      if (claimed > 0) {
-        created.push(`membership:claimed:${claimed}`);
-      }
-
+  return engine.withAdvisoryLock(input.workosId, async () => {
+    const existing = await engine.findUserByWorkosId(input.workosId);
+    if (existing?.workspaceId && existing.principalId && existing.schemaName) {
       return {
-        userId,
-        workspaceId,
-        principalId,
-        schemaName,
+        userId: existing.userId,
+        workspaceId: existing.workspaceId,
+        principalId: existing.principalId,
+        schemaName: existing.schemaName,
         apiKeyPlaintext: null,
         created,
-        skipped,
+        skipped: ['already provisioned'],
       };
-    } finally {
-      await lockClient.query(`SELECT pg_advisory_unlock(hashtext($1))`, [
-        input.workosId,
-      ]);
     }
-  } finally {
-    lockClient.release();
-  }
+
+    const userId = uuidv4();
+    const slug = `ws-${uuidv4().replace(/-/g, '').slice(0, 16)}`;
+    const { workspaceId, schemaName } = await engine.createWorkspace(slug);
+    created.push('workspace');
+
+    const principalId = await engine.createPrincipal(
+      workspaceId,
+      'human',
+      input.email,
+      {
+        externalIssuer: 'workos',
+        externalSubject: input.workosId,
+      },
+    );
+    created.push('principal');
+
+    await engine.insertUser({
+      userId,
+      workosId: input.workosId,
+      email: input.email,
+      workspaceId,
+      principalId,
+      pendingApiKey: null,
+    });
+    created.push('user');
+
+    await engine.ensureOwnerMembership({
+      userId,
+      workspaceId,
+      principalId,
+      email: input.email,
+    });
+    created.push('membership:owner');
+
+    const claimed = await engine.claimInvitesForUser({
+      userId,
+      email: input.email,
+    });
+    if (claimed > 0) {
+      created.push(`membership:claimed:${claimed}`);
+    }
+
+    return {
+      userId,
+      workspaceId,
+      principalId,
+      schemaName,
+      apiKeyPlaintext: null,
+      created,
+      skipped,
+    };
+  });
 }
 
 export interface CreateAdditionalWorkspaceInput {
@@ -146,7 +119,7 @@ export async function createAdditionalWorkspaceForUser(
   engine: KitsuneEngine,
   input: CreateAdditionalWorkspaceInput,
 ): Promise<CreateAdditionalWorkspaceResult> {
-  await assertPlanLimit(engine.ownerPool, {
+  await engine.assertPlanLimit({
     dimension: 'workspacesPerUser',
     userId: input.userId,
   });
@@ -160,10 +133,7 @@ export async function createAdditionalWorkspaceForUser(
   const { workspaceId, schemaName } = await engine.createWorkspace(slug);
   created.push('workspace');
 
-  await engine.ownerPool.query(
-    `UPDATE kitsune.workspaces SET name = $2 WHERE id = $1`,
-    [workspaceId, displayName],
-  );
+  await engine.setWorkspaceName(workspaceId, displayName);
 
   const principalId = await engine.createPrincipal(
     workspaceId,
@@ -172,7 +142,7 @@ export async function createAdditionalWorkspaceForUser(
   );
   created.push('principal');
 
-  await ensureOwnerMembership(engine.ownerPool, {
+  await engine.ensureOwnerMembership({
     userId: input.userId,
     workspaceId,
     principalId,
@@ -181,12 +151,12 @@ export async function createAdditionalWorkspaceForUser(
   created.push('membership:owner');
 
   if (activate) {
-    await engine.ownerPool.query(
-      `UPDATE kitsune.users
-          SET workspace_id = $2, principal_id = $3, pending_api_key = NULL
-        WHERE id = $1`,
-      [input.userId, workspaceId, principalId],
-    );
+    await engine.setUserActiveMembership({
+      userId: input.userId,
+      workspaceId,
+      principalId,
+      clearPendingApiKey: true,
+    });
   }
 
   return {

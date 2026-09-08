@@ -1,22 +1,12 @@
 // workspace-lint: ignore — MCP OAuth binds workspace from the authenticated
 // session (requireWorkspace / token claims), never from client request params.
+import { loadMcpOAuthConsentPage } from '@kitsuneos/server';
 import { Button } from '@/components/ui/button';
 import { engine } from '@/lib/engine';
-import { ensureMcpOAuthTables } from '@/lib/mcp-oauth';
 import { requireWorkspace } from '@/lib/require-workspace';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-interface PendingRow {
-  id: string;
-  client_id: string;
-  workspace_id: string;
-  principal_id: string;
-  scope: string;
-  csrf_token: string;
-  expires_at: string;
-}
 
 /**
  * MCP OAuth consent screen. AuthKit middleware enforces sign-in on this
@@ -40,16 +30,21 @@ export default async function McpConsentPage({
     );
   }
 
-  await ensureMcpOAuthTables(engine);
+  const loaded = await loadMcpOAuthConsentPage(engine, {
+    pendingId,
+    workspaceId: workspace.workspaceId,
+    principalId: workspace.principalId,
+  });
 
-  const pendingResult = await engine.ownerPool.query<PendingRow>(
-    `SELECT id, client_id, workspace_id, principal_id, scope, csrf_token, expires_at
-       FROM kitsune.mcp_oauth_pending WHERE id = $1`,
-    [pendingId],
-  );
-  const pending = pendingResult.rows[0];
-
-  if (!pending || new Date(pending.expires_at).getTime() < Date.now()) {
+  if (!loaded.ok) {
+    if (loaded.reason === 'wrong_account') {
+      return (
+        <ConsentShell
+          title="Signed in as a different account"
+          body="This authorization request belongs to a different signed-in account. Sign in as the right user and restart the connection."
+        />
+      );
+    }
     return (
       <ConsentShell
         title="Authorization request expired"
@@ -58,35 +53,7 @@ export default async function McpConsentPage({
     );
   }
 
-  if (
-    pending.workspace_id !== workspace.workspaceId ||
-    pending.principal_id !== workspace.principalId
-  ) {
-    return (
-      <ConsentShell
-        title="Signed in as a different account"
-        body="This authorization request belongs to a different signed-in account. Sign in as the right user and restart the connection."
-      />
-    );
-  }
-
-  const clientResult = await engine.ownerPool.query<{
-    client_name: string;
-  }>(`SELECT client_name FROM kitsune.mcp_oauth_clients WHERE client_id = $1`, [
-    pending.client_id,
-  ]);
-  const clientName = clientResult.rows[0]?.client_name ?? pending.client_id;
-
-  const workspaceResult = await engine.ownerPool.query<{
-    name: string | null;
-    slug: string;
-  }>(`SELECT name, slug FROM kitsune.workspaces WHERE id = $1`, [
-    pending.workspace_id,
-  ]);
-  const workspaceLabel =
-    workspaceResult.rows[0]?.name ||
-    workspaceResult.rows[0]?.slug ||
-    pending.workspace_id;
+  const { data } = loaded;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-6">
@@ -96,7 +63,7 @@ export default async function McpConsentPage({
             MCP access request
           </p>
           <h1 className="text-lg font-semibold text-foreground">
-            {clientName}
+            {data.clientName}
           </h1>
           <p className="text-sm text-muted-foreground">
             wants to connect to your KitsuneOS workspace.
@@ -106,19 +73,19 @@ export default async function McpConsentPage({
         <dl className="space-y-2 rounded-lg border border-border bg-muted/40 p-3 text-sm">
           <div className="flex items-center justify-between gap-3">
             <dt className="text-muted-foreground">Workspace</dt>
-            <dd className="font-medium text-foreground">{workspaceLabel}</dd>
+            <dd className="font-medium text-foreground">
+              {data.workspaceLabel}
+            </dd>
           </div>
           <div className="flex items-center justify-between gap-3">
             <dt className="text-muted-foreground">Scope</dt>
-            <dd className="font-mono text-xs text-foreground">
-              {pending.scope}
-            </dd>
+            <dd className="font-mono text-xs text-foreground">{data.scope}</dd>
           </div>
         </dl>
 
         <p className="text-xs text-muted-foreground">
-          Approving lets {clientName} call MCP tools as you in this workspace,
-          until you revoke access.
+          Approving lets {data.clientName} call MCP tools as you in this
+          workspace, until you revoke access.
         </p>
 
         <form
@@ -126,8 +93,8 @@ export default async function McpConsentPage({
           action="/api/mcp/oauth/consent"
           className="flex gap-2"
         >
-          <input type="hidden" name="pendingId" value={pending.id} />
-          <input type="hidden" name="csrfToken" value={pending.csrf_token} />
+          <input type="hidden" name="pendingId" value={data.pendingId} />
+          <input type="hidden" name="csrfToken" value={data.csrfToken} />
           <Button
             type="submit"
             name="decision"

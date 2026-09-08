@@ -1,13 +1,14 @@
-// workspace-lint: ignore — MCP OAuth binds workspace from the authenticated
-// session, never from client request params.
+/**
+ * MCP OAuth consent approve/deny. Workspace is bound from the authenticated
+ * session, never from client request params.
+ */
 import type { KitsuneEngine } from '@kitsuneos/core';
 import {
   authCodeTtlSeconds,
   csrfTokensMatch,
-  ensureMcpOAuthTables,
+  type McpOAuthDeps,
   newAuthCode,
-} from './mcp-oauth';
-import { publicAppOrigin } from './public-origin';
+} from './mcp-oauth.js';
 
 export interface PendingConsentRow {
   id: string;
@@ -38,10 +39,11 @@ export type ConsentDecisionOk = {
  * Reject cross-origin form posts when the browser sent Origin/Referer.
  * Best-effort defense-in-depth alongside the per-pending CSRF token —
  * absence of these headers is not itself an error (token check still applies).
+ * Callers pass expectedOrigin (e.g. publicAppOrigin(request)).
  */
 export function consentOriginMismatch(
   request: Request,
-  expectedOrigin = publicAppOrigin(request),
+  expectedOrigin: string,
 ): boolean {
   const expectedHost = new URL(expectedOrigin).host;
   for (const headerName of ['origin', 'referer']) {
@@ -83,6 +85,7 @@ export async function processConsentDecision(
     workspaceId: string;
     principalId: string;
   },
+  deps?: McpOAuthDeps,
 ): Promise<ConsentDecisionOk | ConsentDecisionError> {
   const { decision, pendingId, csrfToken, workspaceId, principalId } = input;
 
@@ -93,8 +96,6 @@ export async function processConsentDecision(
       error_description: 'decision and pendingId are required.',
     };
   }
-
-  await ensureMcpOAuthTables(engine);
 
   const pendingResult = await engine.ownerPool.query<PendingConsentRow>(
     `SELECT id, client_id, workspace_id, principal_id, redirect_uri,
@@ -147,16 +148,14 @@ export async function processConsentDecision(
   const redirect = new URL(pending.redirect_uri);
   if (pending.state) redirect.searchParams.set('state', pending.state);
 
-  if (
-    decision === 'deny' ||
-    new Date(pending.expires_at).getTime() < Date.now()
-  ) {
+  const nowMs = deps?.nowMs?.() ?? Date.now();
+  if (decision === 'deny' || new Date(pending.expires_at).getTime() < nowMs) {
     redirect.searchParams.set('error', 'access_denied');
     return { redirectUrl: redirect.toString(), issuedCode: false };
   }
 
   const code = newAuthCode();
-  const expiresAt = new Date(Date.now() + authCodeTtlSeconds() * 1000);
+  const expiresAt = new Date(nowMs + authCodeTtlSeconds() * 1000);
   await engine.ownerPool.query(
     `INSERT INTO kitsune.mcp_oauth_codes
        (code, client_id, workspace_id, principal_id, redirect_uri,

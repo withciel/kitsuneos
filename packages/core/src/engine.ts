@@ -10,6 +10,13 @@ import type {
   PutAttachmentInput,
 } from './attachments/types.js';
 import { writeAudit, writeAuditInTxn } from './audit/log.js';
+import type { ResolvedApiKey } from './auth/api-keys.js';
+import {
+  createApiKey as createApiKeyRow,
+  resolveApiKey as resolveApiKeyRow,
+  revokeApiKey as revokeApiKeyRow,
+  revokeApiKeysForPrincipal as revokeApiKeysForPrincipalRow,
+} from './auth/api-keys.js';
 import {
   type AutoApplyPolicyConfig,
   assertAutoApplyConfig,
@@ -20,13 +27,35 @@ import {
   matchesMinApprovalsScope,
 } from './automation/policies.js';
 import { assertWriteEntitlement } from './billing/entitlement.js';
-import { assertPlanLimit } from './billing/plan-limits.js';
+import {
+  assertPlanLimit,
+  loadPlanUsage,
+  type PlanLimitDimension,
+  type PlanUsageSnapshot,
+} from './billing/plan-limits.js';
+import {
+  findWorkspaceByDodoCustomer,
+  type ProcessSubscriptionWebhookInput,
+  processSubscriptionWebhook,
+  recordBillingEvent,
+  recordUsageEvent,
+  type SubscriptionWebhookResult,
+  upsertSubscription,
+} from './billing/store.js';
 import {
   type BranchFieldMeta,
   copyRelationTable,
   orderCollectionsForBranch,
   sanitizeBranchName,
 } from './branching/copy.js';
+import {
+  type ChangeSetListScope,
+  type ChangeSetSummary,
+  changeSetHasProposedOps,
+  listChangeSetOpIds,
+  listChangeSetSummaries,
+} from './changeset/summaries.js';
+import { compilePageAccessPredicate } from './compiler/page-access-sql.js';
 import { compilePredicate } from './compiler/predicate-sql.js';
 import {
   type CollectionMeta,
@@ -67,14 +96,35 @@ import {
 } from './merge/queue.js';
 import {
   addTeamMember,
+  claimInvitesForUser as claimInvitesForUserRow,
   createTeamRow,
+  ensureOwnerMembership as ensureOwnerMembershipRow,
   inviteWorkspaceMember,
   listMembershipsForUser,
   listMembershipsForWorkspace,
   listTeams as listTeamRows,
   removeTeamMember,
+  switchActiveWorkspace as switchActiveWorkspaceRow,
 } from './org/memberships.js';
-import { canViewPage } from './org/page-access.js';
+import type { OAuthAppSummary, OAuthScope } from './org/oauth-apps.js';
+import {
+  createOAuthApp as createOAuthAppRow,
+  issueOAuthClientCredentialsToken as issueOAuthClientCredentialsTokenRow,
+  listOAuthApps as listOAuthAppsRow,
+  resolveOAuthAccessToken as resolveOAuthAccessTokenRow,
+  revokeOAuthApp as revokeOAuthAppRow,
+} from './org/oauth-apps.js';
+import type {
+  PageAccessState,
+  PageShareCapability,
+  PageVisibility,
+} from './org/page-access.js';
+import {
+  getPageAccess as getPageAccessRow,
+  sharePageWithPrincipal as sharePageWithPrincipalRow,
+  unsharePage as unsharePageRow,
+  upsertPageVisibility as upsertPageVisibilityRow,
+} from './org/page-access.js';
 import {
   type SweepRevisionsResult,
   sweepExpiredRevisions,
@@ -225,6 +275,10 @@ function applyLockTimeoutLiteral(): string {
 }
 
 export class KitsuneEngine {
+  /**
+   * @internal Acceptance tests and core scripts may use this pool directly.
+   * Production code outside packages/core must use engine methods instead.
+   */
   readonly ownerPool: Pool;
   readonly appPool: Pool;
   applyFaultInjection: ApplyFaultInjection | null = null;
@@ -1392,7 +1446,6 @@ export class KitsuneEngine {
         compiled.sql,
         compiled.params,
       );
-      const meta = await getCollectionMeta(client, workspaceId, collection);
       await writeAuditInTxn(client, {
         workspaceId,
         principalId,
@@ -1401,14 +1454,9 @@ export class KitsuneEngine {
         outcome: row ? 'allowed' : 'denied',
       });
       await client.query('COMMIT');
-      if (!row) return null;
-      const allowed = await canViewPage(this.ownerPool, {
-        workspaceId,
-        collectionId: meta.id,
-        recordId,
-        principalId,
-      });
-      return allowed ? row : null;
+      // page_access is compiled into compileReadRecord / compileQuery — no
+      // separate canViewPage post-filter (single authorization path).
+      return row;
     } catch (error) {
       await client.query('ROLLBACK');
       if (error instanceof KitsuneError) {
@@ -2626,16 +2674,23 @@ export class KitsuneEngine {
       });
 
       await client.query('COMMIT');
-      await this.maybeAutoApplyChangeSet(
-        workspaceId,
-        authorId,
-        changeSetId,
-        operationIds,
-        input.confidence ?? null,
-      );
+      client.release();
+      try {
+        await this.maybeAutoApplyChangeSet(
+          workspaceId,
+          authorId,
+          changeSetId,
+          operationIds,
+          input.confidence ?? null,
+        );
+      } catch (autoApplyError) {
+        // Proposal already committed; auto-apply failures must not hide success.
+        console.error('maybeAutoApplyChangeSet failed', autoApplyError);
+      }
       return { changeSetId, operationIds };
     } catch (error) {
       await client.query('ROLLBACK');
+      client.release();
       if (error instanceof KitsuneError && error.code === 'forbidden') {
         await writeAudit(this.appPool, {
           workspaceId,
@@ -2647,8 +2702,6 @@ export class KitsuneEngine {
         });
       }
       throw error;
-    } finally {
-      client.release();
     }
   }
 
@@ -2710,6 +2763,53 @@ export class KitsuneEngine {
     } finally {
       client.release();
     }
+  }
+
+  async listChangeSetSummaries(
+    workspaceId: string,
+    principalId: string,
+    options?: {
+      scope?: ChangeSetListScope;
+      authorId?: string | null;
+      changeSetId?: string | null;
+      includeReviewComments?: boolean;
+      includeBefore?: boolean;
+    },
+  ): Promise<ChangeSetSummary[]> {
+    const includeBefore = options?.includeBefore !== false;
+    return listChangeSetSummaries(this.ownerPool, {
+      workspaceId,
+      scope: options?.scope,
+      authorId: options?.authorId,
+      changeSetId: options?.changeSetId,
+      includeReviewComments: options?.includeReviewComments,
+      readBefore: includeBefore
+        ? async (collection, recordId, fieldName) => {
+            const record = await this.readRecord(
+              workspaceId,
+              principalId,
+              collection,
+              recordId,
+              [fieldName],
+            );
+            return record?.[fieldName] ?? null;
+          }
+        : undefined,
+    });
+  }
+
+  async listChangeSetOpIds(
+    workspaceId: string,
+    changeSetId: string,
+  ): Promise<string[]> {
+    return listChangeSetOpIds(this.ownerPool, workspaceId, changeSetId);
+  }
+
+  async changeSetHasProposedOps(
+    workspaceId: string,
+    changeSetId: string,
+  ): Promise<boolean> {
+    return changeSetHasProposedOps(this.ownerPool, workspaceId, changeSetId);
   }
 
   async applyChangeSet(
@@ -2798,6 +2898,12 @@ export class KitsuneEngine {
 
     const client = await this.appPool.connect();
     const conflicts: string[] = [];
+    let clientReleased = false;
+    const releaseApplyClient = () => {
+      if (clientReleased) return;
+      client.release();
+      clientReleased = true;
+    };
     try {
       await client.query('BEGIN');
       await setSessionContext(client, {
@@ -2877,6 +2983,8 @@ export class KitsuneEngine {
             changeSetId,
             'blocked',
           );
+          // Release before writeAudit — it acquires another appPool client.
+          releaseApplyClient();
           await writeAudit(this.appPool, {
             workspaceId,
             principalId: reviewerId,
@@ -2952,6 +3060,9 @@ export class KitsuneEngine {
       if (conflicts.length > 0) {
         await client.query('ROLLBACK');
         await this.persistBlockedChangeSet(changeSetId, conflicts, approvedOps);
+        // Release before writeAudit — nested appPool.connect while holding the
+        // apply client deadlocks when concurrent applies fill the pool (max 20).
+        releaseApplyClient();
         await writeAudit(this.appPool, {
           workspaceId,
           principalId: reviewerId,
@@ -3145,6 +3256,10 @@ export class KitsuneEngine {
       }
 
       await client.query('COMMIT');
+      // Release before post-commit side effects that acquire appPool clients
+      // (reindex / wiki-link sync). Holding the apply client across those calls
+      // deadlocks under concurrent apply when the pool is saturated.
+      releaseApplyClient();
       for (const [key, collectionName] of reindexTargets) {
         const recordId = key.slice(collectionName.length + 1);
         try {
@@ -3194,7 +3309,13 @@ export class KitsuneEngine {
       }
       return { status: 'applied' };
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (!clientReleased) {
+        try {
+          await client.query('ROLLBACK');
+        } catch {
+          // ignore — connection may already be aborted
+        }
+      }
       if (
         error instanceof Error &&
         error.message.startsWith('Fault injection')
@@ -3203,7 +3324,7 @@ export class KitsuneEngine {
       }
       throw error;
     } finally {
-      client.release();
+      releaseApplyClient();
     }
   }
 
@@ -5191,6 +5312,735 @@ export class KitsuneEngine {
       principalId: input.principalId,
     });
   }
+
+  // ---------------------------------------------------------------------------
+  // Control-plane wrappers (seal ownerPool from production adapters)
+  // ---------------------------------------------------------------------------
+
+  async resolveApiKey(bearer: string): Promise<ResolvedApiKey> {
+    return resolveApiKeyRow(this.ownerPool, bearer);
+  }
+
+  async createApiKey(
+    principalId: string,
+    mode: 'live' | 'test' = 'live',
+  ): Promise<{ keyId: string; plaintext: string; prefix: string }> {
+    return createApiKeyRow(this.ownerPool, principalId, mode);
+  }
+
+  async revokeApiKey(keyId: string): Promise<void> {
+    await revokeApiKeyRow(this.ownerPool, keyId);
+  }
+
+  async revokeApiKeysForPrincipal(principalId: string): Promise<number> {
+    return revokeApiKeysForPrincipalRow(this.ownerPool, principalId);
+  }
+
+  async resolveOAuthAccessToken(token: string): Promise<{
+    workspaceId: string;
+    principalId: string;
+    scopes: string[];
+    appId: string;
+  } | null> {
+    return resolveOAuthAccessTokenRow(this.ownerPool, token);
+  }
+
+  async recordAuthFailure(reason: string, keyPrefix: string): Promise<void> {
+    await this.ownerPool.query(
+      `INSERT INTO kitsune.audit_log
+        (id, workspace_id, principal_id, action, outcome, reason, detail)
+       VALUES (
+         gen_random_uuid(),
+         '00000000-0000-0000-0000-000000000001',
+         '00000000-0000-0000-0000-000000000002',
+         'auth_failed',
+         'denied',
+         $1,
+         $2::jsonb
+       )`,
+      [reason, JSON.stringify({ keyPrefix })],
+    );
+  }
+
+  async assertPlanLimit(input: {
+    workspaceId?: string;
+    dimension: PlanLimitDimension;
+    delta?: number;
+    userId?: string;
+    upgradePath?: string;
+  }): Promise<void> {
+    await assertPlanLimit(this.ownerPool, input);
+  }
+
+  async recordUsageEvent(
+    workspaceId: string,
+    kind: string,
+    count = 1,
+  ): Promise<void> {
+    await recordUsageEvent(this.ownerPool, workspaceId, kind, count);
+  }
+
+  async loadPlanUsage(
+    workspaceId: string,
+    userId?: string,
+  ): Promise<PlanUsageSnapshot> {
+    return loadPlanUsage(this.ownerPool, workspaceId, userId);
+  }
+
+  async recordBillingEvent(
+    eventId: string,
+    payload: unknown,
+  ): Promise<boolean> {
+    return recordBillingEvent(this.ownerPool, eventId, payload);
+  }
+
+  async findWorkspaceByDodoCustomer(
+    customerId: string,
+  ): Promise<string | null> {
+    return findWorkspaceByDodoCustomer(this.ownerPool, customerId);
+  }
+
+  async processSubscriptionWebhook(
+    input: ProcessSubscriptionWebhookInput,
+  ): Promise<SubscriptionWebhookResult> {
+    return processSubscriptionWebhook(this.ownerPool, input);
+  }
+
+  async upsertSubscription(input: {
+    workspaceId: string;
+    dodoSubscriptionId: string;
+    dodoCustomerId?: string | null;
+    status: string;
+    lastWebhookAt?: Date | null;
+  }): Promise<void> {
+    await upsertSubscription(this.ownerPool, input);
+  }
+
+  async listSubscriptions(): Promise<
+    Array<{
+      workspaceId: string;
+      dodoSubscriptionId: string;
+      status: string;
+    }>
+  > {
+    const result = await this.ownerPool.query<{
+      workspace_id: string;
+      dodo_subscription_id: string;
+      status: string;
+    }>(
+      `SELECT workspace_id, dodo_subscription_id, status FROM kitsune.subscriptions`,
+    );
+    return result.rows.map((row) => ({
+      workspaceId: row.workspace_id,
+      dodoSubscriptionId: row.dodo_subscription_id,
+      status: row.status,
+    }));
+  }
+
+  async getWorkspaceDodoCustomerId(
+    workspaceId: string,
+  ): Promise<string | null> {
+    const result = await this.ownerPool.query<{
+      dodo_customer_id: string | null;
+    }>(
+      `SELECT dodo_customer_id FROM kitsune.subscriptions
+        WHERE workspace_id = $1 AND dodo_customer_id IS NOT NULL
+        ORDER BY created_at DESC LIMIT 1`,
+      [workspaceId],
+    );
+    return result.rows[0]?.dodo_customer_id ?? null;
+  }
+
+  async claimInvitesForUser(input: {
+    userId: string;
+    email: string;
+  }): Promise<number> {
+    return claimInvitesForUserRow(this.ownerPool, input);
+  }
+
+  async ensureOwnerMembership(input: {
+    userId: string;
+    workspaceId: string;
+    principalId: string;
+    email: string;
+  }): Promise<void> {
+    await ensureOwnerMembershipRow(this.ownerPool, input);
+  }
+
+  async switchActiveWorkspace(input: {
+    userId: string;
+    workspaceId: string;
+  }): Promise<WorkspaceMembership> {
+    return switchActiveWorkspaceRow(this.ownerPool, input);
+  }
+
+  /**
+   * Hold a Postgres advisory lock for the duration of `fn`.
+   * Used by provisioning to serialize first-login workspace creation.
+   */
+  async withAdvisoryLock<T>(lockKey: string, fn: () => Promise<T>): Promise<T> {
+    const client = await this.ownerPool.connect();
+    try {
+      await client.query(`SELECT pg_advisory_lock(hashtext($1))`, [lockKey]);
+      try {
+        return await fn();
+      } finally {
+        await client.query(`SELECT pg_advisory_unlock(hashtext($1))`, [
+          lockKey,
+        ]);
+      }
+    } finally {
+      client.release();
+    }
+  }
+
+  async findUserByWorkosId(workosId: string): Promise<{
+    userId: string;
+    email: string;
+    workspaceId: string | null;
+    principalId: string | null;
+    schemaName: string | null;
+  } | null> {
+    const row = await this.ownerPool.query<{
+      id: string;
+      email: string;
+      workspace_id: string | null;
+      principal_id: string | null;
+      schema_name: string | null;
+    }>(
+      `SELECT u.id, u.email, u.workspace_id, u.principal_id, w.schema_name
+         FROM kitsune.users u
+         LEFT JOIN kitsune.workspaces w ON w.id = u.workspace_id
+        WHERE u.workos_id = $1`,
+      [workosId],
+    );
+    if (!row.rows[0]) return null;
+    return {
+      userId: row.rows[0].id,
+      email: row.rows[0].email,
+      workspaceId: row.rows[0].workspace_id,
+      principalId: row.rows[0].principal_id,
+      schemaName: row.rows[0].schema_name,
+    };
+  }
+
+  async insertUser(input: {
+    userId: string;
+    workosId: string;
+    email: string;
+    workspaceId: string;
+    principalId: string;
+    pendingApiKey?: string | null;
+  }): Promise<void> {
+    await this.ownerPool.query(
+      `INSERT INTO kitsune.users
+         (id, workos_id, email, workspace_id, principal_id, pending_api_key)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        input.userId,
+        input.workosId,
+        input.email,
+        input.workspaceId,
+        input.principalId,
+        input.pendingApiKey ?? null,
+      ],
+    );
+  }
+
+  async setUserActiveMembership(input: {
+    userId: string;
+    workspaceId: string;
+    principalId: string;
+    clearPendingApiKey?: boolean;
+  }): Promise<void> {
+    if (input.clearPendingApiKey) {
+      await this.ownerPool.query(
+        `UPDATE kitsune.users
+            SET workspace_id = $2, principal_id = $3, pending_api_key = NULL
+          WHERE id = $1`,
+        [input.userId, input.workspaceId, input.principalId],
+      );
+      return;
+    }
+    await this.ownerPool.query(
+      `UPDATE kitsune.users
+          SET workspace_id = $2, principal_id = $3
+        WHERE id = $1`,
+      [input.userId, input.workspaceId, input.principalId],
+    );
+  }
+
+  async setWorkspaceName(workspaceId: string, name: string): Promise<void> {
+    await this.ownerPool.query(
+      `UPDATE kitsune.workspaces SET name = $2 WHERE id = $1`,
+      [workspaceId, name],
+    );
+  }
+
+  async getUserEmail(userId: string): Promise<string | null> {
+    const result = await this.ownerPool.query<{ email: string }>(
+      `SELECT email FROM kitsune.users WHERE id = $1`,
+      [userId],
+    );
+    return result.rows[0]?.email ?? null;
+  }
+
+  async consumePendingApiKey(userId: string): Promise<string | null> {
+    const result = await this.ownerPool.query<{
+      pending_api_key: string | null;
+    }>(`SELECT pending_api_key FROM kitsune.users WHERE id = $1`, [userId]);
+    const pending = result.rows[0]?.pending_api_key ?? null;
+    if (!pending) return null;
+    await this.ownerPool.query(
+      `UPDATE kitsune.users SET pending_api_key = NULL WHERE id = $1`,
+      [userId],
+    );
+    return pending;
+  }
+
+  async clearPendingApiKey(userId: string): Promise<void> {
+    await this.ownerPool.query(
+      `UPDATE kitsune.users SET pending_api_key = NULL WHERE id = $1`,
+      [userId],
+    );
+  }
+
+  async findCollectionId(
+    workspaceId: string,
+    name: string,
+  ): Promise<string | null> {
+    const result = await this.ownerPool.query<{ id: string }>(
+      `SELECT id FROM kitsune.collections
+        WHERE workspace_id = $1 AND name = $2`,
+      [workspaceId, name],
+    );
+    return result.rows[0]?.id ?? null;
+  }
+
+  async listCollectionIds(workspaceId: string): Promise<string[]> {
+    const result = await this.ownerPool.query<{ id: string }>(
+      `SELECT id FROM kitsune.collections WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    return result.rows.map((row) => row.id);
+  }
+
+  async listWorkspacePrincipals(
+    workspaceId: string,
+  ): Promise<Array<{ id: string; display_name: string; kind: string }>> {
+    const result = await this.ownerPool.query<{
+      id: string;
+      display_name: string;
+      kind: string;
+    }>(
+      `SELECT id, display_name, kind FROM kitsune.principals
+        WHERE workspace_id = $1 ORDER BY display_name`,
+      [workspaceId],
+    );
+    return result.rows;
+  }
+
+  async listWorkspaceCollectionNames(
+    workspaceId: string,
+  ): Promise<Array<{ id: string; name: string }>> {
+    const result = await this.ownerPool.query<{ id: string; name: string }>(
+      `SELECT id, name FROM kitsune.collections
+        WHERE workspace_id = $1 ORDER BY name`,
+      [workspaceId],
+    );
+    return result.rows;
+  }
+
+  async hasActiveGrant(input: {
+    workspaceId: string;
+    principalId: string;
+    collectionId: string;
+  }): Promise<boolean> {
+    const result = await this.ownerPool.query<{ id: string }>(
+      `SELECT id FROM kitsune.grants
+        WHERE workspace_id = $1
+          AND principal_id = $2
+          AND collection_id = $3
+          AND revoked_at IS NULL
+        LIMIT 1`,
+      [input.workspaceId, input.principalId, input.collectionId],
+    );
+    return Boolean(result.rows[0]);
+  }
+
+  async listAgents(workspaceId: string): Promise<
+    Array<{
+      id: string;
+      displayName: string;
+      createdAt: string;
+      keyCount: number;
+      hasUsedKey: boolean;
+      membership: string | null;
+      teamPrincipalId: string | null;
+      ownerPrincipalId: string | null;
+    }>
+  > {
+    const result = await this.ownerPool.query<{
+      id: string;
+      display_name: string;
+      created_at: string;
+      key_count: string;
+      has_used_key: boolean;
+      agent_membership: string | null;
+      agent_team_principal_id: string | null;
+      agent_owner_principal_id: string | null;
+    }>(
+      `SELECT p.id, p.display_name, p.created_at::text AS created_at,
+              count(k.id) FILTER (WHERE k.revoked_at IS NULL)::text AS key_count,
+              bool_or(k.last_used_at IS NOT NULL AND k.revoked_at IS NULL) AS has_used_key,
+              p.agent_membership,
+              t.principal_id AS agent_team_principal_id,
+              p.agent_owner_principal_id
+         FROM kitsune.principals p
+         LEFT JOIN kitsune.api_keys k ON k.principal_id = p.id
+         LEFT JOIN kitsune.teams t ON t.id = p.agent_team_id
+        WHERE p.workspace_id = $1
+          AND p.kind = 'agent'
+          AND p.disabled_at IS NULL
+        GROUP BY p.id, t.principal_id
+        ORDER BY p.created_at ASC`,
+      [workspaceId],
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      displayName: row.display_name,
+      createdAt: row.created_at,
+      keyCount: Number(row.key_count),
+      hasUsedKey: row.has_used_key,
+      membership: row.agent_membership,
+      teamPrincipalId: row.agent_team_principal_id,
+      ownerPrincipalId: row.agent_owner_principal_id,
+    }));
+  }
+
+  async hasMcpStreamableUsage(workspaceId: string): Promise<boolean> {
+    const result = await this.ownerPool.query<{ used: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1 FROM kitsune.usage_events
+          WHERE workspace_id = $1 AND kind = 'mcp_streamable'
+       ) AS used`,
+      [workspaceId],
+    );
+    return result.rows[0]?.used ?? false;
+  }
+
+  async getAgent(
+    workspaceId: string,
+    agentId: string,
+  ): Promise<{
+    id: string;
+    displayName: string;
+    createdAt: string;
+    keyCount: number;
+    membership: string | null;
+    teamPrincipalId: string | null;
+    ownerPrincipalId: string | null;
+  } | null> {
+    const result = await this.ownerPool.query<{
+      id: string;
+      display_name: string;
+      created_at: string;
+      key_count: string;
+      agent_membership: string | null;
+      agent_team_principal_id: string | null;
+      agent_owner_principal_id: string | null;
+    }>(
+      `SELECT p.id, p.display_name, p.created_at::text AS created_at,
+              count(k.id) FILTER (WHERE k.revoked_at IS NULL)::text AS key_count,
+              p.agent_membership,
+              t.principal_id AS agent_team_principal_id,
+              p.agent_owner_principal_id
+         FROM kitsune.principals p
+         LEFT JOIN kitsune.api_keys k ON k.principal_id = p.id
+         LEFT JOIN kitsune.teams t ON t.id = p.agent_team_id
+        WHERE p.id = $1
+          AND p.workspace_id = $2
+          AND p.kind = 'agent'
+          AND p.disabled_at IS NULL
+        GROUP BY p.id, t.principal_id`,
+      [agentId, workspaceId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      displayName: row.display_name,
+      createdAt: row.created_at,
+      keyCount: Number(row.key_count),
+      membership: row.agent_membership,
+      teamPrincipalId: row.agent_team_principal_id,
+      ownerPrincipalId: row.agent_owner_principal_id,
+    };
+  }
+
+  async listPrincipalGrants(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      collection: string;
+      capability: string;
+      fieldMask: string[] | null;
+    }>
+  > {
+    const result = await this.ownerPool.query<{
+      id: string;
+      collection: string;
+      capability: string;
+      field_mask: string[] | null;
+      revoked_at: string | null;
+    }>(
+      `SELECT g.id, c.name AS collection, g.capability, g.field_mask,
+              g.revoked_at::text AS revoked_at
+         FROM kitsune.grants g
+         JOIN kitsune.collections c ON c.id = g.collection_id
+        WHERE g.workspace_id = $1 AND g.principal_id = $2
+        ORDER BY c.name`,
+      [workspaceId, principalId],
+    );
+    return result.rows
+      .filter((grant) => !grant.revoked_at)
+      .map((grant) => ({
+        id: grant.id,
+        collection: grant.collection,
+        capability: grant.capability,
+        fieldMask: grant.field_mask,
+      }));
+  }
+
+  async findAssistantPrincipalId(workspaceId: string): Promise<string | null> {
+    const result = await this.ownerPool.query<{ id: string }>(
+      `SELECT id FROM kitsune.principals
+        WHERE workspace_id = $1
+          AND kind = 'agent'
+          AND display_name = 'assistant'
+          AND disabled_at IS NULL
+        ORDER BY created_at ASC
+        LIMIT 1`,
+      [workspaceId],
+    );
+    return result.rows[0]?.id ?? null;
+  }
+
+  async countActiveAssistantKeys(workspaceId: string): Promise<number> {
+    const result = await this.ownerPool.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM kitsune.api_keys k
+         JOIN kitsune.principals p ON p.id = k.principal_id
+        WHERE p.workspace_id = $1
+          AND p.kind = 'agent'
+          AND p.display_name = 'assistant'
+          AND p.disabled_at IS NULL
+          AND k.revoked_at IS NULL`,
+      [workspaceId],
+    );
+    return Number(result.rows[0]?.count ?? '0');
+  }
+
+  async listShareTargets(
+    workspaceId: string,
+    viewerPrincipalId: string,
+    includePersonalAgents: boolean,
+  ): Promise<{
+    people: Array<{
+      principalId: string;
+      email: string;
+      displayName: string;
+    }>;
+    teams: Array<{ principalId: string; name: string }>;
+    agents: Array<{
+      id: string;
+      displayName: string;
+      membership: string | null;
+      ownerPrincipalId: string | null;
+    }>;
+  }> {
+    const [people, teams, agents] = await Promise.all([
+      this.ownerPool.query<{
+        principal_id: string;
+        email: string;
+        display_name: string;
+      }>(
+        `SELECT m.principal_id, m.email, p.display_name
+           FROM kitsune.workspace_memberships m
+           JOIN kitsune.principals p ON p.id = m.principal_id
+          WHERE m.workspace_id = $1
+            AND p.disabled_at IS NULL
+          ORDER BY m.email ASC`,
+        [workspaceId],
+      ),
+      this.ownerPool.query<{
+        principal_id: string;
+        name: string;
+      }>(
+        `SELECT t.principal_id, t.name
+           FROM kitsune.teams t
+          WHERE t.workspace_id = $1
+          ORDER BY t.name ASC`,
+        [workspaceId],
+      ),
+      this.ownerPool.query<{
+        id: string;
+        display_name: string;
+        agent_membership: string | null;
+        agent_owner_principal_id: string | null;
+      }>(
+        `SELECT id, display_name, agent_membership, agent_owner_principal_id
+           FROM kitsune.principals
+          WHERE workspace_id = $1
+            AND kind = 'agent'
+            AND disabled_at IS NULL
+            AND (
+              COALESCE(agent_membership, 'workspace') <> 'personal'
+              OR agent_owner_principal_id = $2
+              OR $3::boolean
+            )
+          ORDER BY display_name ASC`,
+        [workspaceId, viewerPrincipalId, includePersonalAgents],
+      ),
+    ]);
+    return {
+      people: people.rows.map((row) => ({
+        principalId: row.principal_id,
+        email: row.email,
+        displayName: row.display_name,
+      })),
+      teams: teams.rows.map((row) => ({
+        principalId: row.principal_id,
+        name: row.name,
+      })),
+      agents: agents.rows.map((row) => ({
+        id: row.id,
+        displayName: row.display_name,
+        membership: row.agent_membership,
+        ownerPrincipalId: row.agent_owner_principal_id,
+      })),
+    };
+  }
+
+  async getPageAccessState(input: {
+    workspaceId: string;
+    collectionId: string;
+    recordId: string;
+  }): Promise<PageAccessState | null> {
+    return getPageAccessRow(this.ownerPool, input);
+  }
+
+  async upsertPageVisibility(input: {
+    workspaceId: string;
+    collectionId: string;
+    recordId: string;
+    visibility: PageVisibility;
+    ownerPrincipalId: string;
+    actorPrincipalId: string;
+  }): Promise<void> {
+    await upsertPageVisibilityRow(this.ownerPool, input);
+  }
+
+  async sharePageWithPrincipal(input: {
+    workspaceId: string;
+    collectionId: string;
+    recordId: string;
+    granteePrincipalId: string;
+    capability: PageShareCapability;
+    actorPrincipalId: string;
+  }): Promise<void> {
+    await sharePageWithPrincipalRow(this.ownerPool, input);
+  }
+
+  async unsharePage(input: {
+    workspaceId: string;
+    collectionId: string;
+    recordId: string;
+    granteePrincipalId: string;
+    actorPrincipalId: string;
+  }): Promise<void> {
+    await unsharePageRow(this.ownerPool, input);
+  }
+
+  async listOAuthApps(workspaceId: string): Promise<OAuthAppSummary[]> {
+    return listOAuthAppsRow(this.ownerPool, workspaceId);
+  }
+
+  async createOAuthApp(input: {
+    workspaceId: string;
+    name: string;
+    redirectUris?: string[];
+    scopes?: OAuthScope[];
+    principalId: string;
+    createdBy: string;
+  }): Promise<{ app: OAuthAppSummary; clientSecret: string }> {
+    return createOAuthAppRow(this.ownerPool, input);
+  }
+
+  async revokeOAuthApp(input: {
+    workspaceId: string;
+    appId: string;
+  }): Promise<void> {
+    await revokeOAuthAppRow(this.ownerPool, input);
+  }
+
+  async issueOAuthClientCredentialsToken(input: {
+    clientId: string;
+    clientSecret: string;
+  }): Promise<{
+    accessToken: string;
+    tokenType: 'Bearer';
+    expiresIn: number;
+    scope: string;
+    workspaceId: string;
+    principalId: string;
+  }> {
+    return issueOAuthClientCredentialsTokenRow(this.ownerPool, input);
+  }
+
+  async hasWorkspace(workspaceId: string): Promise<boolean> {
+    const result = await this.ownerPool.query(
+      `SELECT 1 FROM kitsune.workspaces WHERE id = $1`,
+      [workspaceId],
+    );
+    return result.rows.length > 0;
+  }
+
+  async hasPrincipal(principalId: string): Promise<boolean> {
+    const result = await this.ownerPool.query(
+      `SELECT 1 FROM kitsune.principals WHERE id = $1`,
+      [principalId],
+    );
+    return result.rows.length > 0;
+  }
+
+  async hasActiveGrantByCollectionName(
+    principalId: string,
+    collectionName: string,
+  ): Promise<boolean> {
+    const result = await this.ownerPool.query(
+      `SELECT 1 FROM kitsune.grants g
+         JOIN kitsune.collections c ON c.id = g.collection_id
+        WHERE g.principal_id = $1 AND c.name = $2 AND g.revoked_at IS NULL`,
+      [principalId, collectionName],
+    );
+    return result.rows.length > 0;
+  }
+
+  async hasRecordInWorkspaceTable(
+    workspaceId: string,
+    tableName: string,
+    recordId: string,
+  ): Promise<boolean> {
+    const schemaName = schemaNameForWorkspace(workspaceId);
+    const result = await this.ownerPool.query(
+      `SELECT 1 FROM ${quoteIdent(schemaName)}.${quoteIdent(tableName)} WHERE id = $1`,
+      [recordId],
+    );
+    return result.rows.length > 0;
+  }
 }
 
 interface NormalizedOp {
@@ -5213,8 +6063,8 @@ function normalizeOperations(operations: ChangeOpInput[]): NormalizedOp[] {
 
 async function assertRowAccessible(
   client: PoolClient,
-  _workspaceId: string,
-  _principalId: string,
+  workspaceId: string,
+  principalId: string,
   schemaName: string,
   meta: { id: string; tableName: string; fields: string[] },
   grant: ResolvedGrant,
@@ -5224,14 +6074,25 @@ async function assertRowAccessible(
   const table = `${quoteIdent(schemaName)}.${quoteIdent(meta.tableName)}`;
   const whereParts = [`t.${quoteIdent('id')} = $1`];
   const params: unknown[] = [recordId];
+  let paramIdx = 2;
   if (grant.rowPredicate) {
-    const compiled = compilePredicate(grant.rowPredicate, 't', 2);
+    const compiled = compilePredicate(grant.rowPredicate, 't', paramIdx);
     whereParts.push(compiled.sql);
     params.push(...compiled.params);
+    paramIdx += compiled.params.length;
   }
   if (!options?.includeDeleted) {
     whereParts.push('t._deleted_at IS NULL');
   }
+  const pageAcl = await compilePageAccessPredicate(client, {
+    workspaceId,
+    collectionId: meta.id,
+    principalId,
+    rootAlias: 't',
+    paramStart: paramIdx,
+  });
+  whereParts.push(pageAcl.sql);
+  params.push(...pageAcl.params);
   const sql = `SELECT id FROM ${table} t WHERE ${whereParts.join(' AND ')}`;
   const row = await queryOne(client, sql, params);
   if (!row) {

@@ -1,5 +1,4 @@
 import type { JsonValue } from '@kitsuneos/core';
-import { upsertPageVisibility } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { jsonError } from '@/lib/http-error';
@@ -33,14 +32,12 @@ export async function POST(request: Request) {
     // New pages default to private for the creator (Notion-style personal create).
     const makePrivate = body.private !== false;
     if (makePrivate) {
-      const collectionRow = await engine.ownerPool.query<{ id: string }>(
-        `SELECT id FROM kitsune.collections
-          WHERE workspace_id = $1 AND name = $2`,
-        [ctx.workspaceId, body.collection],
+      const collectionId = await engine.findCollectionId(
+        ctx.workspaceId,
+        body.collection,
       );
-      const collectionId = collectionRow.rows[0]?.id;
       if (collectionId) {
-        await upsertPageVisibility(engine.ownerPool, {
+        await engine.upsertPageVisibility({
           workspaceId: ctx.workspaceId,
           collectionId,
           recordId,

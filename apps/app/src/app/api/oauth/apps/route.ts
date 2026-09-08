@@ -1,9 +1,4 @@
-import {
-  createOAuthApp,
-  KitsuneError,
-  listOAuthApps,
-  revokeOAuthApp,
-} from '@kitsuneos/core';
+import { KitsuneError } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { jsonError } from '@/lib/http-error';
@@ -17,7 +12,7 @@ export async function GET() {
   try {
     const ctx = await requireWorkspace();
     requireWorkspaceAdmin(ctx);
-    const apps = await listOAuthApps(engine.ownerPool, ctx.workspaceId);
+    const apps = await engine.listOAuthApps(ctx.workspaceId);
     return NextResponse.json({ apps });
   } catch (error) {
     return jsonError(error);
@@ -47,7 +42,7 @@ export async function POST(request: Request) {
       `OAuth app: ${name}`,
     );
 
-    const created = await createOAuthApp(engine.ownerPool, {
+    const created = await engine.createOAuthApp({
       workspaceId: ctx.workspaceId,
       name,
       redirectUris: body.redirectUris ?? [],
@@ -80,7 +75,7 @@ export async function DELETE(request: Request) {
     if (!appId) {
       throw new KitsuneError('appId is required', 'validation');
     }
-    await revokeOAuthApp(engine.ownerPool, {
+    await engine.revokeOAuthApp({
       workspaceId: ctx.workspaceId,
       appId,
     });

@@ -1,4 +1,4 @@
-import { createApiKey, KitsuneError } from '@kitsuneos/core';
+import { KitsuneError } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { jsonError } from '@/lib/http-error';
@@ -16,54 +16,23 @@ export async function GET() {
   try {
     const ctx = await requireWorkspace();
     const [agents, mcpUsed] = await Promise.all([
-      engine.ownerPool.query<{
-        id: string;
-        display_name: string;
-        created_at: string;
-        key_count: string;
-        has_used_key: boolean;
-        agent_membership: string | null;
-        agent_team_principal_id: string | null;
-        agent_owner_principal_id: string | null;
-      }>(
-        `SELECT p.id, p.display_name, p.created_at::text AS created_at,
-                count(k.id) FILTER (WHERE k.revoked_at IS NULL)::text AS key_count,
-                bool_or(k.last_used_at IS NOT NULL AND k.revoked_at IS NULL) AS has_used_key,
-                p.agent_membership,
-                t.principal_id AS agent_team_principal_id,
-                p.agent_owner_principal_id
-           FROM kitsune.principals p
-           LEFT JOIN kitsune.api_keys k ON k.principal_id = p.id
-           LEFT JOIN kitsune.teams t ON t.id = p.agent_team_id
-          WHERE p.workspace_id = $1
-            AND p.kind = 'agent'
-            AND p.disabled_at IS NULL
-          GROUP BY p.id, t.principal_id
-          ORDER BY p.created_at ASC`,
-        [ctx.workspaceId],
-      ),
-      engine.ownerPool.query<{ used: boolean }>(
-        `SELECT EXISTS (
-           SELECT 1 FROM kitsune.usage_events
-            WHERE workspace_id = $1 AND kind = 'mcp_streamable'
-         ) AS used`,
-        [ctx.workspaceId],
-      ),
+      engine.listAgents(ctx.workspaceId),
+      engine.hasMcpStreamableUsage(ctx.workspaceId),
     ]);
     const admin = isWorkspaceAdmin(ctx.role);
     return NextResponse.json({
-      mcpUsed: mcpUsed.rows[0]?.used ?? false,
-      agents: agents.rows
+      mcpUsed,
+      agents: agents
         .map((row) => ({
           id: row.id,
-          name: row.display_name,
-          createdAt: row.created_at,
-          activeKeyCount: Number(row.key_count),
-          hasUsedKey: row.has_used_key,
-          membership: row.agent_membership ?? 'workspace',
+          name: row.displayName,
+          createdAt: row.createdAt,
+          activeKeyCount: row.keyCount,
+          hasUsedKey: row.hasUsedKey,
+          membership: row.membership ?? 'workspace',
           // Console share-targets identify teams by principal_id.
-          teamId: row.agent_team_principal_id,
-          ownerPrincipalId: row.agent_owner_principal_id,
+          teamId: row.teamPrincipalId,
+          ownerPrincipalId: row.ownerPrincipalId,
         }))
         .filter(
           (agent) =>
@@ -106,12 +75,10 @@ export async function POST(request: Request) {
     );
 
     // Ensure a durable agent_memory database the agent can write.
-    const existingMemory = await engine.ownerPool.query<{ id: string }>(
-      `SELECT id FROM kitsune.collections
-        WHERE workspace_id = $1 AND name = 'agent_memory'`,
-      [ctx.workspaceId],
+    let memoryCollectionId = await engine.findCollectionId(
+      ctx.workspaceId,
+      'agent_memory',
     );
-    let memoryCollectionId = existingMemory.rows[0]?.id;
     if (!memoryCollectionId) {
       memoryCollectionId = await engine.defineCollection(ctx.workspaceId, {
         name: 'agent_memory',
@@ -142,7 +109,7 @@ export async function POST(request: Request) {
 
     let apiKeyPlaintext: string | null = null;
     if (body.mintKey !== false) {
-      const key = await createApiKey(engine.ownerPool, principalId);
+      const key = await engine.createApiKey(principalId);
       apiKeyPlaintext = key.plaintext;
     }
     return NextResponse.json(

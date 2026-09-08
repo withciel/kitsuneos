@@ -32,12 +32,8 @@ import {
   publishStatusLabel,
 } from '@/lib/publish-status';
 import { recordLabel } from '@/lib/record-label';
-
-interface SchemaCollection {
-  name: string;
-  capability?: string;
-  fields: FieldMeta[];
-}
+import { loadRelationOptions } from '@/lib/relation-options';
+import { useWorkspaceSession } from '@/lib/workspace-session';
 
 interface RelatedNeighbor {
   field: string;
@@ -77,51 +73,6 @@ function formatWhen(iso: string): string {
   return new Date(parsed).toLocaleString();
 }
 
-async function loadRelationOptions(
-  collections: SchemaCollection[],
-): Promise<Record<string, RelationOption[]>> {
-  const targets = new Set<string>();
-  for (const collection of collections) {
-    for (const field of collection.fields) {
-      if (field.type === 'relation' && field.relationTarget) {
-        targets.add(field.relationTarget);
-      }
-    }
-  }
-
-  const options: Record<string, RelationOption[]> = {};
-  await Promise.all(
-    [...targets].map(async (target) => {
-      const meta = collections.find((item) => item.name === target);
-      const fields = meta?.fields.map((field) => field.name) ?? ['id'];
-      const queryRes = await fetch('/api/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          collection: target,
-          fields,
-          limit: 100,
-        }),
-      });
-      const queryBody = (await queryRes.json()) as {
-        rows?: Array<Record<string, JsonValue>>;
-        error?: string;
-      };
-      if (!queryRes.ok) {
-        throw new Error(
-          queryBody.error ?? `Failed to load related ${target} pages`,
-        );
-      }
-      options[target] = (queryBody.rows ?? [])
-        .filter((row): row is Record<string, JsonValue> & { id: string } => {
-          return typeof row.id === 'string' && row.id.length > 0;
-        })
-        .map((row) => ({ id: row.id, label: recordLabel(row) }));
-    }),
-  );
-  return options;
-}
-
 export function PageView({
   pageId,
   collection,
@@ -130,6 +81,11 @@ export function PageView({
   collection: string;
 }) {
   const router = useRouter();
+  const {
+    schema,
+    loading: sessionLoading,
+    refresh: refreshSession,
+  } = useWorkspaceSession();
   const [fields, setFields] = useState<FieldMeta[]>([]);
   const [capability, setCapability] = useState('');
   const [row, setRow] = useState<Record<string, JsonValue> | null>(null);
@@ -174,55 +130,58 @@ export function PageView({
     );
   }, [statusField, draft, row]);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const schemaRes = await fetch('/api/schema');
-      const schemaBody = (await schemaRes.json()) as {
-        collections?: SchemaCollection[];
-        error?: string;
-      };
-      if (!schemaRes.ok) {
-        throw new Error(schemaBody.error ?? 'Failed to load schema');
-      }
-      const meta = schemaBody.collections?.find((c) => c.name === collection);
-      if (!meta) {
-        throw new Error(`Database not found: ${collection}`);
-      }
-      setFields(meta.fields);
-      setCapability(meta.capability ?? '');
+  const reload = useCallback(
+    async (opts?: { forceSchema?: boolean }) => {
+      setLoading(true);
+      setError('');
+      try {
+        const snap =
+          !opts?.forceSchema && schema
+            ? { schema, error: null as string | null }
+            : await refreshSession();
+        if (!snap.schema) {
+          throw new Error(snap.error ?? 'Failed to load schema');
+        }
+        const meta = snap.schema.collections.find((c) => c.name === collection);
+        if (!meta) {
+          throw new Error(`Database not found: ${collection}`);
+        }
+        setFields(meta.fields);
+        setCapability(meta.capability ?? '');
 
-      const getRes = await fetch(`/api/records/${collection}/${pageId}`);
-      const getBody = (await getRes.json()) as Record<string, JsonValue> & {
-        error?: string;
-      };
-      if (!getRes.ok) {
-        throw new Error(
-          typeof getBody.error === 'string' ? getBody.error : 'Page not found',
-        );
+        const getRes = await fetch(`/api/records/${collection}/${pageId}`);
+        const getBody = (await getRes.json()) as Record<string, JsonValue> & {
+          error?: string;
+        };
+        if (!getRes.ok) {
+          throw new Error(
+            typeof getBody.error === 'string'
+              ? getBody.error
+              : 'Page not found',
+          );
+        }
+        setRow(getBody);
+        const next: Record<string, string> = {};
+        for (const field of meta.fields) {
+          next[field.name] = cellText(getBody[field.name]);
+        }
+        setDraft(next);
+        setDirty(false);
+        setRelationOptions(await loadRelationOptions(snap.schema.collections));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        setRow(null);
+      } finally {
+        setLoading(false);
       }
-      setRow(getBody);
-      const next: Record<string, string> = {};
-      for (const field of meta.fields) {
-        next[field.name] = cellText(getBody[field.name]);
-      }
-      setDraft(next);
-      setDirty(false);
-      setRelationOptions(
-        await loadRelationOptions(schemaBody.collections ?? []),
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setRow(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [collection, pageId]);
+    },
+    [collection, pageId, schema, refreshSession],
+  );
 
   useEffect(() => {
+    if (sessionLoading && !schema) return;
     void reload();
-  }, [reload]);
+  }, [reload, sessionLoading, schema]);
 
   useEffect(() => {
     let cancelled = false;

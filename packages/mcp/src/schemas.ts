@@ -246,6 +246,11 @@ const vfsPathSchema = {
   },
 } as const;
 
+/**
+ * MCP tool JSON schemas (name + inputSchema + annotations).
+ * Dispatch wiring lives in `registry.ts` (name → definition + handler key);
+ * `invoke.ts` looks up the registry instead of a parallel switch.
+ */
 export const TOOL_DEFINITIONS = [
   {
     name: 'describe_schema',

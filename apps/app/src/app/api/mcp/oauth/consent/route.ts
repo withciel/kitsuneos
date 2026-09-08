@@ -1,13 +1,14 @@
 // workspace-lint: ignore — MCP OAuth binds workspace from the authenticated
 // session (requireWorkspace / token claims), never from client request params.
-import { NextResponse } from 'next/server';
-import { engine } from '@/lib/engine';
 import {
   consentOriginMismatch,
   isConsentDecisionError,
   parseConsentDecisionBody,
   processConsentDecision,
-} from '@/lib/mcp-oauth-consent';
+} from '@kitsuneos/server';
+import { NextResponse } from 'next/server';
+import { engine } from '@/lib/engine';
+import { publicAppOrigin } from '@/lib/public-origin';
 import { requireWorkspace } from '@/lib/require-workspace';
 
 export const runtime = 'nodejs';
@@ -34,14 +35,13 @@ async function readDecision(
 }
 
 /**
- * Consent decision endpoint. Approve issues the same auth code the old
- * authorize route used to mint directly; deny/expired never touch
- * mcp_oauth_codes. The pending row is deleted either way — single use.
+ * Consent decision endpoint. Approve issues the auth code; deny/expired never
+ * touch mcp_oauth_codes. The pending row is deleted either way — single use.
  */
 export async function POST(request: Request) {
   const { decision, pendingId, csrfToken } = await readDecision(request);
 
-  if (consentOriginMismatch(request)) {
+  if (consentOriginMismatch(request, publicAppOrigin(request))) {
     return NextResponse.json(
       {
         error: 'access_denied',

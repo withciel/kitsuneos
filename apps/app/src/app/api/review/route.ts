@@ -1,155 +1,32 @@
-// workspace-lint: ignore — workspace resolved via requireWorkspace(); SQL uses kitsune schema column names.
-
-import type { JsonValue, ReviewDecision } from '@kitsuneos/core';
+import type { ReviewDecision } from '@kitsuneos/core';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
+import { jsonError } from '@/lib/http-error';
 import { requireWorkspace } from '@/lib/require-workspace';
-
-interface ChangeSetSummary {
-  id: string;
-  title: string | null;
-  rationale: string | null;
-  status: string;
-  createdAt: string;
-  decidedAt: string | null;
-  expiresAt: string;
-  author: string;
-  authorId: string;
-  conflictCount: number;
-  conflictedFields: string[];
-  operations: OperationSummary[];
-}
-
-const CLOSED_STATUSES = ['applied', 'rejected', 'expired', 'stale', 'blocked'];
-
-interface OperationSummary {
-  id: string;
-  collection: string;
-  recordId: string | null;
-  op: string;
-  fieldName: string | null;
-  newValue: JsonValue;
-  before: JsonValue | null;
-  status: string;
-  seq: number;
-}
 
 export async function GET(request: Request) {
   try {
     const ctx = await requireWorkspace();
     const url = new URL(request.url);
-    const scope = url.searchParams.get('scope') ?? 'open';
+    const scopeParam = url.searchParams.get('scope') ?? 'open';
+    const scope =
+      scopeParam === 'all' || scopeParam === 'closed' || scopeParam === 'open'
+        ? scopeParam
+        : 'open';
     const authorId = url.searchParams.get('authorId');
 
-    let statusClause = `cs.status = 'open'`;
-    const params: unknown[] = [ctx.workspaceId];
-    if (scope === 'all') {
-      statusClause = '1=1';
-    } else if (scope === 'closed') {
-      params.push(CLOSED_STATUSES);
-      statusClause = `cs.status = ANY($${params.length})`;
-    }
-    let authorClause = '';
-    if (authorId) {
-      params.push(authorId);
-      authorClause = `AND cs.author_id = $${params.length}`;
-    }
-
-    const changeSets = await engine.ownerPool.query<{
-      id: string;
-      title: string | null;
-      rationale: string | null;
-      status: string;
-      created_at: Date;
-      decided_at: Date | null;
-      expires_at: Date;
-      author: string;
-      author_id: string;
-      conflict_count: number;
-      conflicted_fields: string[];
-    }>(
-      `SELECT cs.id, cs.title, cs.rationale, cs.status, cs.created_at,
-              cs.decided_at, cs.expires_at, cs.conflict_count,
-              cs.conflicted_fields, cs.author_id, p.display_name AS author
-         FROM kitsune.change_sets cs
-         JOIN kitsune.principals p ON p.id = cs.author_id
-        WHERE cs.workspace_id = $1 AND ${statusClause} ${authorClause}
-        ORDER BY cs.created_at DESC`,
-      params,
+    const changeSets = await engine.listChangeSetSummaries(
+      ctx.workspaceId,
+      ctx.principalId,
+      { scope, authorId },
     );
 
-    const summaries: ChangeSetSummary[] = [];
-    for (const cs of changeSets.rows) {
-      const ops = await engine.ownerPool.query<{
-        id: string;
-        collection: string;
-        record_id: string | null;
-        op: string;
-        field_name: string | null;
-        new_value: JsonValue;
-        status: string;
-        seq: number;
-      }>(
-        `SELECT o.id, c.name AS collection, o.record_id, o.op, o.field_name,
-                o.new_value, o.status, o.seq
-           FROM kitsune.change_ops o
-           JOIN kitsune.collections c ON c.id = o.collection_id
-          WHERE o.change_set_id = $1
-          ORDER BY o.seq`,
-        [cs.id],
-      );
-      const operations: OperationSummary[] = [];
-      for (const o of ops.rows) {
-        let before: JsonValue | null = null;
-        if (o.op !== 'insert' && o.record_id && o.field_name) {
-          const record = await engine.readRecord(
-            ctx.workspaceId,
-            ctx.principalId,
-            o.collection,
-            o.record_id,
-            [o.field_name],
-          );
-          before = record?.[o.field_name] ?? null;
-        }
-        operations.push({
-          id: o.id,
-          collection: o.collection,
-          recordId: o.record_id,
-          op: o.op,
-          fieldName: o.field_name,
-          newValue: o.new_value,
-          before,
-          status: o.status,
-          seq: o.seq,
-        });
-      }
-      summaries.push({
-        id: cs.id,
-        title: cs.title,
-        rationale: cs.rationale,
-        status: cs.status,
-        createdAt: cs.created_at.toISOString(),
-        decidedAt: cs.decided_at ? cs.decided_at.toISOString() : null,
-        expiresAt: cs.expires_at.toISOString(),
-        author: cs.author,
-        authorId: cs.author_id,
-        conflictCount: cs.conflict_count,
-        conflictedFields: cs.conflicted_fields,
-        operations,
-      });
-    }
-
     return NextResponse.json(
-      { changeSets: summaries },
+      { changeSets },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes('Unauthorized') ? 401 : 400;
-    return NextResponse.json(
-      { error: message },
-      { status, headers: { 'Cache-Control': 'no-store' } },
-    );
+    return jsonError(error);
   }
 }
 
@@ -174,15 +51,12 @@ export async function POST(request: Request) {
       decisions.length === 0 &&
       (body.action === 'approve' || body.action === 'reject')
     ) {
-      const ops = await engine.ownerPool.query<{ id: string }>(
-        `SELECT o.id
-           FROM kitsune.change_ops o
-           JOIN kitsune.change_sets cs ON cs.id = o.change_set_id
-          WHERE o.change_set_id = $1 AND cs.workspace_id = $2`,
-        [body.changeSetId, ctx.workspaceId],
+      const opIds = await engine.listChangeSetOpIds(
+        ctx.workspaceId,
+        body.changeSetId,
       );
-      decisions = ops.rows.map((op) => ({
-        opId: op.id,
+      decisions = opIds.map((opId) => ({
+        opId,
         status: body.action === 'approve' ? 'approved' : 'rejected',
       }));
     }
@@ -197,14 +71,9 @@ export async function POST(request: Request) {
     }
 
     if (body.apply === true) {
-      const remaining = await engine.ownerPool.query<{ status: string }>(
-        `SELECT o.status
-           FROM kitsune.change_ops o
-           JOIN kitsune.change_sets cs ON cs.id = o.change_set_id
-          WHERE o.change_set_id = $1 AND cs.workspace_id = $2`,
-        [body.changeSetId, ctx.workspaceId],
-      );
-      if (remaining.rows.some((row) => row.status === 'proposed')) {
+      if (
+        await engine.changeSetHasProposedOps(ctx.workspaceId, body.changeSetId)
+      ) {
         return NextResponse.json(
           {
             error:
@@ -223,8 +92,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ status: 'reviewed' });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    const status = message.includes('Unauthorized') ? 401 : 400;
-    return NextResponse.json({ error: message }, { status });
+    return jsonError(error);
   }
 }

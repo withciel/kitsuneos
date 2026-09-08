@@ -86,14 +86,9 @@ import {
   publishStatusLabel,
 } from '@/lib/publish-status';
 import { recordLabel } from '@/lib/record-label';
+import { loadRelationOptions } from '@/lib/relation-options';
 import { cn } from '@/lib/utils';
-
-interface SchemaCollection {
-  name: string;
-  capability?: string;
-  fields: FieldMeta[];
-  views?: CollectionViewRecord[];
-}
+import { useWorkspaceSession } from '@/lib/workspace-session';
 
 const VIEW_TYPE_META: Record<
   CollectionViewType,
@@ -145,51 +140,6 @@ function saveLocalFilter(
   );
 }
 
-async function loadRelationOptions(
-  collections: SchemaCollection[],
-): Promise<Record<string, RelationOption[]>> {
-  const targets = new Set<string>();
-  for (const collection of collections) {
-    for (const field of collection.fields) {
-      if (field.type === 'relation' && field.relationTarget) {
-        targets.add(field.relationTarget);
-      }
-    }
-  }
-
-  const options: Record<string, RelationOption[]> = {};
-  await Promise.all(
-    [...targets].map(async (target) => {
-      const meta = collections.find((item) => item.name === target);
-      const fields = meta?.fields.map((field) => field.name) ?? ['id'];
-      const queryRes = await fetch('/api/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          collection: target,
-          fields,
-          limit: 100,
-        }),
-      });
-      const queryBody = (await queryRes.json()) as {
-        rows?: Array<Record<string, JsonValue>>;
-        error?: string;
-      };
-      if (!queryRes.ok) {
-        throw new Error(
-          queryBody.error ?? `Failed to load related ${target} pages`,
-        );
-      }
-      options[target] = (queryBody.rows ?? [])
-        .filter((row): row is Record<string, JsonValue> & { id: string } => {
-          return typeof row.id === 'string' && row.id.length > 0;
-        })
-        .map((row) => ({ id: row.id, label: recordLabel(row) }));
-    }),
-  );
-  return options;
-}
-
 function relationLabel(
   field: FieldMeta,
   value: JsonValue | undefined,
@@ -220,6 +170,12 @@ function StatusChip({ value }: { value: JsonValue | undefined }) {
 
 export function CollectionView({ collection }: { collection: string }) {
   const router = useRouter();
+  const {
+    me,
+    schema,
+    loading: sessionLoading,
+    refresh: refreshSession,
+  } = useWorkspaceSession();
   const [fields, setFields] = useState<FieldMeta[]>([]);
   const [capability, setCapability] = useState('');
   const [truncated, setTruncated] = useState(false);
@@ -248,80 +204,77 @@ export function CollectionView({ collection }: { collection: string }) {
   const collectionRef = useRef(collection);
   collectionRef.current = collection;
 
-  const reload = useCallback(async () => {
-    const target = collection;
-    setLoading(true);
-    setError('');
-    try {
-      const meRes = await fetch('/api/me');
-      if (meRes.ok) {
-        const me = (await meRes.json()) as {
-          userId?: string;
-          workspaceId?: string;
-        };
-        const scope = me.userId ?? me.workspaceId ?? 'anon';
-        if (collectionRef.current === target) {
-          setViewScope(scope);
-          setLocalFilter(loadLocalFilter(scope, target));
+  const reload = useCallback(
+    async (opts?: { forceSchema?: boolean }) => {
+      const target = collection;
+      setLoading(true);
+      setError('');
+      try {
+        const snap =
+          !opts?.forceSchema && schema
+            ? { me, schema, error: null as string | null }
+            : await refreshSession();
+        if (!snap.schema) {
+          throw new Error(snap.error ?? 'Failed to load schema');
         }
-      }
+        if (snap.me) {
+          const scope = snap.me.userId ?? snap.me.workspaceId ?? 'anon';
+          if (collectionRef.current === target) {
+            setViewScope(scope);
+            setLocalFilter(loadLocalFilter(scope, target));
+          }
+        }
 
-      const schemaRes = await fetch('/api/schema');
-      const schemaBody = (await schemaRes.json()) as {
-        collections?: SchemaCollection[];
-        error?: string;
-      };
-      if (!schemaRes.ok) {
-        throw new Error(schemaBody.error ?? 'Failed to load schema');
-      }
-      if (collectionRef.current !== target) return;
-      const meta = schemaBody.collections?.find((c) => c.name === target);
-      if (!meta) {
-        throw new Error(`Database not found: ${target}`);
-      }
-      setFields(meta.fields);
-      setCapability(meta.capability ?? '');
-      const loadedViews = sortViews(meta.views ?? []);
-      setViews(loadedViews);
-      setActiveViewId((prev) => {
-        if (prev && loadedViews.some((v) => v.id === prev)) return prev;
-        const table = loadedViews.find((v) => v.isDefaultTable);
-        return table?.id ?? loadedViews[0]?.id ?? null;
-      });
+        if (collectionRef.current !== target) return;
+        const meta = snap.schema.collections.find((c) => c.name === target);
+        if (!meta) {
+          throw new Error(`Database not found: ${target}`);
+        }
+        setFields(meta.fields);
+        setCapability(meta.capability ?? '');
+        const loadedViews = sortViews(meta.views ?? []);
+        setViews(loadedViews);
+        setActiveViewId((prev) => {
+          if (prev && loadedViews.some((v) => v.id === prev)) return prev;
+          const table = loadedViews.find((v) => v.isDefaultTable);
+          return table?.id ?? loadedViews[0]?.id ?? null;
+        });
 
-      const fieldNames = meta.fields.map((f) => f.name);
-      const queryRes = await fetch('/api/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          collection: target,
-          fields: fieldNames,
-          limit: 100,
-        }),
-      });
-      const queryBody = (await queryRes.json()) as {
-        rows?: Array<Record<string, JsonValue>>;
-        error?: string;
-      };
-      if (!queryRes.ok) {
-        throw new Error(queryBody.error ?? 'Query failed');
+        const fieldNames = meta.fields.map((f) => f.name);
+        const queryRes = await fetch('/api/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            collection: target,
+            fields: fieldNames,
+            limit: 100,
+          }),
+        });
+        const queryBody = (await queryRes.json()) as {
+          rows?: Array<Record<string, JsonValue>>;
+          error?: string;
+        };
+        if (!queryRes.ok) {
+          throw new Error(queryBody.error ?? 'Query failed');
+        }
+        if (collectionRef.current !== target) return;
+        const loaded = queryBody.rows ?? [];
+        setRows(loaded);
+        setTruncated(loaded.length >= 100);
+        setRelationOptions(await loadRelationOptions(snap.schema.collections));
+      } catch (err) {
+        if (collectionRef.current !== target) return;
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (collectionRef.current === target) setLoading(false);
       }
-      if (collectionRef.current !== target) return;
-      const loaded = queryBody.rows ?? [];
-      setRows(loaded);
-      setTruncated(loaded.length >= 100);
-      setRelationOptions(
-        await loadRelationOptions(schemaBody.collections ?? []),
-      );
-    } catch (err) {
-      if (collectionRef.current !== target) return;
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      if (collectionRef.current === target) setLoading(false);
-    }
-  }, [collection]);
+    },
+    [collection, me, schema, refreshSession],
+  );
 
   useEffect(() => {
+    // Reset local UI state when navigating between databases.
+    void collection;
     setCreating(false);
     setRows([]);
     setFields([]);
@@ -329,8 +282,12 @@ export function CollectionView({ collection }: { collection: string }) {
     setStatusFilter('all');
     setViews([]);
     setActiveViewId(null);
+  }, [collection]);
+
+  useEffect(() => {
+    if (sessionLoading && !schema) return;
     void reload();
-  }, [reload]);
+  }, [reload, sessionLoading, schema]);
 
   const canDirectEdit = fields.some((field) => field.writable);
   const statusField = useMemo(() => pickStatusField(fields), [fields]);
@@ -925,7 +882,7 @@ export function CollectionView({ collection }: { collection: string }) {
         open={propertiesOpen}
         onOpenChange={setPropertiesOpen}
         onChanged={() => {
-          void reload();
+          void reload({ forceSchema: true });
         }}
       />
     </div>

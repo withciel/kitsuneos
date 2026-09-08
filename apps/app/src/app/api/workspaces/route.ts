@@ -1,4 +1,4 @@
-import { KitsuneError, listMembershipsForUser } from '@kitsuneos/core';
+import { KitsuneError } from '@kitsuneos/core';
 import { createAdditionalWorkspaceForUser } from '@kitsuneos/provisioning';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
@@ -9,10 +9,7 @@ const PRIVATE_HEADERS = { 'Cache-Control': 'no-store' };
 export async function GET() {
   try {
     const ctx = await requireWorkspace();
-    const memberships = await listMembershipsForUser(
-      engine.ownerPool,
-      ctx.userId,
-    );
+    const memberships = await engine.listUserMemberships(ctx.userId);
     const active = memberships.find((m) => m.workspaceId === ctx.workspaceId);
     return NextResponse.json(
       {
@@ -47,11 +44,7 @@ export async function POST(request: Request) {
       name?: string;
       activate?: boolean;
     };
-    const emailRow = await engine.ownerPool.query<{ email: string }>(
-      `SELECT email FROM kitsune.users WHERE id = $1`,
-      [ctx.userId],
-    );
-    const email = emailRow.rows[0]?.email;
+    const email = await engine.getUserEmail(ctx.userId);
     if (!email) {
       throw new KitsuneError('User email missing', 'internal');
     }
