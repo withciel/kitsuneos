@@ -1,3 +1,4 @@
+import { ensureAssistantGrantsForWorkspace } from '@kitsuneos/provisioning';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import { requireWorkspace } from '@/lib/require-workspace';
@@ -18,24 +19,12 @@ async function resolveAssistantPrincipal(
     existing ??
     (await engine.createPrincipal(workspaceId, 'agent', 'assistant'));
 
-  const collectionIds = await engine.listCollectionIds(workspaceId);
-  for (const collectionId of collectionIds) {
-    const hasGrant = await engine.hasActiveGrant({
-      workspaceId,
-      principalId: assistantId,
-      collectionId,
-    });
-    if (hasGrant) continue;
-    await engine.createGrant(
-      workspaceId,
-      assistantId,
-      collectionId,
-      'propose',
-      null,
-      null,
-      { actorId: actorPrincipalId },
-    );
-  }
+  await ensureAssistantGrantsForWorkspace(
+    engine,
+    workspaceId,
+    actorPrincipalId,
+    assistantId,
+  );
   return assistantId;
 }
 
