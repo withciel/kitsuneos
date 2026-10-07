@@ -79,15 +79,35 @@ above connects your agent **as the assistant**. The human opens the same workspa
 
 ---
 
-## The worked example
+## The worked example (Face-2 acceptance)
 
-### 1. Open the workspace as a human
+This walkthrough is the **warehouse-framed** wedge demo: one PostgreSQL database per workspace,
+collections as real tables in a workspace schema, and agent-visible prose indexed in sibling
+`{collection}__emb` tables (pgvector) that join back to the same live rows. There is no Pinecone,
+FalkorDB, or sidecar RAG corpus — search and MCP reads compile against the same grants and rows.
 
-In the console, `accounts` is a table. Click a row, edit a field, save. That write uses
-`write`/`admin` (direct write or an auto-applied change set). It does not wait in Changes. History
-still records it under the human principal.
+**Prerequisites:** `pnpm quickstart` (or `docker compose up` for the console on port 8080 with the
+same demo ids). Connect MCP as **assistant** (`33333333-3333-4333-8333-333333333333`). Open the
+console as **owner** (local demo header / WorkOS eval).
 
-### 2. Ask the agent what it can see
+| # | Acceptance criterion | Section |
+|---|----------------------|---------|
+| 1 | Human edits a collection row in the console | §1 |
+| 2 | Limited agent (`propose` + field mask) lands allowed fields in **Changes** | §2–3 |
+| 3 | Same agent touching a masked field gets compiler **`forbidden`** | §4 |
+| 4 | Human partial approve/apply; history credits the **agent author**, not the reviewer | §5–6 |
+| 5 | **Search** returns hits from the same Postgres rows via **pgvector** (`__emb`) | §7 |
+
+### 1. Human edit in the console
+
+In the console, open **accounts** (or **opportunities**). Click a row, edit a field in the peek
+panel, save. That write uses `write`/`admin` (direct write or an auto-applied change set). It does
+not wait in **Changes**. History still records it under the human **owner** principal.
+
+### 2. What the limited agent can see
+
+Ask the agent to call `describe_schema` (or start with a task that requires it). It gets back only
+what its grant allows:
 
 The agent calls `describe_schema` and gets back only what its grant allows:
 
@@ -111,11 +131,12 @@ The agent calls `describe_schema` and gets back only what its grant allows:
 because it is outside the field mask. The agent is not told these exist and are forbidden; from
 where it sits, they are not there at all. The human still sees those collections in the sidebar.
 
-### 3. Ask it to update a next step from a meeting note
+### 3. Propose allowed fields → Changes
 
 > "Dana from Northwind asked for a revised quote by Friday. Update the Northwind renewal."
 
-The agent queries, finds the record, and calls `propose_change_set`. It does not write:
+The agent calls `query` (or `read_record`), finds `0bbb0000-0000-4000-8000-000000000001`, and calls
+`propose_change_set` for **`next_step`** (and only fields in its mask). It does **not** direct-write:
 
 ```
 change set a6f3c130-2e3f-408c-bfc4-d91c387586cc
@@ -129,9 +150,10 @@ change set a6f3c130-2e3f-408c-bfc4-d91c387586cc
         + Send revised quote by Friday, per Dana
 ```
 
-Nothing has changed in the database yet. The proposal is sitting in Changes.
+Nothing has changed in the live row yet. The proposal appears under **Changes** in the console (and in
+`pnpm review`).
 
-### 4. Now ask it to change the amount
+### 4. Masked field → `forbidden`
 
 > "Also bump the amount to 99,000."
 
@@ -152,10 +174,10 @@ Note the asymmetry with step 2. A forbidden **field** is an explicit error that 
 the agent can correct itself. A forbidden **row** is a plain not-found, so the agent cannot use
 denials to map what it is not allowed to see.
 
-### 5. Review the proposal
+### 5. Review, partial approve, and apply
 
-In the console, open **Changes**, then the change set. Field-level diffs, partial approve/reject, and
-apply live there. The CLI does the same work:
+In the console, open **Changes**, then the change set. Field-level diffs, per-operation approve/reject,
+and apply live there. The CLI does the same work:
 
 ```bash
 pnpm review
@@ -175,7 +197,10 @@ back with `read_change_set_feedback`:
 pnpm review <change-set-id> reject <op-id> --comment "Wrong quarter"
 ```
 
-### 6. Check the history
+### 6. History attributes the agent, not the reviewer
+
+After apply, the new revision’s `_updated_by` / revision author is the **change set author**
+(`assistant`), even though **owner** clicked approve:
 
 ```bash
 pnpm history opportunities 0bbb0000-0000-4000-8000-000000000001
@@ -194,7 +219,48 @@ pnpm history opportunities 0bbb0000-0000-4000-8000-000000000001
 ```
 
 The revision is attributed to the **agent that authored it**, not the human who approved it, and it
-records the change set it arrived through.
+records the change set it arrived through. (Enforced in apply: `packages/core/src/engine.ts` writes
+revisions with `changeSet.author_id`; acceptance suite 7, 11, and 30.)
+
+### 7. Search the same warehouse rows (pgvector)
+
+Prose fields (`next_step`, etc.) are embedded into `{table}__emb` beside the collection table.
+The MCP `search` tool embeds the query and scores with `embedding <=> query` **after** joining
+`opportunities__emb` to `opportunities` — same `record_id`, same grants (field mask + row predicate).
+
+After the proposal in §3 (or on the seeded “Send updated pricing sheet” text), ask the agent:
+
+> "Which opportunity mentions sending a pricing sheet?"
+
+It should call `search` with something like:
+
+```json
+{
+  "query": "send pricing sheet northwind",
+  "collections": ["opportunities"],
+  "limit": 5
+}
+```
+
+Example hit shape (scores vary with the deterministic local embedder):
+
+```json
+{
+  "hits": [
+    {
+      "collection": "opportunities",
+      "recordId": "0bbb0000-0000-4000-8000-000000000001",
+      "fieldName": "next_step",
+      "excerpt": "Send updated pricing sheet",
+      "stale": false
+    }
+  ]
+}
+```
+
+There is no second index to sync: apply updates the row, reindex updates `__emb`, and search reads
+both in one SQL path (`packages/core/src/search/search.ts`; tests in
+`packages/acceptance/src/search-graph.test.ts`).
 
 CLI beyond the demo path (`KITSUNE_WORKSPACE_ID` / `KITSUNE_PRINCIPAL_ID`, demo ids remain the
 default):
@@ -212,7 +278,7 @@ kitsuneos export               # grant-filtered schema + rows
 ## What works
 
 Every claim below is backed by a test in `packages/acceptance`. Run them against your own Postgres
-with `pnpm acceptance` (87 tests as of this revision).
+with `pnpm acceptance` (requires pgvector on the `kitsune` database).
 
 | Claim | Test |
 |---|---|
@@ -248,6 +314,7 @@ with `pnpm acceptance` (87 tests as of this revision).
 | Generated TypeScript client drifts fail `pnpm codegen -- --check` | `codegen.test.ts` |
 | CLI `init` / `schema push` / grant-filtered `export` | `cli.test.ts` |
 | Console APIs: schema mask, audit not-found, partial review apply (UI is collections / Changes / Agents / Graph / Settings) | `console.test.ts` |
+| Semantic search joins `__emb` to live rows; grants filter collections, rows, and excerpt fields | `search-graph.test.ts` |
 | The application role can insert audit rows but cannot update or delete them | supplementary |
 | A masked principal still receives record ids, but never a masked field | supplementary |
 | Row level security really bites: a mismatched workspace GUC returns zero rows | supplementary |
