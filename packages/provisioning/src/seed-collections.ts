@@ -1,4 +1,8 @@
 import type { KitsuneEngine } from '@kitsuneos/core';
+import {
+  defaultAssistantGrantForCollection,
+  QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS,
+} from './assistant-grants.js';
 
 export const NOTES_COLLECTION = 'notes';
 
@@ -129,52 +133,28 @@ export async function grantAssistantOnStarters(
   assistantId: string,
   ids: StarterCollectionIds,
 ): Promise<void> {
-  await engine.createGrant(
-    workspaceId,
-    assistantId,
-    ids.accountsId,
-    'propose',
-    null,
-    null,
-    { actorId: ownerPrincipalId },
-  );
-  await engine.createGrant(
-    workspaceId,
-    assistantId,
-    ids.contactsId,
-    'propose',
-    null,
-    null,
-    { actorId: ownerPrincipalId },
-  );
-  await engine.createGrant(
-    workspaceId,
-    assistantId,
-    ids.opportunitiesId,
-    'propose',
-    ['name', 'stage', 'next_step'],
-    null,
-    { actorId: ownerPrincipalId },
-  );
-  await engine.createGrant(
-    workspaceId,
-    assistantId,
-    ids.notesId,
-    'propose',
-    ['title', 'body', 'tags'],
-    null,
-    { actorId: ownerPrincipalId },
-  );
-  await engine.createGrant(
-    workspaceId,
-    assistantId,
-    ids.postsId,
-    'propose',
-    ['title', 'body', 'status'],
-    null,
-    { actorId: ownerPrincipalId },
-  );
+  const starterGrants: Array<[string, string]> = [
+    ['opportunities', ids.opportunitiesId],
+    ['notes', ids.notesId],
+    ['posts', ids.postsId],
+  ];
+
+  for (const [collectionName, collectionId] of starterGrants) {
+    const spec = defaultAssistantGrantForCollection(collectionName);
+    if (!spec) continue;
+    await engine.createGrant(
+      workspaceId,
+      assistantId,
+      collectionId,
+      spec.capability,
+      spec.fieldMask ? [...spec.fieldMask] : null,
+      null,
+      { actorId: ownerPrincipalId },
+    );
+  }
 }
+
+export { QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS };
 
 /**
  * Idempotent: ensure the personal `notes` collection exists and the given
