@@ -133,17 +133,30 @@
 /* Sidebar active: left accent instead of filled block wash */
 [data-slot="sidebar-menu-button"][data-active="true"] {
   position: relative;
+  background: transparent;
 }
 [data-slot="sidebar-menu-button"][data-active="true"]::before {
   content: "";
   position: absolute;
-  top: 20%;
-  bottom: 20%;
+  top: 18%;
+  bottom: 18%;
   left: 0;
   width: 2px;
   border-radius: 999px;
   background: var(--primary);
   transition: opacity 0.2s ease;
+}
+
+[data-slot="sidebar-menu-button"]:hover {
+  background: color-mix(in oklab, var(--sidebar-accent) 80%, transparent);
+}
+
+[data-sidebar="menu"] {
+  gap: 0.125rem;
+}
+
+[data-slot="sidebar-group-label"] {
+  letter-spacing: 0.02em;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,4 +1,6 @@
+import { notFound } from 'next/navigation';
 import { PageView } from '@/components/page/page-view';
+import { loadPageRecord } from '@/lib/server/load-page-record';
 
 export default async function PageRoute({
   params,
@@ -23,5 +25,28 @@ export default async function PageRoute({
     );
   }
 
-  return <PageView pageId={pageId} collection={collection.trim()} />;
+  const collectionName = collection.trim();
+  let initialData = null;
+  try {
+    initialData = await loadPageRecord(collectionName, pageId);
+  } catch {
+    initialData = null;
+  }
+  if (!initialData) {
+    notFound();
+  }
+
+  return (
+    <PageView
+      pageId={pageId}
+      collection={collectionName}
+      initialData={{
+        fields: initialData.fields,
+        capability: initialData.capability,
+        row: initialData.row,
+        draft: initialData.draft,
+        relationOptions: initialData.relationOptions,
+      }}
+    />
+  );
 }
