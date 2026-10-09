@@ -5,13 +5,25 @@ import { AppSidebar } from '@/components/shell/app-sidebar';
 import { CommandPalette } from '@/components/shell/command-palette';
 import { ShellHeader } from '@/components/shell/shell-header';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { WorkspaceSessionProvider } from '@/lib/workspace-session';
+import type { SidebarPrefs } from '@/lib/server/sidebar-prefs';
+import {
+  WorkspaceSessionProvider,
+  type WorkspaceSessionSnapshot,
+} from '@/lib/workspace-session';
 
-export function WorkspaceShell({ children }: { children: React.ReactNode }) {
+export function WorkspaceShell({
+  children,
+  initialSnapshot,
+  initialSidebarPrefs,
+}: {
+  children: React.ReactNode;
+  initialSnapshot?: WorkspaceSessionSnapshot | null;
+  initialSidebarPrefs?: SidebarPrefs;
+}) {
   return (
-    <WorkspaceSessionProvider>
+    <WorkspaceSessionProvider initialSnapshot={initialSnapshot}>
       <SidebarProvider>
-        <AppSidebar />
+        <AppSidebar initialPrefs={initialSidebarPrefs} />
         <SidebarInset className="min-h-svh bg-background">
           <ShellHeader />
           <SetupChecklist />

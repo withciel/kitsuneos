@@ -55,7 +55,7 @@ const WorkspaceSessionContext = createContext<WorkspaceSessionValue | null>(
   null,
 );
 
-async function loadWorkspaceSession(): Promise<WorkspaceSessionSnapshot> {
+async function fetchWorkspaceSession(): Promise<WorkspaceSessionSnapshot> {
   const [meRes, schemaRes, reviewRes] = await Promise.all([
     fetch('/api/me'),
     fetch('/api/schema'),
@@ -102,22 +102,34 @@ async function loadWorkspaceSession(): Promise<WorkspaceSessionSnapshot> {
 
 export function WorkspaceSessionProvider({
   children,
+  initialSnapshot,
 }: {
   children: ReactNode;
+  initialSnapshot?: WorkspaceSessionSnapshot | null;
 }) {
-  const [me, setMe] = useState<WorkspaceMe | null>(null);
-  const [schema, setSchema] = useState<WorkspaceSchema | null>(null);
-  const [openChangeSetCount, setOpenChangeSetCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [unauthorized, setUnauthorized] = useState(false);
+  const hasInitial = Boolean(initialSnapshot && !initialSnapshot.unauthorized);
+  const [me, setMe] = useState<WorkspaceMe | null>(initialSnapshot?.me ?? null);
+  const [schema, setSchema] = useState<WorkspaceSchema | null>(
+    initialSnapshot?.schema ?? null,
+  );
+  const [openChangeSetCount, setOpenChangeSetCount] = useState(
+    initialSnapshot?.openChangeSetCount ?? 0,
+  );
+  const [loading, setLoading] = useState(!hasInitial);
+  const [error, setError] = useState<string | null>(
+    initialSnapshot?.error ?? null,
+  );
+  const [unauthorized, setUnauthorized] = useState(
+    initialSnapshot?.unauthorized ?? false,
+  );
   const requestIdRef = useRef(0);
+  const bootstrappedRef = useRef(hasInitial);
 
   const refresh = useCallback(async (): Promise<WorkspaceSessionSnapshot> => {
     const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
-      const snapshot = await loadWorkspaceSession();
+      const snapshot = await fetchWorkspaceSession();
       if (requestId !== requestIdRef.current) {
         return snapshot;
       }
@@ -152,6 +164,10 @@ export function WorkspaceSessionProvider({
   }, []);
 
   useEffect(() => {
+    if (bootstrappedRef.current) {
+      bootstrappedRef.current = false;
+      return;
+    }
     void refresh();
   }, [refresh]);
 

@@ -168,7 +168,23 @@ function StatusChip({ value }: { value: JsonValue | undefined }) {
   );
 }
 
-export function CollectionView({ collection }: { collection: string }) {
+export type CollectionViewInitialData = {
+  fields: FieldMeta[];
+  capability: string;
+  rows: Array<Record<string, JsonValue>>;
+  truncated: boolean;
+  relationOptions: Record<string, RelationOption[]>;
+  viewScope: string;
+  views?: CollectionViewRecord[];
+};
+
+export function CollectionView({
+  collection,
+  initialData,
+}: {
+  collection: string;
+  initialData?: CollectionViewInitialData | null;
+}) {
   const router = useRouter();
   const {
     me,
@@ -176,21 +192,28 @@ export function CollectionView({ collection }: { collection: string }) {
     loading: sessionLoading,
     refresh: refreshSession,
   } = useWorkspaceSession();
-  const [fields, setFields] = useState<FieldMeta[]>([]);
-  const [capability, setCapability] = useState('');
-  const [truncated, setTruncated] = useState(false);
-  const [rows, setRows] = useState<Array<Record<string, JsonValue>>>([]);
+  const initialViews = sortViews(initialData?.views ?? []);
+  const [fields, setFields] = useState<FieldMeta[]>(initialData?.fields ?? []);
+  const [capability, setCapability] = useState(initialData?.capability ?? '');
+  const [truncated, setTruncated] = useState(initialData?.truncated ?? false);
+  const [rows, setRows] = useState<Array<Record<string, JsonValue>>>(
+    initialData?.rows ?? [],
+  );
   const [relationOptions, setRelationOptions] = useState<
     Record<string, RelationOption[]>
-  >({});
-  const [loading, setLoading] = useState(true);
+  >(initialData?.relationOptions ?? {});
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState('');
-  const [viewScope, setViewScope] = useState('anon');
+  const [viewScope, setViewScope] = useState(initialData?.viewScope ?? 'anon');
   const [localFilter, setLocalFilter] = useState<LocalFilterState>({
     search: '',
   });
-  const [views, setViews] = useState<CollectionViewRecord[]>([]);
-  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [views, setViews] = useState<CollectionViewRecord[]>(initialViews);
+  const [activeViewId, setActiveViewId] = useState<string | null>(() => {
+    const table = initialViews.find((v) => v.isDefaultTable);
+    return table?.id ?? initialViews[0]?.id ?? null;
+  });
+  const hydratedCollectionRef = useRef(initialData ? collection : null);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -274,7 +297,8 @@ export function CollectionView({ collection }: { collection: string }) {
 
   useEffect(() => {
     // Reset local UI state when navigating between databases.
-    void collection;
+    if (hydratedCollectionRef.current === collection) return;
+    hydratedCollectionRef.current = null;
     setCreating(false);
     setRows([]);
     setFields([]);
@@ -282,12 +306,17 @@ export function CollectionView({ collection }: { collection: string }) {
     setStatusFilter('all');
     setViews([]);
     setActiveViewId(null);
+    setLoading(true);
   }, [collection]);
 
   useEffect(() => {
+    if (hydratedCollectionRef.current === collection) {
+      hydratedCollectionRef.current = null;
+      return;
+    }
     if (sessionLoading && !schema) return;
     void reload();
-  }, [reload, sessionLoading, schema]);
+  }, [reload, sessionLoading, schema, collection]);
 
   const canDirectEdit = fields.some((field) => field.writable);
   const statusField = useMemo(() => pickStatusField(fields), [fields]);

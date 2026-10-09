@@ -3,7 +3,7 @@
 import type { JsonValue } from '@kitsuneos/core';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OperateLoadingBlock } from '@/components/operate/loading-block';
 import {
   cellText,
@@ -73,12 +73,22 @@ function formatWhen(iso: string): string {
   return new Date(parsed).toLocaleString();
 }
 
+export type PageViewInitialData = {
+  fields: FieldMeta[];
+  capability: string;
+  row: Record<string, JsonValue>;
+  draft: Record<string, string>;
+  relationOptions: Record<string, RelationOption[]>;
+};
+
 export function PageView({
   pageId,
   collection,
+  initialData,
 }: {
   pageId: string;
   collection: string;
+  initialData?: PageViewInitialData | null;
 }) {
   const router = useRouter();
   const {
@@ -86,17 +96,22 @@ export function PageView({
     loading: sessionLoading,
     refresh: refreshSession,
   } = useWorkspaceSession();
-  const [fields, setFields] = useState<FieldMeta[]>([]);
-  const [capability, setCapability] = useState('');
-  const [row, setRow] = useState<Record<string, JsonValue> | null>(null);
-  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [fields, setFields] = useState<FieldMeta[]>(initialData?.fields ?? []);
+  const [capability, setCapability] = useState(initialData?.capability ?? '');
+  const [row, setRow] = useState<Record<string, JsonValue> | null>(
+    initialData?.row ?? null,
+  );
+  const [draft, setDraft] = useState<Record<string, string>>(
+    initialData?.draft ?? {},
+  );
   const [relationOptions, setRelationOptions] = useState<
     Record<string, RelationOption[]>
-  >({});
+  >(initialData?.relationOptions ?? {});
   const [related, setRelated] = useState<RelatedResult | null>(null);
   const [backlinks, setBacklinks] = useState<BacklinksResult | null>(null);
   const [revisions, setRevisions] = useState<RevisionSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialData);
+  const hydratedKeyRef = useRef(initialData ? `${collection}:${pageId}` : null);
   const [relatedLoading, setRelatedLoading] = useState(false);
   const [backlinksLoading, setBacklinksLoading] = useState(false);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
@@ -179,9 +194,14 @@ export function PageView({
   );
 
   useEffect(() => {
+    const key = `${collection}:${pageId}`;
+    if (hydratedKeyRef.current === key) {
+      hydratedKeyRef.current = null;
+      return;
+    }
     if (sessionLoading && !schema) return;
     void reload();
-  }, [reload, sessionLoading, schema]);
+  }, [reload, sessionLoading, schema, collection, pageId]);
 
   useEffect(() => {
     let cancelled = false;
