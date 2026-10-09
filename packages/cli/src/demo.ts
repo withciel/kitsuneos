@@ -1,4 +1,5 @@
 import type { KitsuneEngine } from '@kitsuneos/core';
+import { QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS } from '@kitsuneos/provisioning';
 
 /**
  * Fixed identifiers so the quickstart is idempotent and the README can quote
@@ -201,7 +202,7 @@ export async function provisionDemo(
       DEMO.assistantId,
       collections.opportunities!,
       'propose',
-      ['name', 'stage', 'next_step'],
+      [...QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS],
       null,
       { actorId: DEMO.ownerId },
     );

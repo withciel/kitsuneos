@@ -1108,19 +1108,27 @@ export class KitsuneEngine {
           ownerPrincipalId: collection.owner_principal_id,
           capability: grant.capability,
           views,
-          fields: visibleFields.map((f) => ({
-            name: f.name,
-            type: f.type,
-            relationTarget: f.relation_target,
-            enumValues: f.enum_values ?? undefined,
-            readable: true,
-            // Console direct edit requires write/admin. Propose-only reviews via Changes.
-            writable:
-              grant.fieldMask === null || grant.fieldMask.includes(f.name)
-                ? CAPABILITY_ORDER.indexOf(grant.capability) >=
-                  CAPABILITY_ORDER.indexOf('write')
-                : false,
-          })),
+          fields: visibleFields.map((f) => {
+            const inMask =
+              grant.fieldMask === null || grant.fieldMask.includes(f.name);
+            const capabilityRank = CAPABILITY_ORDER.indexOf(grant.capability);
+            const proposeRank = CAPABILITY_ORDER.indexOf('propose');
+            const writeRank = CAPABILITY_ORDER.indexOf('write');
+            return {
+              name: f.name,
+              type: f.type,
+              relationTarget: f.relation_target,
+              enumValues: f.enum_values ?? undefined,
+              readable: true,
+              // Console direct edit requires write/admin.
+              writable: inMask && capabilityRank >= writeRank,
+              // Propose-only agents may change these fields via change sets.
+              proposable:
+                inMask &&
+                capabilityRank >= proposeRank &&
+                capabilityRank < writeRank,
+            };
+          }),
         });
       }
 
@@ -4151,6 +4159,52 @@ export class KitsuneEngine {
         WHERE g.workspace_id = $1 ${principalFilter}
         ORDER BY c.name, g.created_at`,
       params,
+    );
+    return rows.rows.map((r) => ({
+      id: r.id,
+      principalId: r.principal_id,
+      collection: r.collection,
+      capability: r.capability,
+      fieldMask: r.field_mask,
+      rowPredicate: r.row_predicate,
+      revokedAt: r.revoked_at ? r.revoked_at.toISOString() : null,
+    }));
+  }
+
+  /**
+   * List active and revoked grants for one principal. Not filtered by caller
+   * privileges — for trusted provisioning/reconciliation only.
+   */
+  async listGrantsForPrincipal(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      principalId: string;
+      collection: string;
+      capability: Capability;
+      fieldMask: string[] | null;
+      rowPredicate: Predicate | null;
+      revokedAt: string | null;
+    }>
+  > {
+    const rows = await this.ownerPool.query<{
+      id: string;
+      principal_id: string;
+      collection: string;
+      capability: Capability;
+      field_mask: string[] | null;
+      row_predicate: Predicate | null;
+      revoked_at: Date | null;
+    }>(
+      `SELECT g.id, g.principal_id, c.name AS collection, g.capability,
+              g.field_mask, g.row_predicate, g.revoked_at
+         FROM kitsune.grants g
+         JOIN kitsune.collections c ON c.id = g.collection_id
+        WHERE g.workspace_id = $1 AND g.principal_id = $2
+        ORDER BY c.name, g.created_at`,
+      [workspaceId, principalId],
     );
     return rows.rows.map((r) => ({
       id: r.id,
