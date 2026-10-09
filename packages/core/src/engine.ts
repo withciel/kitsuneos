@@ -4171,6 +4171,52 @@ export class KitsuneEngine {
     }));
   }
 
+  /**
+   * List active and revoked grants for one principal. Not filtered by caller
+   * privileges — for trusted provisioning/reconciliation only.
+   */
+  async listGrantsForPrincipal(
+    workspaceId: string,
+    principalId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      principalId: string;
+      collection: string;
+      capability: Capability;
+      fieldMask: string[] | null;
+      rowPredicate: Predicate | null;
+      revokedAt: string | null;
+    }>
+  > {
+    const rows = await this.ownerPool.query<{
+      id: string;
+      principal_id: string;
+      collection: string;
+      capability: Capability;
+      field_mask: string[] | null;
+      row_predicate: Predicate | null;
+      revoked_at: Date | null;
+    }>(
+      `SELECT g.id, g.principal_id, c.name AS collection, g.capability,
+              g.field_mask, g.row_predicate, g.revoked_at
+         FROM kitsune.grants g
+         JOIN kitsune.collections c ON c.id = g.collection_id
+        WHERE g.workspace_id = $1 AND g.principal_id = $2
+        ORDER BY c.name, g.created_at`,
+      [workspaceId, principalId],
+    );
+    return rows.rows.map((r) => ({
+      id: r.id,
+      principalId: r.principal_id,
+      collection: r.collection,
+      capability: r.capability,
+      fieldMask: r.field_mask,
+      rowPredicate: r.row_predicate,
+      revokedAt: r.revoked_at ? r.revoked_at.toISOString() : null,
+    }));
+  }
+
   private async hasAdminOnAnyCollection(
     workspaceId: string,
     principalId: string,

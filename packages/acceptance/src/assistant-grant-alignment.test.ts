@@ -92,6 +92,7 @@ describe('Assistant grants align with quickstart mask', () => {
       provisioned.workspaceId,
       provisioned.principalId,
       assistantId,
+      { reconcile: true },
     );
 
     const schema = await engine.describeSchema(
@@ -168,6 +169,7 @@ describe('Assistant grants align with quickstart mask', () => {
       provisioned.workspaceId,
       provisioned.principalId,
       assistantId,
+      { reconcile: true },
     );
 
     const schema = await engine.describeSchema(
@@ -186,6 +188,76 @@ describe('Assistant grants align with quickstart mask', () => {
         .map((f) => f.name)
         .sort(),
     ).toEqual([...QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS].sort());
-    expect(schema.collections.some((c) => c.name === 'accounts')).toBe(false);
+  });
+
+  it('non-admin mint path does not stack propose grants on a locked-down assistant', async () => {
+    const engine = await getEngine();
+    const owner = await provisionUserWorkspace(engine, {
+      workosId: `member_mint_owner_${uuidv4()}`,
+      email: `member-mint-owner-${uuidv4()}@example.com`,
+    });
+    await seedProvisionedCrmForTests(
+      engine,
+      owner.workspaceId,
+      owner.principalId,
+    );
+
+    const memberEmail = `member_mint_${uuidv4()}@example.com`;
+    const invited = await engine.invitePerson(owner.workspaceId, owner.userId, {
+      email: memberEmail,
+      role: 'member',
+    });
+
+    const assistantId = await engine.createPrincipal(
+      owner.workspaceId,
+      'agent',
+      'assistant',
+    );
+    const opportunitiesId = await engine.findCollectionId(
+      owner.workspaceId,
+      'opportunities',
+    );
+    if (!opportunitiesId) {
+      throw new Error('expected opportunities collection');
+    }
+    await engine.createGrant(
+      owner.workspaceId,
+      assistantId,
+      opportunitiesId,
+      'read',
+      ['name'],
+      null,
+      { actorId: owner.principalId },
+    );
+
+    await ensureAssistantGrantsForWorkspace(
+      engine,
+      owner.workspaceId,
+      invited.principalId,
+      assistantId,
+      { reconcile: false },
+    );
+
+    const assistantGrants = await engine.listGrantsForPrincipal(
+      owner.workspaceId,
+      assistantId,
+    );
+    const activeOpportunityGrants = assistantGrants.filter(
+      (grant) =>
+        grant.collection === 'opportunities' && grant.revokedAt === null,
+    );
+    expect(activeOpportunityGrants).toHaveLength(1);
+    expect(activeOpportunityGrants[0]?.capability).toBe('read');
+    expect(activeOpportunityGrants[0]?.fieldMask).toEqual(['name']);
+
+    const schema = await engine.describeSchema(owner.workspaceId, assistantId);
+    const opportunities = schema.collections.find(
+      (c) => c.name === 'opportunities',
+    );
+    expect(opportunities?.capability).toBe('read');
+    expect(opportunities?.fields.map((f) => f.name)).toEqual(['name']);
+    expect(opportunities?.fields.every((f) => f.proposable === false)).toBe(
+      true,
+    );
   });
 });

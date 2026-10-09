@@ -1,7 +1,7 @@
 import { ensureAssistantGrantsForWorkspace } from '@kitsuneos/provisioning';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
-import { requireWorkspace } from '@/lib/require-workspace';
+import { isWorkspaceAdmin, requireWorkspace } from '@/lib/require-workspace';
 
 const PRIVATE_HEADERS = { 'Cache-Control': 'no-store' };
 
@@ -13,6 +13,7 @@ const PRIVATE_HEADERS = { 'Cache-Control': 'no-store' };
 async function resolveAssistantPrincipal(
   workspaceId: string,
   actorPrincipalId: string,
+  reconcileGrants: boolean,
 ): Promise<string> {
   const existing = await engine.findAssistantPrincipalId(workspaceId);
   const assistantId =
@@ -24,6 +25,7 @@ async function resolveAssistantPrincipal(
     workspaceId,
     actorPrincipalId,
     assistantId,
+    { reconcile: reconcileGrants },
   );
   return assistantId;
 }
@@ -35,6 +37,7 @@ export async function POST() {
     const assistantId = await resolveAssistantPrincipal(
       ctx.workspaceId,
       ctx.principalId,
+      isWorkspaceAdmin(ctx.role),
     );
     await engine.revokeApiKeysForPrincipal(assistantId);
     const apiKey = await engine.createApiKey(assistantId);
