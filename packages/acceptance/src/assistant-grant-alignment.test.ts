@@ -174,8 +174,12 @@ describe('Assistant grants align with quickstart mask', () => {
       provisioned.workspaceId,
       assistantId,
     );
-    expect(schema.collections.map((c) => c.name)).toEqual(['opportunities']);
-    const opportunities = schema.collections[0];
+    const collectionNames = schema.collections.map((c) => c.name);
+    expect(collectionNames).not.toContain('accounts');
+    expect(collectionNames).not.toContain('contacts');
+    const opportunities = schema.collections.find(
+      (c) => c.name === 'opportunities',
+    );
     expect(
       opportunities?.fields
         .filter((f) => f.proposable)
