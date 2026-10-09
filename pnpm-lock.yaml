@@ -244,6 +244,9 @@ importers:
       '@kitsuneos/core':
         specifier: workspace:*
         version: link:../core
+      '@kitsuneos/provisioning':
+        specifier: workspace:*
+        version: link:../provisioning
       pg:
         specifier: ^8.16.0
         version: 8.23.0
