@@ -1,5 +1,6 @@
 export type {
   AssistantCollectionGrantSpec,
+  EnsureAssistantGrantsOptions,
   QuickstartAssistantOpportunityField,
 } from './assistant-grants.js';
 export {
