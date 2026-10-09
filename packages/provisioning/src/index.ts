@@ -1,3 +1,12 @@
+export type {
+  AssistantCollectionGrantSpec,
+  QuickstartAssistantOpportunityField,
+} from './assistant-grants.js';
+export {
+  defaultAssistantGrantForCollection,
+  ensureAssistantGrantsForWorkspace,
+  QUICKSTART_ASSISTANT_FORBIDDEN_COLLECTIONS,
+} from './assistant-grants.js';
 export {
   type AgentMembership,
   createAgentViaWorkOS,
@@ -26,12 +35,3 @@ export {
   QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS,
 } from './seed-collections.js';
 export { syncWorkspaceToWorkOS } from './sync-workos.js';
-export type {
-  AssistantCollectionGrantSpec,
-  QuickstartAssistantOpportunityField,
-} from './assistant-grants.js';
-export {
-  QUICKSTART_ASSISTANT_FORBIDDEN_COLLECTIONS,
-  defaultAssistantGrantForCollection,
-  ensureAssistantGrantsForWorkspace,
-} from './assistant-grants.js';

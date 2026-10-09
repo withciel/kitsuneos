@@ -1,9 +1,9 @@
-import { provisionUserWorkspace } from '@kitsuneos/provisioning';
 import {
-  QUICKSTART_ASSISTANT_FORBIDDEN_COLLECTIONS,
-  QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS,
   defaultAssistantGrantForCollection,
   ensureAssistantGrantsForWorkspace,
+  provisionUserWorkspace,
+  QUICKSTART_ASSISTANT_FORBIDDEN_COLLECTIONS,
+  QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS,
 } from '@kitsuneos/provisioning';
 import { v4 as uuidv4 } from 'uuid';
 import { describe, expect, it } from 'vitest';
@@ -56,12 +56,16 @@ describe('Assistant grants align with quickstart mask', () => {
       .filter((f) => f.writable)
       .map((f) => f.name)
       .sort();
-    expect(writable).toEqual([...QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS].sort());
+    expect(writable).toEqual(
+      [...QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS].sort(),
+    );
     const readable = opportunities?.fields
       .filter((f) => f.readable)
       .map((f) => f.name)
       .sort();
-    expect(readable).toEqual([...QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS].sort());
+    expect(readable).toEqual(
+      [...QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS].sort(),
+    );
     expect(opportunities?.fields.some((f) => f.name === 'amount')).toBe(false);
   });
 
