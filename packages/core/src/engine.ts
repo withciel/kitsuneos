@@ -5577,6 +5577,49 @@ export class KitsuneEngine {
     );
   }
 
+  async setWorkspaceWorkosOrganizationId(
+    workspaceId: string,
+    workosOrganizationId: string,
+  ): Promise<void> {
+    await this.ownerPool.query(
+      `UPDATE kitsune.workspaces
+          SET workos_organization_id = $2
+        WHERE id = $1`,
+      [workspaceId, workosOrganizationId],
+    );
+  }
+
+  async getWorkspaceWorkosOrganizationId(
+    workspaceId: string,
+  ): Promise<string | null> {
+    const result = await this.ownerPool.query<{
+      workos_organization_id: string | null;
+    }>(`SELECT workos_organization_id FROM kitsune.workspaces WHERE id = $1`, [
+      workspaceId,
+    ]);
+    return result.rows[0]?.workos_organization_id ?? null;
+  }
+
+  async setPrincipalWorkosAgentInstanceId(
+    principalId: string,
+    agentInstanceId: string,
+  ): Promise<void> {
+    await this.ownerPool.query(
+      `UPDATE kitsune.principals
+          SET workos_agent_instance_id = $2
+        WHERE id = $1`,
+      [principalId, agentInstanceId],
+    );
+  }
+
+  async getUserWorkosId(userId: string): Promise<string | null> {
+    const result = await this.ownerPool.query<{ workos_id: string }>(
+      `SELECT workos_id FROM kitsune.users WHERE id = $1`,
+      [userId],
+    );
+    return result.rows[0]?.workos_id ?? null;
+  }
+
   async getUserEmail(userId: string): Promise<string | null> {
     const result = await this.ownerPool.query<{ email: string }>(
       `SELECT email FROM kitsune.users WHERE id = $1`,
@@ -5678,6 +5721,7 @@ export class KitsuneEngine {
       membership: string | null;
       teamPrincipalId: string | null;
       ownerPrincipalId: string | null;
+      workosAgentInstanceId: string | null;
     }>
   > {
     const result = await this.ownerPool.query<{
@@ -5689,13 +5733,15 @@ export class KitsuneEngine {
       agent_membership: string | null;
       agent_team_principal_id: string | null;
       agent_owner_principal_id: string | null;
+      workos_agent_instance_id: string | null;
     }>(
       `SELECT p.id, p.display_name, p.created_at::text AS created_at,
               count(k.id) FILTER (WHERE k.revoked_at IS NULL)::text AS key_count,
               bool_or(k.last_used_at IS NOT NULL AND k.revoked_at IS NULL) AS has_used_key,
               p.agent_membership,
               t.principal_id AS agent_team_principal_id,
-              p.agent_owner_principal_id
+              p.agent_owner_principal_id,
+              p.workos_agent_instance_id
          FROM kitsune.principals p
          LEFT JOIN kitsune.api_keys k ON k.principal_id = p.id
          LEFT JOIN kitsune.teams t ON t.id = p.agent_team_id
@@ -5715,6 +5761,7 @@ export class KitsuneEngine {
       membership: row.agent_membership,
       teamPrincipalId: row.agent_team_principal_id,
       ownerPrincipalId: row.agent_owner_principal_id,
+      workosAgentInstanceId: row.workos_agent_instance_id,
     }));
   }
 

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@kitsuneos/core": "workspace:*",
+    "@kitsuneos/workos": "workspace:*",
     "uuid": "^11.1.0"
   },
   "devDependencies": {

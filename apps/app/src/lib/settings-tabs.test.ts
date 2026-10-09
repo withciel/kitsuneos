@@ -8,6 +8,8 @@ describe('SETTINGS_TABS', () => {
       'Account',
       'Billing',
       'People',
+      'Security',
+      'Enterprise',
       'Teams',
       'Access',
       'Webhooks',

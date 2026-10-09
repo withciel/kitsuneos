@@ -649,4 +649,19 @@ CREATE INDEX IF NOT EXISTS change_set_comments_set_idx
   ON kitsune.change_set_comments (change_set_id, created_at);
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON kitsune.change_set_comments TO kitsune_app;
+
+-- ---------------------------------------------------------------------------
+-- WorkOS control plane (Organizations ↔ workspaces, Agent Auth instances)
+-- ---------------------------------------------------------------------------
+ALTER TABLE kitsune.workspaces
+  ADD COLUMN IF NOT EXISTS workos_organization_id text;
+CREATE UNIQUE INDEX IF NOT EXISTS workspaces_workos_organization_id_idx
+  ON kitsune.workspaces (workos_organization_id)
+  WHERE workos_organization_id IS NOT NULL;
+
+ALTER TABLE kitsune.principals
+  ADD COLUMN IF NOT EXISTS workos_agent_instance_id text;
+CREATE INDEX IF NOT EXISTS principals_workos_agent_instance_idx
+  ON kitsune.principals (workos_agent_instance_id)
+  WHERE workos_agent_instance_id IS NOT NULL;
 `;
