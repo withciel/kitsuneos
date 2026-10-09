@@ -1,6 +1,7 @@
-// workspace-lint: ignore — workspace from requireWorkspace; SQL uses kitsune.workspace_memberships.workspace_id.
+// workspace-lint: ignore — workspace from requireWorkspace.
 
 import type { WorkspaceRole } from '@kitsuneos/core';
+import { invitePersonViaWorkOS } from '@kitsuneos/provisioning';
 import { NextResponse } from 'next/server';
 import { engine } from '@/lib/engine';
 import {
@@ -13,7 +14,14 @@ export async function GET() {
     const ctx = await requireWorkspace();
     requireWorkspaceAdmin(ctx);
     const people = await engine.listWorkspaceMemberships(ctx.workspaceId);
-    return NextResponse.json({ people });
+    const workosOrganizationId = await engine.getWorkspaceWorkosOrganizationId(
+      ctx.workspaceId,
+    );
+    return NextResponse.json({
+      people,
+      workosOrganizationId,
+      workosManaged: Boolean(workosOrganizationId),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const status = message.includes('Unauthorized')
@@ -38,9 +46,10 @@ export async function POST(request: Request) {
     if (!body.email?.trim()) {
       return NextResponse.json({ error: 'Email is required' }, { status: 400 });
     }
-    const role: WorkspaceRole =
-      body.role === 'admin' || body.role === 'member' ? body.role : 'member';
-    const result = await engine.invitePerson(ctx.workspaceId, ctx.userId, {
+    const role: 'admin' | 'member' = body.role === 'admin' ? 'admin' : 'member';
+    const result = await invitePersonViaWorkOS(engine, {
+      workspaceId: ctx.workspaceId,
+      actorUserId: ctx.userId,
       email: body.email,
       role,
       displayName: body.displayName,

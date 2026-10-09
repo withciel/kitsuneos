@@ -1,5 +1,6 @@
 import type { KitsuneEngine } from '@kitsuneos/core';
 import { v4 as uuidv4 } from 'uuid';
+import { syncWorkspaceToWorkOS } from './sync-workos.js';
 
 export interface ProvisionUserInput {
   workosId: string;
@@ -83,6 +84,15 @@ export async function provisionUserWorkspace(
       created.push(`membership:claimed:${claimed}`);
     }
 
+    const workosOrgId = await syncWorkspaceToWorkOS(engine, {
+      workspaceId,
+      name: input.email,
+      ownerWorkosUserId: input.workosId,
+    });
+    if (workosOrgId) {
+      created.push('workos:organization');
+    }
+
     return {
       userId,
       workspaceId,
@@ -157,6 +167,16 @@ export async function createAdditionalWorkspaceForUser(
       principalId,
       clearPendingApiKey: true,
     });
+  }
+
+  const ownerWorkosId = await engine.getUserWorkosId(input.userId);
+  const workosOrgId = await syncWorkspaceToWorkOS(engine, {
+    workspaceId,
+    name: displayName,
+    ownerWorkosUserId: ownerWorkosId ?? undefined,
+  });
+  if (workosOrgId) {
+    created.push('workos:organization');
   }
 
   return {
