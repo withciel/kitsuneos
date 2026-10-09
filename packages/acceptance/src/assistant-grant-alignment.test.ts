@@ -52,11 +52,12 @@ describe('Assistant grants align with quickstart mask', () => {
       (c) => c.name === 'opportunities',
     );
     expect(opportunities?.capability).toBe('propose');
-    const writable = opportunities?.fields
-      .filter((f) => f.writable)
+    expect(opportunities?.fields.every((f) => f.writable === false)).toBe(true);
+    const proposable = opportunities?.fields
+      .filter((f) => f.proposable)
       .map((f) => f.name)
       .sort();
-    expect(writable).toEqual(
+    expect(proposable).toEqual(
       [...QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS].sort(),
     );
     const readable = opportunities?.fields
@@ -99,5 +100,88 @@ describe('Assistant grants align with quickstart mask', () => {
     );
     expect(schema.collections.map((c) => c.name)).not.toContain('accounts');
     expect(schema.collections.map((c) => c.name)).not.toContain('contacts');
+
+    const opportunities = schema.collections.find(
+      (c) => c.name === 'opportunities',
+    );
+    expect(opportunities?.capability).toBe('propose');
+    expect(
+      opportunities?.fields
+        .filter((f) => f.proposable)
+        .map((f) => f.name)
+        .sort(),
+    ).toEqual([...QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS].sort());
+  });
+
+  it('ensureAssistantGrantsForWorkspace remasks legacy broad opportunities grants', async () => {
+    const engine = await getEngine();
+    const provisioned = await provisionUserWorkspace(engine, {
+      workosId: `legacy_grants_${uuidv4()}`,
+      email: `legacy-grants-${uuidv4()}@example.com`,
+    });
+    await seedProvisionedCrmForTests(
+      engine,
+      provisioned.workspaceId,
+      provisioned.principalId,
+    );
+    const assistantId = await engine.createPrincipal(
+      provisioned.workspaceId,
+      'agent',
+      'assistant',
+    );
+    const opportunitiesId = await engine.findCollectionId(
+      provisioned.workspaceId,
+      'opportunities',
+    );
+    if (!opportunitiesId) {
+      throw new Error('expected opportunities collection');
+    }
+
+    await engine.createGrant(
+      provisioned.workspaceId,
+      assistantId,
+      opportunitiesId,
+      'propose',
+      null,
+      null,
+      { actorId: provisioned.principalId },
+    );
+    const accountsId = await engine.findCollectionId(
+      provisioned.workspaceId,
+      'accounts',
+    );
+    if (!accountsId) {
+      throw new Error('expected accounts collection');
+    }
+    await engine.createGrant(
+      provisioned.workspaceId,
+      assistantId,
+      accountsId,
+      'propose',
+      null,
+      null,
+      { actorId: provisioned.principalId },
+    );
+
+    await ensureAssistantGrantsForWorkspace(
+      engine,
+      provisioned.workspaceId,
+      provisioned.principalId,
+      assistantId,
+    );
+
+    const schema = await engine.describeSchema(
+      provisioned.workspaceId,
+      assistantId,
+    );
+    expect(schema.collections.map((c) => c.name)).toEqual(['opportunities']);
+    const opportunities = schema.collections[0];
+    expect(
+      opportunities?.fields
+        .filter((f) => f.proposable)
+        .map((f) => f.name)
+        .sort(),
+    ).toEqual([...QUICKSTART_ASSISTANT_OPPORTUNITY_FIELDS].sort());
+    expect(schema.collections.some((c) => c.name === 'accounts')).toBe(false);
   });
 });

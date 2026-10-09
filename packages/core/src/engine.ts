@@ -1108,19 +1108,27 @@ export class KitsuneEngine {
           ownerPrincipalId: collection.owner_principal_id,
           capability: grant.capability,
           views,
-          fields: visibleFields.map((f) => ({
-            name: f.name,
-            type: f.type,
-            relationTarget: f.relation_target,
-            enumValues: f.enum_values ?? undefined,
-            readable: true,
-            // Console direct edit requires write/admin. Propose-only reviews via Changes.
-            writable:
-              grant.fieldMask === null || grant.fieldMask.includes(f.name)
-                ? CAPABILITY_ORDER.indexOf(grant.capability) >=
-                  CAPABILITY_ORDER.indexOf('write')
-                : false,
-          })),
+          fields: visibleFields.map((f) => {
+            const inMask =
+              grant.fieldMask === null || grant.fieldMask.includes(f.name);
+            const capabilityRank = CAPABILITY_ORDER.indexOf(grant.capability);
+            const proposeRank = CAPABILITY_ORDER.indexOf('propose');
+            const writeRank = CAPABILITY_ORDER.indexOf('write');
+            return {
+              name: f.name,
+              type: f.type,
+              relationTarget: f.relation_target,
+              enumValues: f.enum_values ?? undefined,
+              readable: true,
+              // Console direct edit requires write/admin.
+              writable: inMask && capabilityRank >= writeRank,
+              // Propose-only agents may change these fields via change sets.
+              proposable:
+                inMask &&
+                capabilityRank >= proposeRank &&
+                capabilityRank < writeRank,
+            };
+          }),
         });
       }
 
