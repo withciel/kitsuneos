@@ -1,4 +1,0 @@
-config:
-  kitsuneos:deploySite: "true"
-  kitsuneos:deploySiteCdn: "false"
-  kitsuneos:deployApp: "true"

@@ -1,7 +1,0 @@
-{
-  "name": "kitsuneos",
-  "displayName": "KitsuneOS",
-  "version": "0.1.0",
-  "description": "Connect Cursor to KitsuneOS via remote MCP.",
-  "publisher": "kitsuneos"
-}
